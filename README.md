@@ -59,12 +59,22 @@ mdb-flow/
 git clone <repository-url>
 cd mdb-flow
 
-# Create virtual environment
-python -m venv venv
+# Create and activate virtual environment (IMPORTANT!)
+python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Upgrade pip
+pip install --upgrade pip
 
 # Install dependencies
 pip install -r requirements.txt
+```
+
+⚠️ **Important**: Always activate the virtual environment before running the app or installing packages:
+```bash
+source venv/bin/activate  # On macOS/Linux
+# OR
+venv\Scripts\activate  # On Windows
 ```
 
 ### 3. Configure Environment Variables
@@ -95,6 +105,10 @@ cp .env.example .env
 Run the setup script to create standard and text search indexes:
 
 ```bash
+# Make sure virtual environment is activated
+source venv/bin/activate
+
+# Run setup script
 python scripts/setup_indexes.py
 ```
 
@@ -147,7 +161,14 @@ Vector search indexes must be created in the Atlas UI:
 
 ### 5. Run the Application
 
+Make sure your virtual environment is activated, then run:
+
 ```bash
+# Activate virtual environment (if not already active)
+source venv/bin/activate  # On macOS/Linux
+# venv\Scripts\activate  # On Windows
+
+# Run the app
 streamlit run ui/streamlit_app.py
 ```
 
