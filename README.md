@@ -1,4 +1,6 @@
-# Flow Companion - Milestone 1
+# Flow Companion
+
+**Version 1.0.0 (Milestone 1)**
 
 A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and Claude API.
 
