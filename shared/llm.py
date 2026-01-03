@@ -4,6 +4,9 @@ from typing import List, Dict, Any, Optional
 from anthropic import Anthropic
 
 from shared.config import settings
+from shared.logger import get_logger
+
+logger = get_logger("llm")
 
 
 class LLMService:
@@ -40,6 +43,10 @@ class LLMService:
         Returns:
             Generated text response
         """
+        logger.debug(f"LLM generate: {len(messages)} message(s), max_tokens={max_tokens}, temp={temperature}")
+        if messages:
+            logger.debug(f"Last message preview: {messages[-1]['content'][:100]}...")
+
         # Strip non-API fields from messages (e.g., input_type)
         clean_messages = [
             {"role": m["role"], "content": m["content"]}
@@ -57,8 +64,11 @@ class LLMService:
         if system:
             params["system"] = system
 
+        logger.debug(f"Calling Anthropic API with model={self.model}")
         response = self.client.messages.create(**params)
-        return response.content[0].text
+        response_text = response.content[0].text
+        logger.debug(f"LLM response preview: {response_text[:200]}...")
+        return response_text
 
     def chat(
         self,

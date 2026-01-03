@@ -6,6 +6,7 @@ from bson import ObjectId
 from rapidfuzz import fuzz
 
 from shared.llm import llm_service
+from shared.logger import get_logger
 from shared.embeddings import embed_query as embedding_embed_query
 from shared.db import (
     get_collection,
@@ -14,6 +15,8 @@ from shared.db import (
     PROJECTS_COLLECTION,
 )
 from shared.models import Task, Project
+
+logger = get_logger("retrieval")
 
 
 class RetrievalAgent:
@@ -627,10 +630,13 @@ class RetrievalAgent:
                 - confidence: Score 0.0-1.0
                 - alternatives: List of other candidates if ambiguous
         """
+        logger.info(f"fuzzy_match_task: reference='{reference}', project_hint={project_hint}, threshold={threshold}")
         tasks_collection = get_collection(TASKS_COLLECTION)
 
         # Get query embedding for semantic search
+        logger.debug(f"Generating embedding for: '{reference}'")
         query_embedding = embedding_embed_query(reference)
+        logger.debug(f"Embedding generated: {len(query_embedding)} dimensions")
 
         # Build base match condition
         match_condition = {}
@@ -672,8 +678,13 @@ class RetrievalAgent:
             pipeline.insert(1, {"$match": match_condition})
 
         try:
+            logger.debug("Executing vector search pipeline...")
             candidates = list(tasks_collection.aggregate(pipeline))
+            logger.info(f"Vector search returned {len(candidates)} candidate(s)")
+            for i, c in enumerate(candidates[:3]):
+                logger.debug(f"  Candidate {i+1}: '{c.get('title', 'N/A')}' (vector_score={c.get('vector_score', 0.0):.3f})")
         except Exception as e:
+            logger.error(f"Vector search failed: {e}", exc_info=True)
             return {
                 "match": None,
                 "confidence": 0.0,
@@ -682,6 +693,7 @@ class RetrievalAgent:
             }
 
         if not candidates:
+            logger.warning(f"No candidates found for reference '{reference}'")
             return {
                 "match": None,
                 "confidence": 0.0,
@@ -689,6 +701,7 @@ class RetrievalAgent:
             }
 
         # Calculate combined scores (vector + text similarity)
+        logger.debug("Calculating combined scores (60% vector + 40% text)...")
         scored_candidates = []
         for task in candidates:
             # Normalize vector score (typically 0.0-1.0 but can vary)
@@ -699,6 +712,8 @@ class RetrievalAgent:
 
             # Combined score (weighted average: 60% vector, 40% text)
             combined_score = (0.6 * vector_score) + (0.4 * text_score)
+
+            logger.debug(f"  '{task['title'][:40]}...' → vector={vector_score:.3f}, text={text_score:.3f}, combined={combined_score:.3f}")
 
             task["_id"] = str(task["_id"])
             task["project_id"] = str(task["project_id"]) if task.get("project_id") else None
@@ -714,13 +729,18 @@ class RetrievalAgent:
         best_match = scored_candidates[0]
         best_confidence = best_match["confidence"]
 
+        logger.info(f"Best match: '{best_match['title']}' (confidence={best_confidence:.3f}, threshold={threshold})")
+
         # Check if best match meets threshold
         if best_confidence >= threshold:
+            logger.info(f"✓ Match found above threshold!")
             # Check if there are close alternatives (within 0.1 of best)
             alternatives = [
                 task for task in scored_candidates[1:4]
                 if task["confidence"] >= threshold and (best_confidence - task["confidence"]) <= 0.1
             ]
+            if alternatives:
+                logger.debug(f"Found {len(alternatives)} close alternative(s)")
 
             return {
                 "match": best_match,
@@ -728,6 +748,7 @@ class RetrievalAgent:
                 "alternatives": alternatives
             }
         else:
+            logger.warning(f"✗ No match above threshold (best={best_confidence:.3f} < {threshold})")
             # No match above threshold, return top candidates
             return {
                 "match": None,
@@ -753,9 +774,11 @@ class RetrievalAgent:
                 - confidence: Score 0.0-1.0
                 - alternatives: List of other candidates if ambiguous
         """
+        logger.info(f"fuzzy_match_project: reference='{reference}', threshold={threshold}")
         projects_collection = get_collection(PROJECTS_COLLECTION)
 
         # Get query embedding for semantic search
+        logger.debug(f"Generating embedding for project reference: '{reference}'")
         query_embedding = embedding_embed_query(reference)
 
         # Vector search pipeline
@@ -784,8 +807,11 @@ class RetrievalAgent:
         ]
 
         try:
+            logger.debug("Executing project vector search...")
             candidates = list(projects_collection.aggregate(pipeline))
+            logger.info(f"Vector search returned {len(candidates)} project candidate(s)")
         except Exception as e:
+            logger.error(f"Project vector search failed: {e}", exc_info=True)
             return {
                 "match": None,
                 "confidence": 0.0,
@@ -794,6 +820,7 @@ class RetrievalAgent:
             }
 
         if not candidates:
+            logger.warning(f"No project candidates found for reference '{reference}'")
             return {
                 "match": None,
                 "confidence": 0.0,
@@ -801,6 +828,7 @@ class RetrievalAgent:
             }
 
         # Calculate combined scores (vector + text similarity)
+        logger.debug("Calculating project combined scores...")
         scored_candidates = []
         for project in candidates:
             # Normalize vector score
@@ -811,6 +839,8 @@ class RetrievalAgent:
 
             # Combined score (weighted average: 60% vector, 40% text)
             combined_score = (0.6 * vector_score) + (0.4 * text_score)
+
+            logger.debug(f"  '{project['name'][:40]}...' → vector={vector_score:.3f}, text={text_score:.3f}, combined={combined_score:.3f}")
 
             project["_id"] = str(project["_id"])
             project["confidence"] = combined_score
@@ -825,8 +855,11 @@ class RetrievalAgent:
         best_match = scored_candidates[0]
         best_confidence = best_match["confidence"]
 
+        logger.info(f"Best project match: '{best_match['name']}' (confidence={best_confidence:.3f})")
+
         # Check if best match meets threshold
         if best_confidence >= threshold:
+            logger.info(f"✓ Project match found above threshold!")
             # Check if there are close alternatives (within 0.1 of best)
             alternatives = [
                 proj for proj in scored_candidates[1:4]
@@ -839,6 +872,7 @@ class RetrievalAgent:
                 "alternatives": alternatives
             }
         else:
+            logger.warning(f"✗ No project match above threshold (best={best_confidence:.3f} < {threshold})")
             # No match above threshold, return top candidates
             return {
                 "match": None,

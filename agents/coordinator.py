@@ -4,8 +4,11 @@ import json
 from typing import List, Dict, Any, Optional
 
 from shared.llm import llm_service
+from shared.logger import get_logger
 from agents.worklog import worklog_agent
 from agents.retrieval import retrieval_agent
+
+logger = get_logger("coordinator")
 
 
 class CoordinatorAgent:
@@ -86,6 +89,7 @@ Return ONLY valid JSON with this structure:
 Be generous in interpretation - capture the intent even if vague. Return empty arrays for sections with no matches."""
 
         # Get parsed structure from Claude
+        logger.info(f"Parsing voice transcript: '{transcript[:100]}...'")
         try:
             response = self.llm.generate(
                 messages=[{"role": "user", "content": f"Parse this voice transcript:\n\n{transcript}"}],
@@ -94,6 +98,7 @@ Be generous in interpretation - capture the intent even if vague. Return empty a
                 temperature=0.0
             )
 
+            logger.debug(f"Raw LLM response:\n{response}")
             print(f"[COORDINATOR] Raw LLM response:\n{response}")
 
             # Clean up response - remove markdown code blocks if present
@@ -128,9 +133,17 @@ Be generous in interpretation - capture the intent even if vague. Return empty a
                 if key not in parsed:
                     parsed[key] = default_structure[key]
 
+            logger.info(f"Successfully parsed voice input:")
+            logger.info(f"  - Completions: {len(parsed.get('completions', []))}")
+            logger.info(f"  - Progress updates: {len(parsed.get('progress_updates', []))}")
+            logger.info(f"  - Notes: {len(parsed.get('notes_to_add', []))}")
+            logger.info(f"  - New items: {len(parsed.get('new_items', []))}")
+            logger.debug(f"Full parsed structure: {json.dumps(parsed, indent=2)}")
+
             return parsed
 
         except Exception as e:
+            logger.error(f"Error parsing voice input: {e}", exc_info=True)
             print(f"[COORDINATOR] Error parsing voice input: {e}")
             # Return empty structure on error
             return {
@@ -212,10 +225,19 @@ Respond with ONLY one word: either "worklog" or "retrieval" based on the primary
         Returns:
             Summary of what was captured and actions taken
         """
+        logger.info("=" * 80)
+        logger.info("=== VOICE PROCESSING START ===")
+        logger.info(f"Transcript: '{transcript}'")
         print(f"[COORDINATOR] Processing voice input: {transcript[:100]}...")
 
         # Parse the voice input to extract structured data
         parsed = self.parse_voice_input(transcript)
+
+        logger.debug(f"Task references found: {parsed['task_references']}")
+        logger.debug(f"Project references found: {parsed['project_references']}")
+        logger.debug(f"Completions found: {parsed['completions']}")
+        logger.debug(f"Progress updates found: {parsed['progress_updates']}")
+        logger.debug(f"New items found: {parsed['new_items']}")
 
         # Build a summary of actions
         actions_taken = []
@@ -224,14 +246,19 @@ Respond with ONLY one word: either "worklog" or "retrieval" based on the primary
 
         # 1. Process task references (completions, progress updates, deferrals)
         if parsed["task_references"]:
+            logger.info(f"Processing {len(parsed['task_references'])} task reference(s)")
             for ref in parsed["task_references"]:
+                mention = ref.get("mention", "")
+                logger.debug(f"Attempting fuzzy match for task reference: '{mention}'")
+
                 # Try to fuzzy match the task
                 match_result = self.retrieval_agent.fuzzy_match_task(
-                    reference=ref.get("mention", ""),
+                    reference=mention,
                     threshold=0.7
                 )
 
                 if match_result.get("match"):
+                    logger.info(f"✓ Found match for '{mention}': {match_result['match']['title']}")
                     # Found a clear match
                     task = match_result["match"]
                     task_id = task["_id"]
@@ -381,24 +408,41 @@ Respond with ONLY one word: either "worklog" or "retrieval" based on the primary
             Agent's response
         """
         # Debug logging
+        logger.info("=" * 80)
+        logger.info("=== NEW REQUEST ===")
+        logger.info(f"Input type: {input_type}")
+        logger.info(f"User message: {user_message[:200]}...")
+        logger.info(f"History length: {len(conversation_history) if conversation_history else 0}")
+
         print(f"[COORDINATOR] User message: {user_message}")
         print(f"[COORDINATOR] Input type: {input_type}")
 
         # Handle voice input differently
         if input_type == "voice":
-            return self._process_voice_input(user_message)
+            logger.info("Routing to voice processing pipeline")
+            result = self._process_voice_input(user_message)
+            logger.info("Voice processing complete")
+            return result
 
         # For text input, use normal routing
         # Determine intent
+        logger.debug("Determining intent for text input...")
         intent = self._determine_intent(user_message, conversation_history)
+        logger.info(f"Intent determined: {intent.upper()}")
 
         print(f"[COORDINATOR] Routing to: {intent.upper()} agent")
 
         # Route to appropriate agent
         if intent == "retrieval":
-            return self.retrieval_agent.process(user_message, conversation_history)
+            logger.info("Routing to RETRIEVAL agent")
+            result = self.retrieval_agent.process(user_message, conversation_history)
         else:
-            return self.worklog_agent.process(user_message, conversation_history)
+            logger.info("Routing to WORKLOG agent")
+            result = self.worklog_agent.process(user_message, conversation_history)
+
+        logger.info("Request processing complete")
+        logger.info("=" * 80)
+        return result
 
 
 # Global coordinator instance

@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, Literal
 from bson import ObjectId
 
 from shared.llm import llm_service
+from shared.logger import get_logger
 from shared.embeddings import embed_document
 from shared.db import (
     create_task as db_create_task,
@@ -22,6 +23,8 @@ from shared.db import (
     PROJECTS_COLLECTION,
 )
 from shared.models import Task, Project
+
+logger = get_logger("worklog")
 
 
 class WorklogAgent:
@@ -754,7 +757,12 @@ class WorklogAgent:
         Returns:
             dict with success status and updated entity
         """
+        logger.info(f"apply_voice_update: task_id={task_id}, project_id={project_id}")
+        logger.debug(f"Updates: {updates}")
+        logger.debug(f"Voice log summary: {voice_log_entry.get('summary', 'N/A')}")
+
         if not task_id and not project_id:
+            logger.warning("apply_voice_update called without task_id or project_id")
             return {"success": False, "error": "Must provide either task_id or project_id"}
 
         updates = updates or {}
@@ -762,10 +770,12 @@ class WorklogAgent:
 
         # Process task update
         if task_id:
+            logger.info(f"Applying voice update to task {task_id}")
             task_oid = ObjectId(task_id)
             current_task = db_get_task(task_oid)
 
             if not current_task:
+                logger.error(f"Task {task_id} not found")
                 return {"success": False, "error": "Task not found"}
 
             # Build update dict
@@ -774,6 +784,7 @@ class WorklogAgent:
 
             # Update status if provided
             if "status" in updates:
+                logger.info(f"Updating task status: {current_task.status} → {updates['status']}")
                 update_fields["status"] = updates["status"]
                 changes.append(f"status changed to '{updates['status']}'")
                 if updates["status"] == "done":
