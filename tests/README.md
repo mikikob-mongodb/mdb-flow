@@ -4,12 +4,13 @@ Comprehensive test suite for MDB Flow implementing all 210 tests from `FULL_COMP
 
 ## Current Status
 
-**Implemented: ~60 / 210 tests (29%)**
+**Implemented: ~68 / 210 tests (32%)**
 
 ### Completed Sections
 - ✅ **Section 1: Database & Connection** (8/8 tests) - `unit/test_database.py`
-- ✅ **Section 2: Retrieval Agent** (18/18 tests) - `agents/test_retrieval_agent.py`  
+- ✅ **Section 2: Retrieval Agent** (18/18 tests) - `agents/test_retrieval_agent.py`
 - ✅ **Section 14: Backslash Commands** (34/40 tests) - `ui/test_slash_commands.py`
+- ✅ **Critical Regression Tests** (8/8 tests) - `regression/test_critical_regressions.py`
 
 ### In Progress
 - 🔄 **Section 3: Worklog Agent** (0/12 tests) - `agents/test_worklog_agent.py` - TODO
@@ -71,7 +72,7 @@ tests/
 │
 ├── regression/                          # Critical regression tests
 │   ├── __init__.py
-│   └── test_critical_regressions.py     # TODO: From test_core_functionality.py
+│   └── test_critical_regressions.py     # ✅ 8 critical bug prevention tests
 │
 └── fixtures/                            # Test data and fixtures
     ├── __init__.py
@@ -247,7 +248,15 @@ def test_with_mock_data(task_factory, projects_collection):
 - ⬜ Section 15: Performance (0/12 = 0%)
 - ⬜ Section 16: Error Handling (0/10 = 0%)
 
-**Total: 60/210 tests (29%)**
+**Total: 68/210 tests (32%)**
+
+### Critical Regression Tests
+- ✅ LLM message format bug prevention (extra fields stripped)
+- ✅ Voice input JSON cleanup bug prevention (markdown stripping)
+- ✅ Vector search index name bug prevention
+- ✅ Coordinator input_type parameter acceptance
+- ✅ Conversation history threading
+- ✅ Tool-use message format validation
 
 ## Next Steps
 
@@ -321,10 +330,31 @@ Tests are designed to run in CI/CD pipelines:
 4. **Clear**: Every test has docstring explaining scenario
 5. **Edge Cases**: Critical edge cases are documented and tested
 
+## Migration from Old Test Files
+
+The following files from the old flat structure have been reorganized:
+
+### Extracted and Migrated
+- **test_core_functionality.py** → Extracted to:
+  - `regression/test_critical_regressions.py` (8 critical bug prevention tests)
+  - Remaining tests planned for `unit/test_llm_service.py`, `unit/test_models.py`, `unit/test_audio.py`
+
+### Moved to scripts/debug/
+These were debug scripts, not proper tests:
+- **debug_agent.py** → `scripts/debug/debug_agent.py`
+- **test_hybrid_search.py** → `scripts/debug/test_hybrid_search.py`
+- **test_voice_flow.py** → `scripts/debug/test_voice_flow.py`
+- **test_tool_coordinator.py** → `scripts/debug/test_tool_coordinator.py`
+
+### Reorganized
+- **test_slash_commands.py** → `ui/test_slash_commands.py`
+- **README_SLASH_TESTS.md** → `ui/README_SLASH_TESTS.md`
+
 ## References
 
 - **Test Specification**: `FULL_COMPANION_TEST_SUITE_GUIDE.md`
 - **Slash Command Tests**: `ui/README_SLASH_TESTS.md`
 - **Mock Data**: `fixtures/mock_data.py`
 - **Test Helpers**: `fixtures/test_helpers.py`
+- **Debug Scripts**: `../scripts/debug/README.md`
 - **pytest Documentation**: https://docs.pytest.org/
