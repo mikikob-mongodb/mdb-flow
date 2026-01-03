@@ -276,3 +276,124 @@ def validate_count_range():
         return True
 
     return _validate
+
+
+# ============================================================================
+# Database Test Fixtures
+# ============================================================================
+
+@pytest.fixture(scope="session")
+def db_client():
+    """Get MongoDB client for database tests."""
+    from shared.db import mongodb
+    return mongodb._client if mongodb._client else mongodb.connect() and mongodb._client
+
+
+@pytest.fixture(scope="session")
+def db():
+    """Get flow_companion database for tests."""
+    from shared.db import get_db
+    return get_db()
+
+
+@pytest.fixture(scope="session")
+def tasks_collection():
+    """Get tasks collection for tests."""
+    from shared.db import mongodb
+    return mongodb.get_collection("tasks")
+
+
+@pytest.fixture(scope="session")
+def projects_collection():
+    """Get projects collection for tests."""
+    from shared.db import mongodb
+    return mongodb.get_collection("projects")
+
+
+# ============================================================================
+# Agent Fixtures
+# ============================================================================
+
+@pytest.fixture(scope="session")
+def retrieval_agent():
+    """Get retrieval agent for tests."""
+    from agents.coordinator import coordinator
+    return coordinator.retrieval_agent
+
+
+@pytest.fixture(scope="session")
+def worklog_agent():
+    """Get worklog agent for tests."""
+    from agents.coordinator import coordinator
+    return coordinator.worklog_agent
+
+
+# ============================================================================
+# Mock Data Fixtures
+# ============================================================================
+
+@pytest.fixture
+def task_factory():
+    """Get task factory for creating test tasks."""
+    from tests.fixtures.mock_data import TaskFactory
+    return TaskFactory
+
+
+@pytest.fixture
+def project_factory():
+    """Get project factory for creating test projects."""
+    from tests.fixtures.mock_data import ProjectFactory
+    return ProjectFactory
+
+
+@pytest.fixture
+def conversation_factory():
+    """Get conversation factory for creating test histories."""
+    from tests.fixtures.mock_data import ConversationFactory
+    return ConversationFactory
+
+
+@pytest.fixture
+def activity_log_factory():
+    """Get activity log factory for creating test entries."""
+    from tests.fixtures.mock_data import ActivityLogFactory
+    return ActivityLogFactory
+
+
+# ============================================================================
+# Test Helper Fixtures
+# ============================================================================
+
+@pytest.fixture
+def assert_all_have_field():
+    """Get assert_all_have_field helper."""
+    from tests.fixtures.test_helpers import assert_all_have_field
+    return assert_all_have_field
+
+
+@pytest.fixture
+def assert_all_match():
+    """Get assert_all_match helper."""
+    from tests.fixtures.test_helpers import assert_all_match
+    return assert_all_match
+
+
+@pytest.fixture
+def assert_sorted_by():
+    """Get assert_sorted_by helper."""
+    from tests.fixtures.test_helpers import assert_sorted_by
+    return assert_sorted_by
+
+
+@pytest.fixture
+def measure_execution_time():
+    """Get measure_execution_time helper."""
+    from tests.fixtures.test_helpers import measure_execution_time
+    return measure_execution_time
+
+
+@pytest.fixture
+def assert_execution_time_under():
+    """Get assert_execution_time_under helper."""
+    from tests.fixtures.test_helpers import assert_execution_time_under
+    return assert_execution_time_under
