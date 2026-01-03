@@ -42,6 +42,9 @@ def init_session_state():
     if "last_debug_info" not in st.session_state:
         st.session_state.last_debug_info = []
 
+    if "debug_history" not in st.session_state:
+        st.session_state.debug_history = []
+
 
 def get_all_projects_with_tasks() -> List[Dict[str, Any]]:
     """
@@ -168,48 +171,86 @@ def render_task_list():
 
 
 def render_debug_panel():
-    """Render the debug panel showing tool calls with full details."""
+    """Render the debug panel showing all tool calls grouped by conversation turn."""
     st.markdown("### 🔍 Agent Debug")
-    st.caption("Complete trace of tool calls")
+    st.caption("Complete trace of all tool calls")
 
-    if hasattr(st.session_state, 'last_debug_info') and st.session_state.last_debug_info:
-        # Show total summary
-        total_calls = len(st.session_state.last_debug_info)
-        total_duration = sum(d.get('duration_ms', 0) for d in st.session_state.last_debug_info)
-        st.caption(f"**{total_calls} call(s)** • **{total_duration}ms total**")
-        st.divider()
+    debug_history = st.session_state.get("debug_history", [])
 
-        # Show each call in detail
-        for debug in st.session_state.last_debug_info:
-            call_index = debug.get('index', '?')
-            tool_name = debug.get('tool_name', 'unknown')
+    if not debug_history:
+        st.info("No tool calls yet. Send a message to see the agent's work.")
+        return
 
-            with st.container(border=True):
-                # Header with tool name and duration
-                st.markdown(f"**Call {call_index}:** `{tool_name}`")
-                st.caption(f"⏱️ Duration: **{debug.get('duration_ms', 0)}ms**")
+    # Summary stats at the top
+    total_turns = len(debug_history)
+    total_calls = sum(len(turn["tool_calls"]) for turn in debug_history)
+    total_time = sum(turn["total_duration_ms"] for turn in debug_history)
+    st.caption(f"**{total_turns} turns** • **{total_calls} tool calls** • **{total_time}ms total**")
 
-                # Input parameters
-                if debug.get('tool_input'):
-                    with st.expander("├─ Input", expanded=False):
-                        st.json(debug['tool_input'])
-                else:
-                    st.caption("├─ Input: *(none)*")
+    # Clear button
+    if st.button("🗑️ Clear History", use_container_width=True):
+        st.session_state.debug_history = []
+        st.rerun()
 
-                # Output summary
-                output = debug.get('output_summary', '')
-                if output:
-                    st.caption(f"├─ Output: {output}")
+    st.divider()
 
-                # Success/Error status
-                if debug.get('success'):
-                    st.success("└─ ✓ Success")
-                else:
-                    error_msg = debug.get('error', 'Unknown error')
-                    st.error(f"└─ ✗ Failed: {error_msg}")
+    # Show turns in reverse order (most recent first)
+    for turn in reversed(debug_history):
+        # Determine if this is the most recent turn (should be expanded)
+        is_most_recent = (turn == debug_history[-1])
 
-    else:
-        st.info("No debug info yet. Send a message to see tool calls.")
+        # Create expander label
+        user_input_preview = turn["user_input"][:50]
+        if len(turn["user_input"]) > 50:
+            user_input_preview += "..."
+
+        expander_label = f"**Turn {turn['turn']}**: {user_input_preview} ({turn['total_duration_ms']}ms)"
+
+        with st.expander(expander_label, expanded=is_most_recent):
+            # Show timestamp
+            st.caption(f"🕐 {turn['timestamp']}")
+
+            # Show full user input if it was truncated
+            if len(turn["user_input"]) > 50:
+                st.caption(f"*Full input: {turn['user_input']}*")
+
+            st.markdown("---")
+
+            # Show each tool call
+            for i, call in enumerate(turn["tool_calls"], 1):
+                st.markdown(f"**Call {i}:** `{call['name']}`")
+
+                # Two-column layout: details on left, timing/status on right
+                col1, col2 = st.columns([3, 1])
+
+                with col1:
+                    # Input parameters (collapsible)
+                    if call["input"]:
+                        with st.expander("Input", expanded=False):
+                            st.json(call["input"])
+                    else:
+                        st.caption("*No input*")
+
+                    # Output summary
+                    st.caption(f"**Output:** {call['output']}")
+
+                with col2:
+                    # Duration
+                    st.caption(f"⏱️ {call['duration_ms']}ms")
+
+                    # Success/Error indicator
+                    if call["success"]:
+                        st.success("✓")
+                    else:
+                        error_msg = call.get("error", "Failed")
+                        st.error(f"✗")
+                        if error_msg:
+                            st.caption(f"*{error_msg}*")
+
+                # Show arrow between calls (except after last call)
+                if i < len(turn["tool_calls"]):
+                    st.markdown("↓")
+                    st.markdown("")  # Add spacing
 
 
 def render_chat():
@@ -270,14 +311,23 @@ def render_chat():
                 # Prepare conversation history for the coordinator
                 history = st.session_state.messages[:-1]  # Exclude the current message
 
+                # Calculate turn number
+                turn_number = len(st.session_state.debug_history) + 1
+
                 # Process message through coordinator
-                response = st.session_state.coordinator.process(prompt, history, input_type="text")
+                response = st.session_state.coordinator.process(
+                    prompt, history, input_type="text", turn_number=turn_number
+                )
 
                 # Display response
                 st.markdown(response)
 
-                # Store debug info in session state
+                # Store debug info in session state (backwards compatibility)
                 st.session_state.last_debug_info = st.session_state.coordinator.last_debug_info
+
+                # Append current turn to debug history
+                if st.session_state.coordinator.current_turn:
+                    st.session_state.debug_history.append(st.session_state.coordinator.current_turn)
 
         # Add assistant response to history
         st.session_state.messages.append({
@@ -323,14 +373,23 @@ def render_chat():
                     # Prepare conversation history for the coordinator
                     history = st.session_state.messages[:-1]  # Exclude the current message
 
+                    # Calculate turn number
+                    turn_number = len(st.session_state.debug_history) + 1
+
                     # Process message through coordinator with voice flag
-                    response = st.session_state.coordinator.process(transcript, history, input_type="voice")
+                    response = st.session_state.coordinator.process(
+                        transcript, history, input_type="voice", turn_number=turn_number
+                    )
 
                     # Display response
                     st.markdown(response)
 
-                    # Store debug info in session state
+                    # Store debug info in session state (backwards compatibility)
                     st.session_state.last_debug_info = st.session_state.coordinator.last_debug_info
+
+                    # Append current turn to debug history
+                    if st.session_state.coordinator.current_turn:
+                        st.session_state.debug_history.append(st.session_state.coordinator.current_turn)
 
             # Add assistant response to history
             st.session_state.messages.append({

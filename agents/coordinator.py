@@ -196,7 +196,38 @@ class CoordinatorAgent:
         self.llm = llm_service
         self.worklog_agent = worklog_agent
         self.retrieval_agent = retrieval_agent
-        self.last_debug_info = []  # Store debug info from last request
+        self.last_debug_info = []  # Store debug info from last request (deprecated - use current_turn)
+        self.current_turn = None  # Current conversation turn with all tool calls
+
+    def _summarize_output(self, result: Any) -> str:
+        """
+        Create a brief summary of tool output for debug display.
+
+        Args:
+            result: The tool result to summarize
+
+        Returns:
+            Brief string summary
+        """
+        if result is None:
+            return "None"
+        elif isinstance(result, dict):
+            if "tasks" in result:
+                return f"{result.get('count', 0)} tasks returned"
+            elif "projects" in result:
+                return f"{result.get('count', 0)} projects returned"
+            elif "success" in result:
+                if result["success"]:
+                    return "Success"
+                else:
+                    return f"Error: {result.get('error', 'Unknown')}"
+            else:
+                # Truncate dict representation
+                return str(result)[:200]
+        elif isinstance(result, list):
+            return f"{len(result)} items returned"
+        else:
+            return str(result)[:200]
 
     def _execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
         """
@@ -300,20 +331,8 @@ class CoordinatorAgent:
             # Always calculate duration, even on error
             duration_ms = int((time.time() - start_time) * 1000)
 
-            # Create output summary
-            output_summary = ""
-            if result:
-                if result.get("success"):
-                    if "tasks" in result:
-                        output_summary = f"{result['count']} tasks returned"
-                    elif "projects" in result:
-                        output_summary = f"{result['count']} projects returned"
-                    elif "result" in result:
-                        output_summary = str(result["result"])[:200]
-                    else:
-                        output_summary = "Success"
-                else:
-                    output_summary = f"Error: {result.get('error', 'Unknown')}"
+            # Use new summarize method for consistent output summary
+            output_summary = self._summarize_output(result)
 
             # Build debug info (don't include full result to avoid serialization issues)
             debug_info = {
@@ -325,9 +344,20 @@ class CoordinatorAgent:
                 "error": error_msg
             }
 
+            # Also append to current turn if we're tracking it
+            if self.current_turn is not None:
+                self.current_turn["tool_calls"].append({
+                    "name": tool_name,
+                    "input": tool_input,
+                    "output": output_summary,
+                    "duration_ms": duration_ms,
+                    "success": result.get("success", False) if result else False,
+                    "error": error_msg
+                })
+
             return result, debug_info
 
-    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text") -> str:
+    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1) -> str:
         """
         Process a user message using Claude's native tool use.
 
@@ -337,6 +367,7 @@ class CoordinatorAgent:
             user_message: User's message (voice transcript or text)
             conversation_history: Optional conversation history
             input_type: Type of input ("text" or "voice") - for logging only
+            turn_number: The turn number for this request (for debug tracking)
 
         Returns:
             Agent's response
@@ -347,7 +378,16 @@ class CoordinatorAgent:
         logger.info(f"User message: {user_message[:200]}...")
         logger.info(f"History length: {len(conversation_history) if conversation_history else 0}")
 
-        # Reset debug info
+        # Create new turn for debug tracking
+        self.current_turn = {
+            "turn": turn_number,
+            "user_input": user_message[:100] + "..." if len(user_message) > 100 else user_message,
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "tool_calls": [],
+            "total_duration_ms": 0
+        }
+
+        # Reset old debug info (kept for backwards compatibility)
         self.last_debug_info = []
 
         # Build messages - SAME PATH FOR VOICE AND TEXT
@@ -428,6 +468,12 @@ class CoordinatorAgent:
         for content_block in response.content:
             if hasattr(content_block, 'text'):
                 final_text += content_block.text
+
+        # Calculate total duration for this turn
+        if self.current_turn is not None:
+            self.current_turn["total_duration_ms"] = sum(
+                tc["duration_ms"] for tc in self.current_turn["tool_calls"]
+            )
 
         logger.info("Request processing complete")
         logger.info("=" * 80)
