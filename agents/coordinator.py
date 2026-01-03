@@ -217,13 +217,19 @@ Respond with ONLY one word: either "worklog" or "retrieval" based on the primary
 
     def _process_voice_input(self, transcript: str) -> str:
         """
-        Process voice input with special handling for stream-of-consciousness updates.
+        Process voice input: search for tasks → show options → ask for confirmation.
+
+        Simple flow:
+        1. Parse voice to understand intent (completion, progress, note, etc.)
+        2. Search for matching tasks
+        3. Show top results and ask user to confirm
+        4. User responds with number or name to execute
 
         Args:
             transcript: Voice transcript
 
         Returns:
-            Summary of what was captured and actions taken
+            Search results and confirmation request
         """
         logger.info("=" * 80)
         logger.info("=== VOICE PROCESSING START ===")
@@ -234,166 +240,80 @@ Respond with ONLY one word: either "worklog" or "retrieval" based on the primary
         parsed = self.parse_voice_input(transcript)
 
         logger.debug(f"Task references found: {parsed['task_references']}")
-        logger.debug(f"Project references found: {parsed['project_references']}")
         logger.debug(f"Completions found: {parsed['completions']}")
         logger.debug(f"Progress updates found: {parsed['progress_updates']}")
-        logger.debug(f"New items found: {parsed['new_items']}")
+        logger.debug(f"Notes found: {parsed['notes_to_add']}")
 
-        # Build a summary of actions
-        actions_taken = []
-        clarifications_needed = []
-        new_items_pending = []
+        # Determine the action type from parsed data
+        action_type = None
+        action_description = None
 
-        # 1. Process task references (completions, progress updates, deferrals)
-        if parsed["task_references"]:
-            logger.info(f"Processing {len(parsed['task_references'])} task reference(s)")
-            for ref in parsed["task_references"]:
-                mention = ref.get("mention", "")
-                logger.debug(f"Attempting fuzzy match for task reference: '{mention}'")
+        if parsed["completions"]:
+            action_type = "complete"
+            action_description = "completed"
+        elif parsed["progress_updates"]:
+            action_type = "progress"
+            action_description = "working on"
+        elif parsed["notes_to_add"]:
+            action_type = "note"
+            action_description = "add a note to"
+        elif parsed["deferrals"]:
+            action_type = "defer"
+            action_description = "deferred"
 
-                # Try to fuzzy match the task
-                match_result = self.retrieval_agent.fuzzy_match_task(
-                    reference=mention,
-                    threshold=0.7
-                )
+        # If we found task references, do semantic search and show options
+        if parsed["task_references"] and action_type:
+            # Take the first task reference
+            ref = parsed["task_references"][0]
+            mention = ref.get("mention", "")
 
-                if match_result.get("match"):
-                    logger.info(f"✓ Found match for '{mention}': {match_result['match']['title']}")
-                    # Found a clear match
-                    task = match_result["match"]
-                    task_id = task["_id"]
+            logger.info(f"Searching for tasks matching: '{mention}'")
 
-                    # Check if this task was mentioned in completions
-                    for completion in parsed["completions"]:
-                        if ref["mention"].lower() in completion["what"].lower():
-                            # Mark as completed
-                            result = self.worklog_agent.apply_voice_update(
-                                task_id=task_id,
-                                updates={"status": "done"},
-                                voice_log_entry={
-                                    "summary": parsed["cleaned_summary"],
-                                    "raw_transcript": transcript,
-                                    "extracted": parsed
-                                }
-                            )
-                            actions_taken.append(f"✓ Marked '{task['title']}' as done")
+            # Do semantic search (without threshold filtering)
+            search_results = self.retrieval_agent._search_semantic(
+                query=mention,
+                collections=["tasks"],
+                limit=5
+            )
 
-                    # Check for progress updates
-                    for progress in parsed["progress_updates"]:
-                        if ref["mention"].lower() in progress["what"].lower():
-                            # Add progress note
-                            note = f"{progress['status']}: {progress.get('details', '')}"
-                            result = self.worklog_agent.apply_voice_update(
-                                task_id=task_id,
-                                updates={"notes_to_add": [note]},
-                                voice_log_entry={
-                                    "summary": parsed["cleaned_summary"],
-                                    "raw_transcript": transcript,
-                                    "extracted": parsed
-                                }
-                            )
-                            actions_taken.append(f"📝 Added progress update to '{task['title']}'")
+            if search_results.get("success") and search_results.get("results"):
+                tasks = search_results["results"]
+                logger.info(f"Found {len(tasks)} potential matches")
 
-                    # Check for deferrals
-                    for deferral in parsed["deferrals"]:
-                        if ref["mention"].lower() in deferral["what"].lower():
-                            # Add deferral note
-                            note = f"Deferred to {deferral['when']}: {deferral.get('reason', '')}"
-                            result = self.worklog_agent.apply_voice_update(
-                                task_id=task_id,
-                                updates={"notes_to_add": [note]},
-                                voice_log_entry={
-                                    "summary": parsed["cleaned_summary"],
-                                    "raw_transcript": transcript,
-                                    "extracted": parsed
-                                }
-                            )
-                            actions_taken.append(f"⏸️ Deferred '{task['title']}' to {deferral['when']}")
+                # Build confirmation message
+                response_parts = []
+                response_parts.append(f"I heard you say you {action_description} something.")
+                response_parts.append(f"\nWhich task did you mean?\n")
 
-                elif match_result.get("alternatives"):
-                    # Ambiguous - ask for clarification
-                    alt_titles = [alt["title"] for alt in match_result["alternatives"][:3]]
-                    clarifications_needed.append(
-                        f"❓ Which task did you mean by '{ref['mention']}'?\n  - " + "\n  - ".join(alt_titles)
-                    )
+                for i, task in enumerate(tasks[:5], 1):
+                    status_icon = {"todo": "○", "in_progress": "◐", "done": "✓"}.get(task.get('status'), "○")
+                    project_info = f" ({task.get('project_name', '')})" if task.get('project_name') else ""
+                    response_parts.append(f"{i}. {status_icon} {task['title']}{project_info}")
 
-        # 2. Process project references with context updates
-        if parsed["project_references"]:
-            for ref in parsed["project_references"]:
-                # Try to fuzzy match the project
-                match_result = self.retrieval_agent.fuzzy_match_project(
-                    reference=ref.get("mention", ""),
-                    threshold=0.7
-                )
+                response_parts.append(f"\n**Please mention the task name** to confirm and I'll mark it as {action_description}.")
 
-                if match_result.get("match"):
-                    project = match_result["match"]
-                    project_id = project["_id"]
+                return "\n".join(response_parts)
+            else:
+                return f"I couldn't find any tasks matching '{mention}'. Can you be more specific?"
 
-                    # Check for context updates
-                    for context_update in parsed["context_updates"]:
-                        if ref["mention"].lower() in context_update["target"].lower():
-                            # Add context to project
-                            result = self.worklog_agent.apply_voice_update(
-                                project_id=project_id,
-                                updates={"context": context_update["context"]},
-                                voice_log_entry={
-                                    "summary": parsed["cleaned_summary"],
-                                    "raw_transcript": transcript,
-                                    "extracted": parsed
-                                }
-                            )
-                            actions_taken.append(f"📋 Updated context for '{project['name']}'")
-
-        # 3. Handle decisions
-        if parsed["decisions"]:
-            # Try to infer which project these decisions belong to
-            for decision in parsed["decisions"]:
-                decision_text = f"{decision['decision']}"
-                if decision.get("reasoning"):
-                    decision_text += f" - Reasoning: {decision['reasoning']}"
-
-                # For now, just add to notes
-                actions_taken.append(f"💡 Captured decision: {decision['decision']}")
-
-        # 4. Handle general notes
-        if parsed["notes_to_add"]:
-            for note in parsed["notes_to_add"]:
-                actions_taken.append(f"📝 Noted: {note['note']}")
-
-        # 5. Handle new items - ask for confirmation
+        # Handle new items
         if parsed["new_items"]:
-            for item in parsed["new_items"]:
-                source_info = f" (from: {item['source']})" if item.get("source") else ""
-                new_items_pending.append(
-                    f"Should I create a task: '{item['task']}'{source_info}?"
-                )
+            response_parts = []
+            response_parts.append("I heard you mention creating new tasks:\n")
+            for i, item in enumerate(parsed["new_items"], 1):
+                source_info = f" (source: {item['source']})" if item.get("source") else ""
+                response_parts.append(f"{i}. {item['task']}{source_info}")
 
-        # Build response
-        response_parts = []
+            response_parts.append("\nShould I create these tasks? Reply 'yes' to confirm or provide more details.")
+            return "\n".join(response_parts)
 
-        if parsed["cleaned_summary"]:
-            response_parts.append(f"**Voice Update Received:** {parsed['cleaned_summary']}\n")
+        # Handle general notes without a task reference
+        if parsed["notes_to_add"] and not parsed["task_references"]:
+            notes_text = "\n".join([f"- {note['note']}" for note in parsed["notes_to_add"]])
+            return f"I captured these notes:\n\n{notes_text}\n\nWhich task or project should I add them to?"
 
-        if actions_taken:
-            response_parts.append("**Actions taken:**")
-            response_parts.extend(actions_taken)
-            response_parts.append("")
-
-        if clarifications_needed:
-            response_parts.append("**Need clarification:**")
-            response_parts.extend(clarifications_needed)
-            response_parts.append("")
-
-        if new_items_pending:
-            response_parts.append("**New items mentioned:**")
-            response_parts.extend(new_items_pending)
-            response_parts.append("")
-
-        if not actions_taken and not clarifications_needed and not new_items_pending:
-            response_parts.append("I captured your update but didn't find any specific actions to take. Could you clarify what you'd like me to do?")
-
-        return "\n".join(response_parts)
+        # Fallback: no clear action detected
+        return f"I heard: \"{parsed['cleaned_summary']}\"\n\nCould you clarify what you'd like me to do? For example:\n- 'I finished [task name]'\n- 'I'm working on [task name]'\n- 'Add a note to [task name]: [your note]'"
 
     def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text") -> str:
         """
