@@ -40,9 +40,15 @@ class LLMService:
         Returns:
             Generated text response
         """
+        # Strip non-API fields from messages (e.g., input_type)
+        clean_messages = [
+            {"role": m["role"], "content": m["content"]}
+            for m in messages
+        ]
+
         params = {
             "model": self.model,
-            "messages": messages,
+            "messages": clean_messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
             **kwargs
@@ -111,9 +117,15 @@ class LLMService:
         Returns:
             Full API response object with tool calls
         """
+        # Strip non-API fields from messages (e.g., input_type)
+        clean_messages = [
+            {"role": m["role"], "content": m["content"]}
+            for m in messages
+        ]
+
         params = {
             "model": self.model,
-            "messages": messages,
+            "messages": clean_messages,
             "tools": tools,
             "max_tokens": max_tokens,
             "temperature": temperature,

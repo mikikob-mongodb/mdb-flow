@@ -10,19 +10,24 @@ def transcribe_audio(audio_bytes: bytes) -> str:
     Transcribe audio bytes to text using OpenAI Whisper API.
 
     Args:
-        audio_bytes: Raw audio data in bytes format (webm format from browser)
+        audio_bytes: Raw audio data in bytes format (WAV format from st.audio_input)
 
     Returns:
         Transcribed text as a string, or empty string if transcription fails
     """
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
+        print("[AUDIO] OPENAI_API_KEY not found in environment")
+        return ""
+
+    if not audio_bytes or len(audio_bytes) == 0:
+        print("[AUDIO] No audio data provided")
         return ""
 
     temp_file_path = None
     try:
-        # Save audio bytes to temporary file
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.webm', delete=False) as temp_file:
+        # Save audio bytes to temporary file (st.audio_input provides WAV format)
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.wav', delete=False) as temp_file:
             temp_file.write(audio_bytes)
             temp_file_path = temp_file.name
 
@@ -37,7 +42,8 @@ def transcribe_audio(audio_bytes: bytes) -> str:
 
         return transcript.strip()
 
-    except Exception:
+    except Exception as e:
+        print(f"[AUDIO] Transcription error: {type(e).__name__}: {str(e)}")
         return ""
 
     finally:

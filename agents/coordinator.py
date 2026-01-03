@@ -94,8 +94,20 @@ Be generous in interpretation - capture the intent even if vague. Return empty a
                 temperature=0.0
             )
 
+            print(f"[COORDINATOR] Raw LLM response:\n{response}")
+
+            # Clean up response - remove markdown code blocks if present
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]  # Remove ```json
+            if cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]  # Remove ```
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]  # Remove trailing ```
+            cleaned_response = cleaned_response.strip()
+
             # Parse JSON response
-            parsed = json.loads(response.strip())
+            parsed = json.loads(cleaned_response)
 
             # Ensure all expected keys exist
             default_structure = {

@@ -28,6 +28,9 @@ def init_session_state():
     if "coordinator" not in st.session_state:
         st.session_state.coordinator = coordinator
 
+    if "last_audio_bytes" not in st.session_state:
+        st.session_state.last_audio_bytes = None
+
 
 def get_all_projects_with_tasks() -> List[Dict[str, Any]]:
     """
@@ -209,10 +212,19 @@ def render_chat():
 
     # Handle audio input
     elif audio_bytes:
+        # Get bytes from the audio file
+        audio_data = audio_bytes.getvalue()
+
+        # Check if this is the same audio we just processed (prevent duplicates)
+        if audio_data == st.session_state.last_audio_bytes:
+            # Skip - already processed this audio
+            return
+
+        # Store this audio as the last processed
+        st.session_state.last_audio_bytes = audio_data
+
         # Show transcribing spinner
         with st.spinner("🎤 Transcribing..."):
-            # Get bytes from the audio file
-            audio_data = audio_bytes.getvalue()
             transcript = transcribe_audio(audio_data)
 
         if transcript:

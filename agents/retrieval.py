@@ -225,7 +225,7 @@ class RetrievalAgent:
             pipeline = [
                 {
                     "$vectorSearch": {
-                        "index": "task_embedding_index",  # Atlas search index name
+                        "index": "vector_index",  # Atlas search index name
                         "path": "embedding",
                         "queryVector": query_embedding,
                         "numCandidates": limit * 10,  # Scan more candidates for better results
@@ -265,7 +265,7 @@ class RetrievalAgent:
             pipeline = [
                 {
                     "$vectorSearch": {
-                        "index": "project_embedding_index",  # Atlas search index name
+                        "index": "vector_index",  # Atlas search index name
                         "path": "embedding",
                         "queryVector": query_embedding,
                         "numCandidates": limit * 10,
@@ -645,7 +645,7 @@ class RetrievalAgent:
         pipeline = [
             {
                 "$vectorSearch": {
-                    "index": "task_embedding_index",
+                    "index": "vector_index",
                     "path": "embedding",
                     "queryVector": query_embedding,
                     "numCandidates": 50,
@@ -762,7 +762,7 @@ class RetrievalAgent:
         pipeline = [
             {
                 "$vectorSearch": {
-                    "index": "project_embedding_index",
+                    "index": "vector_index",
                     "path": "embedding",
                     "queryVector": query_embedding,
                     "numCandidates": 50,
