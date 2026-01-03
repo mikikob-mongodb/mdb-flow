@@ -1,27 +1,22 @@
 """Data models for Flow Companion."""
 
 from datetime import datetime
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Optional, Literal, Annotated, Any
+from pydantic import BaseModel, Field, BeforeValidator
 from bson import ObjectId
 
 
-class PyObjectId(ObjectId):
-    """Custom ObjectId type for Pydantic."""
-
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
+def validate_object_id(v: Any) -> ObjectId:
+    """Validate and convert to ObjectId for Pydantic v2."""
+    if isinstance(v, ObjectId):
+        return v
+    if ObjectId.is_valid(v):
         return ObjectId(v)
+    raise ValueError("Invalid ObjectId")
 
-    @classmethod
-    def __get_pydantic_json_schema__(cls, field_schema):
-        field_schema.update(type="string")
+
+# Pydantic v2 compatible ObjectId type using Annotated
+PyObjectId = Annotated[ObjectId, BeforeValidator(validate_object_id)]
 
 
 class ActivityLogEntry(BaseModel):
