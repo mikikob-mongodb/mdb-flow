@@ -768,6 +768,11 @@ class WorklogAgent:
 You have access to tools for creating, updating, and managing tasks and projects.
 Use the appropriate tools to help users manage their work.
 
+When users ask about their tasks or projects:
+- ALWAYS use the list_tasks or list_projects tools to check what exists
+- Don't assume the database is empty - always check first
+- Report the actual results from the tools
+
 When creating or updating tasks/projects:
 - Extract relevant information from the user's message
 - Ask for clarification if needed before using tools
@@ -818,6 +823,10 @@ Always use the tools to perform actual operations - don't just describe what you
 
                         # Execute tool
                         result = self.execute_tool(tool_name, tool_input)
+
+                        # Debug logging
+                        print(f"[DEBUG] Tool: {tool_name}, Input: {tool_input}")
+                        print(f"[DEBUG] Result count: {result.get('count', 'N/A')}, Success: {result.get('success', 'N/A')}")
 
                         # Add result
                         tool_results.append({

@@ -678,6 +678,10 @@ Provide clear, organized summaries of search results."""
                         # Execute tool
                         result = self.execute_tool(tool_name, tool_input)
 
+                        # Debug logging
+                        print(f"[DEBUG] Tool: {tool_name}, Input: {tool_input}")
+                        print(f"[DEBUG] Result count: {result.get('count', 'N/A')}, Success: {result.get('success', 'N/A')}")
+
                         # Add result
                         tool_results.append({
                             "type": "tool_result",
