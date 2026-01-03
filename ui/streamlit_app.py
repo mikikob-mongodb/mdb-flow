@@ -187,6 +187,18 @@ def render_debug_panel():
     total_time = sum(turn["total_duration_ms"] for turn in debug_history)
     st.caption(f"**{total_turns} turns** • **{total_calls} tool calls** • **{total_time}ms total**")
 
+    # Latency breakdown legend
+    with st.expander("⏱️ Latency Legend", expanded=False):
+        st.markdown("""
+        **Component breakdown:**
+        - 🔵 **LLM Thinking**: Claude deciding actions and generating responses (typically 500-3000ms)
+        - 🟢 **MongoDB Query**: Database read/write operations (typically 50-150ms)
+        - 🟡 **Embedding Generation**: Voyage AI API for semantic vectors (typically 200-400ms)
+        - ⚪ **Processing**: Python overhead and serialization (typically <50ms)
+
+        *MongoDB is fast! Most latency comes from LLM thinking and external API calls.*
+        """)
+
     # Clear button
     if st.button("🗑️ Clear History", use_container_width=True):
         st.session_state.debug_history = []
@@ -194,17 +206,35 @@ def render_debug_panel():
 
     st.divider()
 
-    # Show turns in reverse order (most recent first)
-    for turn in reversed(debug_history):
-        # Determine if this is the most recent turn (should be expanded)
+    # Show turns in chronological order (oldest first, newest last)
+    for turn in debug_history:
+        # Expand the most recent turn (last in the list)
         is_most_recent = (turn == debug_history[-1])
 
-        # Create expander label
+        # Create expander label with LLM vs Tool breakdown
         user_input_preview = turn["user_input"][:50]
         if len(turn["user_input"]) > 50:
             user_input_preview += "..."
 
-        expander_label = f"**Turn {turn['turn']}**: {user_input_preview} ({turn['total_duration_ms']}ms)"
+        # Calculate time breakdown
+        total_time = turn['total_duration_ms']
+        llm_time = turn.get('llm_time_ms', 0)
+        tool_time = sum(tc["duration_ms"] for tc in turn["tool_calls"]) if turn["tool_calls"] else 0
+
+        # Calculate percentages (avoid division by zero)
+        if total_time > 0:
+            llm_pct = int((llm_time / total_time) * 100)
+            tool_pct = int((tool_time / total_time) * 100)
+        else:
+            llm_pct = 0
+            tool_pct = 0
+
+        # Build label with breakdown
+        expander_label = f"**Turn {turn['turn']}**: {user_input_preview} ({total_time}ms)\n"
+        expander_label += f"        🔵 LLM: {llm_time}ms ({llm_pct}%)"
+
+        if tool_time > 0:
+            expander_label += f" • 🛠️ Tools: {tool_time}ms ({tool_pct}%)"
 
         with st.expander(expander_label, expanded=is_most_recent):
             # Show timestamp
@@ -234,6 +264,57 @@ def render_debug_panel():
                     # Output summary
                     st.caption(f"**Output:** {call['output']}")
 
+                    # Show latency breakdown if available
+                    if call.get("breakdown"):
+                        breakdown = call["breakdown"]
+
+                        # Calculate total time for percentages
+                        total_breakdown_time = sum(breakdown.values())
+
+                        # Determine MongoDB operation type based on tool name
+                        tool_name = call["name"]
+                        mongodb_op_type_map = {
+                            "get_tasks": "find query",
+                            "get_projects": "find query",
+                            "search_tasks": "$rankFusion hybrid",
+                            "search_projects": "$rankFusion hybrid",
+                            "get_tasks_by_time": "temporal query ($elemMatch)",
+                            "complete_task": "update",
+                            "start_task": "update",
+                            "add_note_to_task": "update"
+                        }
+                        mongodb_op_type = mongodb_op_type_map.get(tool_name, "query")
+
+                        # Check if get_tasks/get_projects has filters for more specific labeling
+                        if tool_name in ["get_tasks", "get_projects"] and call.get("input"):
+                            has_filters = any(v for v in call["input"].values() if v)
+                            if has_filters:
+                                mongodb_op_type = "filtered find"
+                            else:
+                                mongodb_op_type = "simple find"
+
+                        # Create detailed component mapping
+                        component_info = {
+                            "embedding_generation": {"emoji": "🟡", "label": "Embedding (Voyage)"},
+                            "mongodb_query": {"emoji": "🟢", "label": f"MongoDB ({mongodb_op_type})"},
+                            "processing": {"emoji": "⚪", "label": "Processing (Python)"}
+                        }
+
+                        # Build breakdown with percentages
+                        st.caption("**Breakdown:**")
+                        for component, ms in breakdown.items():
+                            info = component_info.get(component, {"emoji": "⚪", "label": component.replace("_", " ").title()})
+                            emoji = info["emoji"]
+                            label = info["label"]
+
+                            # Calculate percentage
+                            if total_breakdown_time > 0:
+                                pct = int((ms / total_breakdown_time) * 100)
+                            else:
+                                pct = 0
+
+                            st.caption(f"{emoji} {label}: {ms}ms ({pct}%)")
+
                 with col2:
                     # Duration
                     st.caption(f"⏱️ {call['duration_ms']}ms")
@@ -251,6 +332,32 @@ def render_debug_panel():
                 if i < len(turn["tool_calls"]):
                     st.markdown("↓")
                     st.markdown("")  # Add spacing
+
+            # Show LLM calls (Claude thinking/responding)
+            if turn.get("llm_calls"):
+                # Add separator if there were tool calls
+                if turn["tool_calls"]:
+                    st.markdown("---")
+
+                st.markdown("**🔵 LLM Thinking**")
+
+                # Group LLM calls by purpose
+                llm_time = turn.get("llm_time_ms", 0)
+                num_calls = len(turn["llm_calls"])
+
+                # Two-column layout
+                col1, col2 = st.columns([3, 1])
+
+                with col1:
+                    # Show breakdown of LLM calls
+                    for llm_call in turn["llm_calls"]:
+                        purpose = llm_call["purpose"].replace("_", " ").title()
+                        duration = llm_call["duration_ms"]
+                        st.caption(f"• {purpose}: {duration}ms")
+
+                with col2:
+                    st.caption(f"⏱️ {llm_time}ms")
+                    st.caption(f"({num_calls} call{'s' if num_calls > 1 else ''})")
 
 
 def render_chat():

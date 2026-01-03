@@ -33,6 +33,7 @@ class WorklogAgent:
     def __init__(self):
         self.llm = llm_service
         self.tools = self._define_tools()
+        self.last_query_timings = {}  # Track latency breakdown for debug panel
 
     def _define_tools(self) -> List[Dict[str, Any]]:
         """Define all available tools for the agent."""
@@ -423,6 +424,11 @@ class WorklogAgent:
         project_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Update an existing task."""
+        import time
+
+        # Track timings for debug panel
+        timings = {}
+
         task_oid = ObjectId(task_id)
         current_task = db_get_task(task_oid)
 
@@ -454,17 +460,23 @@ class WorklogAgent:
 
         # Re-generate embedding if title or context changed
         if title is not None or context is not None:
+            start = time.time()
             new_title = title if title is not None else current_task.title
             new_context = context if context is not None else current_task.context
             embedding_text = f"{new_title}\n{new_context}".strip()
             updates["embedding"] = embed_document(embedding_text)
+            timings["embedding_generation"] = int((time.time() - start) * 1000)
 
-        # Update in database
+        # Time MongoDB update operation
         action_note = "; ".join(changes) if changes else "Task updated"
+        start = time.time()
         success = db_update_task(task_oid, updates, "updated", action_note)
-
-        # Return updated task
         updated_task = db_get_task(task_oid)
+        timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+        # Store timings for coordinator to access
+        self.last_query_timings = timings
+
         return {
             "success": success,
             "task": self._task_to_dict(updated_task)
@@ -476,6 +488,11 @@ class WorklogAgent:
         completion_note: Optional[str] = None
     ) -> Dict[str, Any]:
         """Mark a task as completed."""
+        import time
+
+        # Track timings for debug panel
+        timings = {}
+
         task_oid = ObjectId(task_id)
 
         updates = {
@@ -484,9 +501,16 @@ class WorklogAgent:
         }
 
         action_note = completion_note if completion_note else "Task completed"
-        success = db_update_task(task_oid, updates, "completed", action_note)
 
+        # Time MongoDB update operation
+        start = time.time()
+        success = db_update_task(task_oid, updates, "completed", action_note)
         updated_task = db_get_task(task_oid)
+        timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+        # Store timings for coordinator to access
+        self.last_query_timings = timings
+
         return {
             "success": success,
             "task": self._task_to_dict(updated_task)
@@ -664,6 +688,11 @@ class WorklogAgent:
         limit: int = 20
     ) -> Dict[str, Any]:
         """List tasks with optional filters."""
+        import time
+
+        # Track timings for debug panel
+        timings = {}
+
         collection = get_collection(TASKS_COLLECTION)
 
         # Build query
@@ -673,9 +702,14 @@ class WorklogAgent:
         if status:
             query["status"] = status
 
-        # Execute query - exclude embedding field for performance
+        # Time MongoDB query execution
+        start = time.time()
         cursor = collection.find(query, {"embedding": 0}).sort("created_at", -1).limit(limit)
         tasks = [Task(**doc) for doc in cursor]
+        timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+        # Store timings for coordinator to access
+        self.last_query_timings = timings
 
         return {
             "success": True,

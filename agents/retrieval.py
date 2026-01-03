@@ -25,6 +25,7 @@ class RetrievalAgent:
     def __init__(self):
         self.llm = llm_service
         self.tools = self._define_tools()
+        self.last_query_timings = {}  # Track latency breakdown for debug panel
 
     def _define_tools(self) -> List[Dict[str, Any]]:
         """Define all available tools for the agent."""
@@ -896,11 +897,18 @@ class RetrievalAgent:
         Returns:
             List of task dicts with _id, title, context, status, project_id, score
         """
+        import time
+
         logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}")
 
-        # Generate query embedding
+        # Track timings for debug panel
+        timings = {}
+
+        # Time embedding generation
+        start = time.time()
         query_embedding = embedding_embed_query(query)
-        logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions")
+        timings["embedding_generation"] = int((time.time() - start) * 1000)
+        logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions ({timings['embedding_generation']}ms)")
 
         # Build hybrid search pipeline
         pipeline = [
@@ -957,9 +965,19 @@ class RetrievalAgent:
 
         # Execute search
         try:
+            # Time MongoDB query execution
+            start = time.time()
             tasks_collection = get_collection(TASKS_COLLECTION)
             results = list(tasks_collection.aggregate(pipeline))
-            logger.info(f"Hybrid search returned {len(results)} task(s)")
+            timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+            # Calculate processing overhead
+            timings["processing"] = max(0, timings.get("total", 0) - timings["embedding_generation"] - timings["mongodb_query"])
+
+            # Store timings for coordinator to access
+            self.last_query_timings = timings
+
+            logger.info(f"Hybrid search returned {len(results)} task(s) (embed: {timings['embedding_generation']}ms, db: {timings['mongodb_query']}ms)")
 
             # Log top results
             for i, task in enumerate(results[:3], 1):
@@ -968,6 +986,7 @@ class RetrievalAgent:
             return results
         except Exception as e:
             logger.error(f"Hybrid search failed: {e}", exc_info=True)
+            self.last_query_timings = timings  # Store even on error
             return []
 
     def hybrid_search_projects(self, query: str, limit: int = 5) -> list:
@@ -981,11 +1000,18 @@ class RetrievalAgent:
         Returns:
             List of project dicts with _id, name, description, context, status, score
         """
+        import time
+
         logger.info(f"hybrid_search_projects: query='{query}', limit={limit}")
 
-        # Generate query embedding
+        # Track timings for debug panel
+        timings = {}
+
+        # Time embedding generation
+        start = time.time()
         query_embedding = embedding_embed_query(query)
-        logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions")
+        timings["embedding_generation"] = int((time.time() - start) * 1000)
+        logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions ({timings['embedding_generation']}ms)")
 
         # Build hybrid search pipeline
         pipeline = [
@@ -1042,9 +1068,16 @@ class RetrievalAgent:
 
         # Execute search
         try:
+            # Time MongoDB query execution
+            start = time.time()
             projects_collection = get_collection(PROJECTS_COLLECTION)
             results = list(projects_collection.aggregate(pipeline))
-            logger.info(f"Hybrid search returned {len(results)} project(s)")
+            timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+            # Store timings for coordinator to access
+            self.last_query_timings = timings
+
+            logger.info(f"Hybrid search returned {len(results)} project(s) (embed: {timings['embedding_generation']}ms, db: {timings['mongodb_query']}ms)")
 
             # Log top results
             for i, proj in enumerate(results[:3], 1):
@@ -1053,6 +1086,82 @@ class RetrievalAgent:
             return results
         except Exception as e:
             logger.error(f"Hybrid search failed: {e}", exc_info=True)
+            self.last_query_timings = timings  # Store even on error
+            return []
+
+    def get_tasks_by_activity(
+        self,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+        activity_type: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50
+    ) -> list:
+        """
+        Query tasks based on activity_log timestamps.
+
+        Args:
+            since: Start date for activity (inclusive)
+            until: End date for activity (exclusive)
+            activity_type: Type of activity (created, started, completed, note_added, updated)
+            status: Current status filter (todo, in_progress, done)
+            limit: Maximum results
+
+        Returns:
+            List of task dicts matching the activity criteria
+        """
+        import time
+
+        logger.info(f"get_tasks_by_activity: since={since}, until={until}, activity_type={activity_type}, status={status}")
+
+        # Track timings for debug panel
+        timings = {}
+
+        # Build query
+        query = {}
+
+        if status:
+            query["status"] = status
+
+        # Build activity_log query with $elemMatch
+        if since or until or activity_type:
+            elem_match = {}
+
+            if activity_type:
+                elem_match["action"] = activity_type
+
+            if since or until:
+                timestamp_query = {}
+                if since:
+                    timestamp_query["$gte"] = since
+                if until:
+                    timestamp_query["$lt"] = until
+                elem_match["timestamp"] = timestamp_query
+
+            query["activity_log"] = {"$elemMatch": elem_match}
+
+        logger.debug(f"Activity query: {query}")
+
+        try:
+            # Time MongoDB query execution
+            start = time.time()
+            tasks_collection = get_collection(TASKS_COLLECTION)
+            results = list(
+                tasks_collection.find(query, {"embedding": 0})
+                .sort("activity_log.timestamp", -1)
+                .limit(limit)
+            )
+            timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+            # Store timings for coordinator to access
+            self.last_query_timings = timings
+
+            logger.info(f"Activity query returned {len(results)} task(s) (db: {timings['mongodb_query']}ms)")
+
+            return results
+        except Exception as e:
+            logger.error(f"Activity query failed: {e}", exc_info=True)
+            self.last_query_timings = timings  # Store even on error
             return []
 
     def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> str:

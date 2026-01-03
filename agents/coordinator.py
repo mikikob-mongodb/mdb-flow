@@ -137,6 +137,31 @@ COORDINATOR_TOOLS = [
             },
             "required": ["query"]
         }
+    },
+    {
+        "name": "get_tasks_by_time",
+        "description": "Get tasks based on when activity happened. Use for temporal questions like 'what did I do today', 'tasks from this week', 'what did I complete yesterday'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "timeframe": {
+                    "type": "string",
+                    "enum": ["today", "yesterday", "this_week", "last_week", "this_month"],
+                    "description": "Relative time period to query"
+                },
+                "activity_type": {
+                    "type": "string",
+                    "enum": ["created", "started", "completed", "note_added", "updated"],
+                    "description": "Type of activity to filter by (optional)"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["todo", "in_progress", "done"],
+                    "description": "Current status filter (optional)"
+                }
+            },
+            "required": ["timeframe"]
+        }
     }
 ]
 
@@ -144,14 +169,32 @@ SYSTEM_PROMPT = """You are a task management assistant. Help users manage their 
 
 **Important guidelines:**
 
-1. When user references a task informally (e.g., "the debugging doc", "checkpointer task"):
-   - First use search_tasks to find matches
-   - If 1 clear match: use its _id to proceed with the action
-   - If multiple matches: show the options with numbers and ask which one they mean
+1. **CRITICAL - Task action confirmation (complete, start, add note):**
+   - When user says "I finished X" or "I completed X" or "I'm working on X":
+     - FIRST: Use search_tasks to find matches
+     - THEN: Show the matches and ask user to confirm which one
+     - NEVER auto-execute the action, even with 1 match
 
-2. For task actions (complete, start, add note):
-   - You MUST have the task_id from a search_tasks result first
-   - Never guess or make up task IDs
+   - If 1 match found:
+     "I found 1 task matching 'X':
+      1. **Task name** (Status) - Project Name
+
+      Is this the task you want to [complete/start/update]? Please confirm."
+
+   - If multiple matches found:
+     "I found N tasks matching 'X':
+      1. **Task name** (Status) - Project Name
+      2. **Task name** (Status) - Project Name
+
+      Which one did you [complete/start/want to update]? (Reply with the number or name)"
+
+   - ONLY after user confirms (replies "yes", "1", "the first one", etc.):
+     - Extract the task_id from the search results
+     - Execute the action (complete_task, start_task, or add_note_to_task)
+     - Confirm: "✓ Marked **Task name** as complete."
+
+2. For simple queries (list tasks, show projects):
+   - No confirmation needed, just execute and display results
 
 3. **CRITICAL - Format responses with proper markdown:**
 
@@ -177,16 +220,28 @@ SYSTEM_PROMPT = """You are a task management assistant. Help users manage their 
    - "✓ Marked **Task name** as complete."
    - "Started working on **Task name**."
 
-4. Be concise but readable:
+4. **Temporal queries (time-based activity):**
+   - For questions about WHEN activity happened, use get_tasks_by_time
+   - Examples:
+     - "What did I do today?" → get_tasks_by_time(timeframe="today")
+     - "What did I complete this week?" → get_tasks_by_time(timeframe="this_week", activity_type="completed")
+     - "Tasks I started yesterday" → get_tasks_by_time(timeframe="yesterday", activity_type="started")
+     - "Show me this month's work" → get_tasks_by_time(timeframe="this_month")
+   - Tasks have activity_log tracking when they were created, started, completed, or had notes added
+   - Available timeframes: today, yesterday, this_week, last_week, this_month
+   - Available activity types: created, started, completed, note_added, updated
+
+5. Be concise but readable:
    - Use headers, bullet points, and numbered lists
    - Keep responses scannable with proper spacing
    - Don't explain what you're doing step-by-step
    - Use natural, conversational language
 
-5. Voice input handling:
+6. Voice input handling:
    - Voice and text are processed identically
-   - User might say "I finished the debugging doc" - search first, then complete
-   - For ambiguous references, always ask for clarification"""
+   - User might say "I finished the debugging doc" - ALWAYS search first, show matches, wait for confirmation
+   - Never assume which task they mean without confirmation
+   - For ambiguous references or any task actions, always ask for explicit confirmation"""
 
 
 class CoordinatorAgent:
@@ -318,6 +373,58 @@ class CoordinatorAgent:
                     "count": len(projects)
                 }
 
+            elif tool_name == "get_tasks_by_time":
+                # Temporal query for tasks based on activity timestamps
+                from datetime import timedelta
+
+                timeframe = tool_input["timeframe"]
+                activity_type = tool_input.get("activity_type")
+                status = tool_input.get("status")
+
+                # Convert timeframe to dates
+                now = datetime.now()
+                since = None
+                until = None
+
+                if timeframe == "today":
+                    since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                elif timeframe == "yesterday":
+                    since = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                    until = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                elif timeframe == "this_week":
+                    # Start of week (Monday)
+                    since = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+                elif timeframe == "last_week":
+                    # Start of last week
+                    since = (now - timedelta(days=now.weekday() + 7)).replace(hour=0, minute=0, second=0, microsecond=0)
+                    # End of last week
+                    until = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+                elif timeframe == "this_month":
+                    since = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+                # Query tasks by activity
+                tasks = self.retrieval_agent.get_tasks_by_activity(
+                    since=since,
+                    until=until,
+                    activity_type=activity_type,
+                    status=status
+                )
+
+                # Convert ObjectId to string for JSON serialization
+                for task in tasks:
+                    if "_id" in task:
+                        task["_id"] = str(task["_id"])
+                    if "project_id" in task and task["project_id"]:
+                        task["project_id"] = str(task["project_id"])
+
+                result = {
+                    "success": True,
+                    "tasks": tasks,
+                    "count": len(tasks),
+                    "timeframe": timeframe,
+                    "activity_type": activity_type
+                }
+
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
                 error_msg = f"Unknown tool: {tool_name}"
@@ -333,6 +440,26 @@ class CoordinatorAgent:
 
             # Use new summarize method for consistent output summary
             output_summary = self._summarize_output(result)
+
+            # Capture latency breakdown from agents
+            breakdown = {}
+
+            # Check if retrieval agent has timings
+            if hasattr(self.retrieval_agent, 'last_query_timings') and self.retrieval_agent.last_query_timings:
+                breakdown.update(self.retrieval_agent.last_query_timings)
+                self.retrieval_agent.last_query_timings = {}  # Reset
+
+            # Check if worklog agent has timings
+            if hasattr(self.worklog_agent, 'last_query_timings') and self.worklog_agent.last_query_timings:
+                breakdown.update(self.worklog_agent.last_query_timings)
+                self.worklog_agent.last_query_timings = {}  # Reset
+
+            # Calculate processing overhead (Python, serialization, etc.)
+            if breakdown:
+                known_time = sum(breakdown.values())
+                processing_overhead = max(0, duration_ms - known_time)
+                if processing_overhead > 0:
+                    breakdown["processing"] = processing_overhead
 
             # Build debug info (don't include full result to avoid serialization issues)
             debug_info = {
@@ -351,6 +478,7 @@ class CoordinatorAgent:
                     "input": tool_input,
                     "output": output_summary,
                     "duration_ms": duration_ms,
+                    "breakdown": breakdown if breakdown else None,  # Include latency breakdown
                     "success": result.get("success", False) if result else False,
                     "error": error_msg
                 })
@@ -384,6 +512,7 @@ class CoordinatorAgent:
             "user_input": user_message[:100] + "..." if len(user_message) > 100 else user_message,
             "timestamp": datetime.now().strftime("%H:%M:%S"),
             "tool_calls": [],
+            "llm_calls": [],  # Track LLM thinking time
             "total_duration_ms": 0
         }
 
@@ -394,8 +523,10 @@ class CoordinatorAgent:
         messages = conversation_history.copy() if conversation_history else []
         messages.append({"role": "user", "content": user_message})
 
-        # Use Claude's native tool use
+        # Use Claude's native tool use - TIME THIS CALL
         logger.info("Calling Claude with tool use enabled")
+        import time
+        llm_start = time.time()
         response = self.llm.generate_with_tools(
             messages=messages,
             tools=COORDINATOR_TOOLS,
@@ -403,6 +534,14 @@ class CoordinatorAgent:
             max_tokens=4096,
             temperature=0.3
         )
+        llm_duration = int((time.time() - llm_start) * 1000)
+
+        # Track the initial LLM call
+        self.current_turn["llm_calls"].append({
+            "purpose": "decide_action",
+            "duration_ms": llm_duration
+        })
+        logger.info(f"LLM decide_action took {llm_duration}ms")
 
         # Handle tool calls in a loop until Claude is done
         max_iterations = 10
@@ -453,8 +592,9 @@ class CoordinatorAgent:
                 "content": tool_results
             })
 
-            # Get next response from Claude
+            # Get next response from Claude - TIME THIS CALL
             logger.info("Sending tool results back to Claude")
+            llm_start = time.time()
             response = self.llm.generate_with_tools(
                 messages=messages,
                 tools=COORDINATOR_TOOLS,
@@ -462,6 +602,14 @@ class CoordinatorAgent:
                 max_tokens=4096,
                 temperature=0.3
             )
+            llm_duration = int((time.time() - llm_start) * 1000)
+
+            # Track this LLM call
+            self.current_turn["llm_calls"].append({
+                "purpose": "format_response",
+                "duration_ms": llm_duration
+            })
+            logger.info(f"LLM format_response took {llm_duration}ms")
 
         # Extract final text response
         final_text = ""
@@ -469,11 +617,19 @@ class CoordinatorAgent:
             if hasattr(content_block, 'text'):
                 final_text += content_block.text
 
-        # Calculate total duration for this turn
+        # Calculate total duration for this turn (LLM + tools)
         if self.current_turn is not None:
-            self.current_turn["total_duration_ms"] = sum(
-                tc["duration_ms"] for tc in self.current_turn["tool_calls"]
-            )
+            # Sum tool time
+            tool_time = sum(tc["duration_ms"] for tc in self.current_turn["tool_calls"])
+
+            # Sum LLM time
+            llm_time = sum(lc["duration_ms"] for lc in self.current_turn["llm_calls"])
+
+            # Total = LLM + tools
+            self.current_turn["llm_time_ms"] = llm_time
+            self.current_turn["total_duration_ms"] = tool_time + llm_time
+
+            logger.info(f"Turn complete: LLM={llm_time}ms, Tools={tool_time}ms, Total={self.current_turn['total_duration_ms']}ms")
 
         logger.info("Request processing complete")
         logger.info("=" * 80)
