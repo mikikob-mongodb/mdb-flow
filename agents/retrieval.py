@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Literal
 from bson import ObjectId
+from rapidfuzz import fuzz
 
 from shared.llm import llm_service
 from shared.embeddings import embed_query as embedding_embed_query
@@ -605,6 +606,245 @@ class RetrievalAgent:
             result["since_date"] = since_date
 
         return result
+
+    def fuzzy_match_task(
+        self,
+        reference: str,
+        project_hint: Optional[str] = None,
+        threshold: float = 0.7
+    ) -> Dict[str, Any]:
+        """
+        Fuzzy match a task reference using both vector and text similarity.
+
+        Args:
+            reference: Informal task mention (e.g., "the login thing")
+            project_hint: Optional project name/ID hint to narrow search
+            threshold: Minimum confidence score (0.0-1.0)
+
+        Returns:
+            dict with:
+                - match: Best matching task (if confidence > threshold)
+                - confidence: Score 0.0-1.0
+                - alternatives: List of other candidates if ambiguous
+        """
+        tasks_collection = get_collection(TASKS_COLLECTION)
+
+        # Get query embedding for semantic search
+        query_embedding = embedding_embed_query(reference)
+
+        # Build base match condition
+        match_condition = {}
+        if project_hint:
+            # Try to match project by name or ID
+            project_match = self.fuzzy_match_project(project_hint, threshold=0.6)
+            if project_match.get("match"):
+                project_id = project_match["match"]["_id"]
+                match_condition["project_id"] = ObjectId(project_id)
+
+        # Vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "task_embedding_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 50,
+                    "limit": 10
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "title": 1,
+                    "status": 1,
+                    "priority": 1,
+                    "context": 1,
+                    "project_id": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "vector_score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        # Add project filter if specified
+        if match_condition:
+            pipeline.insert(1, {"$match": match_condition})
+
+        try:
+            candidates = list(tasks_collection.aggregate(pipeline))
+        except Exception as e:
+            return {
+                "match": None,
+                "confidence": 0.0,
+                "alternatives": [],
+                "error": f"Vector search failed: {str(e)}"
+            }
+
+        if not candidates:
+            return {
+                "match": None,
+                "confidence": 0.0,
+                "alternatives": []
+            }
+
+        # Calculate combined scores (vector + text similarity)
+        scored_candidates = []
+        for task in candidates:
+            # Normalize vector score (typically 0.0-1.0 but can vary)
+            vector_score = min(task.get("vector_score", 0.0), 1.0)
+
+            # Text similarity using fuzzy matching
+            text_score = fuzz.ratio(reference.lower(), task["title"].lower()) / 100.0
+
+            # Combined score (weighted average: 60% vector, 40% text)
+            combined_score = (0.6 * vector_score) + (0.4 * text_score)
+
+            task["_id"] = str(task["_id"])
+            task["project_id"] = str(task["project_id"]) if task.get("project_id") else None
+            task["confidence"] = combined_score
+            task.pop("vector_score", None)
+
+            scored_candidates.append(task)
+
+        # Sort by combined score
+        scored_candidates.sort(key=lambda x: x["confidence"], reverse=True)
+
+        # Get best match
+        best_match = scored_candidates[0]
+        best_confidence = best_match["confidence"]
+
+        # Check if best match meets threshold
+        if best_confidence >= threshold:
+            # Check if there are close alternatives (within 0.1 of best)
+            alternatives = [
+                task for task in scored_candidates[1:4]
+                if task["confidence"] >= threshold and (best_confidence - task["confidence"]) <= 0.1
+            ]
+
+            return {
+                "match": best_match,
+                "confidence": best_confidence,
+                "alternatives": alternatives
+            }
+        else:
+            # No match above threshold, return top candidates
+            return {
+                "match": None,
+                "confidence": best_confidence,
+                "alternatives": scored_candidates[:3]
+            }
+
+    def fuzzy_match_project(
+        self,
+        reference: str,
+        threshold: float = 0.7
+    ) -> Dict[str, Any]:
+        """
+        Fuzzy match a project reference using both vector and text similarity.
+
+        Args:
+            reference: Informal project mention (e.g., "the mobile app")
+            threshold: Minimum confidence score (0.0-1.0)
+
+        Returns:
+            dict with:
+                - match: Best matching project (if confidence > threshold)
+                - confidence: Score 0.0-1.0
+                - alternatives: List of other candidates if ambiguous
+        """
+        projects_collection = get_collection(PROJECTS_COLLECTION)
+
+        # Get query embedding for semantic search
+        query_embedding = embedding_embed_query(reference)
+
+        # Vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "project_embedding_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 50,
+                    "limit": 10
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "name": 1,
+                    "description": 1,
+                    "status": 1,
+                    "context": 1,
+                    "created_at": 1,
+                    "last_activity": 1,
+                    "vector_score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        try:
+            candidates = list(projects_collection.aggregate(pipeline))
+        except Exception as e:
+            return {
+                "match": None,
+                "confidence": 0.0,
+                "alternatives": [],
+                "error": f"Vector search failed: {str(e)}"
+            }
+
+        if not candidates:
+            return {
+                "match": None,
+                "confidence": 0.0,
+                "alternatives": []
+            }
+
+        # Calculate combined scores (vector + text similarity)
+        scored_candidates = []
+        for project in candidates:
+            # Normalize vector score
+            vector_score = min(project.get("vector_score", 0.0), 1.0)
+
+            # Text similarity using fuzzy matching on name
+            text_score = fuzz.ratio(reference.lower(), project["name"].lower()) / 100.0
+
+            # Combined score (weighted average: 60% vector, 40% text)
+            combined_score = (0.6 * vector_score) + (0.4 * text_score)
+
+            project["_id"] = str(project["_id"])
+            project["confidence"] = combined_score
+            project.pop("vector_score", None)
+
+            scored_candidates.append(project)
+
+        # Sort by combined score
+        scored_candidates.sort(key=lambda x: x["confidence"], reverse=True)
+
+        # Get best match
+        best_match = scored_candidates[0]
+        best_confidence = best_match["confidence"]
+
+        # Check if best match meets threshold
+        if best_confidence >= threshold:
+            # Check if there are close alternatives (within 0.1 of best)
+            alternatives = [
+                proj for proj in scored_candidates[1:4]
+                if proj["confidence"] >= threshold and (best_confidence - proj["confidence"]) <= 0.1
+            ]
+
+            return {
+                "match": best_match,
+                "confidence": best_confidence,
+                "alternatives": alternatives
+            }
+        else:
+            # No match above threshold, return top candidates
+            return {
+                "match": None,
+                "confidence": best_confidence,
+                "alternatives": scored_candidates[:3]
+            }
 
     def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> str:
         """

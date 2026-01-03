@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 from agents.coordinator import coordinator
 from shared.db import get_collection, TASKS_COLLECTION, PROJECTS_COLLECTION
 from shared.models import Task, Project
+from utils.audio import transcribe_audio
 
 
 # Page configuration
@@ -160,12 +161,26 @@ def render_chat():
     # Display chat messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            # Add microphone icon for voice messages
+            if message.get("input_type") == "voice":
+                st.markdown(f"🎤 {message['content']}")
+            else:
+                st.markdown(message["content"])
 
     # Chat input
-    if prompt := st.chat_input("Ask me anything about your tasks or projects..."):
+    prompt = st.chat_input("Ask me anything about your tasks or projects...")
+
+    # Voice input
+    audio_bytes = st.audio_input("🎤 Or record a voice update")
+
+    # Handle text input
+    if prompt:
         # Add user message to history
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append({
+            "role": "user",
+            "content": prompt,
+            "input_type": "text"
+        })
 
         # Display user message
         with st.chat_message("user"):
@@ -178,16 +193,62 @@ def render_chat():
                 history = st.session_state.messages[:-1]  # Exclude the current message
 
                 # Process message through coordinator
-                response = st.session_state.coordinator.process(prompt, history)
+                response = st.session_state.coordinator.process(prompt, history, input_type="text")
 
                 # Display response
                 st.markdown(response)
 
         # Add assistant response to history
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": response
+        })
 
         # Rerun to update the display (including task list)
         st.rerun()
+
+    # Handle audio input
+    elif audio_bytes:
+        # Show transcribing spinner
+        with st.spinner("🎤 Transcribing..."):
+            # Get bytes from the audio file
+            audio_data = audio_bytes.getvalue()
+            transcript = transcribe_audio(audio_data)
+
+        if transcript:
+            # Add user message to history with voice flag
+            st.session_state.messages.append({
+                "role": "user",
+                "content": transcript,
+                "input_type": "voice"
+            })
+
+            # Display user message with microphone icon
+            with st.chat_message("user"):
+                st.markdown(f"🎤 {transcript}")
+
+            # Get assistant response
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    # Prepare conversation history for the coordinator
+                    history = st.session_state.messages[:-1]  # Exclude the current message
+
+                    # Process message through coordinator with voice flag
+                    response = st.session_state.coordinator.process(transcript, history, input_type="voice")
+
+                    # Display response
+                    st.markdown(response)
+
+            # Add assistant response to history
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response
+            })
+
+            # Rerun to update the display (including task list)
+            st.rerun()
+        else:
+            st.error("Failed to transcribe audio. Please try again.")
 
 
 def main():
@@ -201,7 +262,7 @@ def main():
 
     # Add footer
     st.markdown("---")
-    st.caption("Flow Companion Milestone 1 - Powered by Claude & Voyage AI")
+    st.caption("Flow Companion Milestone 2 - Voice Input with Claude & Voyage AI")
 
 
 if __name__ == "__main__":

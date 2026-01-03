@@ -26,6 +26,11 @@ class ActivityLogEntry(BaseModel):
     action: str
     note: Optional[str] = None
 
+    # Voice-specific fields
+    summary: Optional[str] = None  # Cleaned summary for voice_update
+    raw_transcript: Optional[str] = None  # Original speech transcript
+    extracted: Optional[dict] = None  # Parsed voice structure
+
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
 
