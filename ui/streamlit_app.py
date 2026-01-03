@@ -1,5 +1,13 @@
 """Streamlit Chat UI for Flow Companion."""
 
+import sys
+import os
+from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 import streamlit as st
 from datetime import datetime
 from typing import List, Dict, Any
@@ -30,6 +38,9 @@ def init_session_state():
 
     if "last_audio_bytes" not in st.session_state:
         st.session_state.last_audio_bytes = None
+
+    if "last_debug_info" not in st.session_state:
+        st.session_state.last_debug_info = []
 
 
 def get_all_projects_with_tasks() -> List[Dict[str, Any]]:
@@ -156,25 +167,89 @@ def render_task_list():
         st.rerun()
 
 
+def render_debug_panel():
+    """Render the debug panel showing tool calls with full details."""
+    st.markdown("### 🔍 Agent Debug")
+    st.caption("Complete trace of tool calls")
+
+    if hasattr(st.session_state, 'last_debug_info') and st.session_state.last_debug_info:
+        # Show total summary
+        total_calls = len(st.session_state.last_debug_info)
+        total_duration = sum(d.get('duration_ms', 0) for d in st.session_state.last_debug_info)
+        st.caption(f"**{total_calls} call(s)** • **{total_duration}ms total**")
+        st.divider()
+
+        # Show each call in detail
+        for debug in st.session_state.last_debug_info:
+            call_index = debug.get('index', '?')
+            tool_name = debug.get('tool_name', 'unknown')
+
+            with st.container(border=True):
+                # Header with tool name and duration
+                st.markdown(f"**Call {call_index}:** `{tool_name}`")
+                st.caption(f"⏱️ Duration: **{debug.get('duration_ms', 0)}ms**")
+
+                # Input parameters
+                if debug.get('tool_input'):
+                    with st.expander("├─ Input", expanded=False):
+                        st.json(debug['tool_input'])
+                else:
+                    st.caption("├─ Input: *(none)*")
+
+                # Output summary
+                output = debug.get('output_summary', '')
+                if output:
+                    st.caption(f"├─ Output: {output}")
+
+                # Success/Error status
+                if debug.get('success'):
+                    st.success("└─ ✓ Success")
+                else:
+                    error_msg = debug.get('error', 'Unknown error')
+                    st.error(f"└─ ✗ Failed: {error_msg}")
+
+    else:
+        st.info("No debug info yet. Send a message to see tool calls.")
+
+
 def render_chat():
     """Render the chat interface."""
-    st.title("💬 Flow Companion")
-    st.caption("Your AI-powered task and project management assistant")
+    # Add custom CSS for full-height debug panel
+    st.markdown("""
+    <style>
+    [data-testid="column"]:nth-of-type(2) {
+        position: sticky;
+        top: 0;
+        height: calc(100vh - 100px);
+        overflow-y: auto;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    # Display chat messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            # Add microphone icon for voice messages
-            if message.get("input_type") == "voice":
-                st.markdown(f"🎤 {message['content']}")
-            else:
-                st.markdown(message["content"])
+    # Create two columns: chat (main) and debug panel (sidebar on right)
+    chat_col, debug_col = st.columns([2.5, 1.5])
 
-    # Chat input
-    prompt = st.chat_input("Ask me anything about your tasks or projects...")
+    with chat_col:
+        st.title("💬 Flow Companion")
+        st.caption("Your AI-powered task and project management assistant")
 
-    # Voice input
-    audio_bytes = st.audio_input("🎤 Or record a voice update")
+        # Display chat messages
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                # Add microphone icon for voice messages
+                if message.get("input_type") == "voice":
+                    st.markdown(f"🎤 {message['content']}")
+                else:
+                    st.markdown(message["content"])
+
+        # Chat input
+        prompt = st.chat_input("Ask me anything about your tasks or projects...")
+
+        # Voice input
+        audio_bytes = st.audio_input("🎤 Or record a voice update")
+
+    with debug_col:
+        render_debug_panel()
 
     # Handle text input
     if prompt:
@@ -200,6 +275,9 @@ def render_chat():
 
                 # Display response
                 st.markdown(response)
+
+                # Store debug info in session state
+                st.session_state.last_debug_info = st.session_state.coordinator.last_debug_info
 
         # Add assistant response to history
         st.session_state.messages.append({
@@ -250,6 +328,9 @@ def render_chat():
 
                     # Display response
                     st.markdown(response)
+
+                    # Store debug info in session state
+                    st.session_state.last_debug_info = st.session_state.coordinator.last_debug_info
 
             # Add assistant response to history
             st.session_state.messages.append({

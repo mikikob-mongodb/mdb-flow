@@ -673,8 +673,8 @@ class WorklogAgent:
         if status:
             query["status"] = status
 
-        # Execute query
-        cursor = collection.find(query).sort("created_at", -1).limit(limit)
+        # Execute query - exclude embedding field for performance
+        cursor = collection.find(query, {"embedding": 0}).sort("created_at", -1).limit(limit)
         tasks = [Task(**doc) for doc in cursor]
 
         return {
@@ -696,8 +696,8 @@ class WorklogAgent:
         if status:
             query["status"] = status
 
-        # Execute query
-        cursor = collection.find(query).sort("created_at", -1).limit(limit)
+        # Execute query - exclude embedding field for performance
+        cursor = collection.find(query, {"embedding": 0}).sort("created_at", -1).limit(limit)
         projects = [Project(**doc) for doc in cursor]
 
         return {

@@ -2,6 +2,8 @@
 
 import json
 from typing import List, Dict, Any, Optional
+from datetime import datetime
+from bson import ObjectId
 
 from shared.llm import llm_service
 from shared.logger import get_logger
@@ -9,6 +11,20 @@ from agents.worklog import worklog_agent
 from agents.retrieval import retrieval_agent
 
 logger = get_logger("coordinator")
+
+
+def convert_objectids_to_str(obj):
+    """Recursively convert ObjectId and datetime instances to strings for JSON serialization."""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: convert_objectids_to_str(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_objectids_to_str(item) for item in obj]
+    else:
+        return obj
 
 # Tool definitions for Claude
 COORDINATOR_TOOLS = [
@@ -160,38 +176,38 @@ class CoordinatorAgent:
         self.llm = llm_service
         self.worklog_agent = worklog_agent
         self.retrieval_agent = retrieval_agent
+        self.last_debug_info = []  # Store debug info from last request
 
-    def _execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    def _execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
         """
-        Execute a tool and return the result.
+        Execute a tool and return the result with debug info.
 
         Args:
             tool_name: Name of the tool to execute
             tool_input: Tool input parameters
 
         Returns:
-            Tool execution result as a dict
+            Tuple of (tool_result, debug_info)
         """
+        import time
+
         logger.info(f"Executing tool: {tool_name} with input: {tool_input}")
+
+        start_time = time.time()
+        error_msg = None
+        result = None
 
         try:
             if tool_name == "get_tasks":
-                # Get all tasks with optional filtering
+                # Get all tasks with optional filtering - DIRECT DATABASE CALL
                 status = tool_input.get("status")
                 project_name = tool_input.get("project_name")
 
-                # Call worklog agent to get tasks
-                # For now, call retrieval agent's process method
-                query_parts = []
-                if status:
-                    query_parts.append(f"status={status}")
-                if project_name:
-                    query_parts.append(f"project={project_name}")
-
-                query = "Get all tasks" + (f" ({', '.join(query_parts)})" if query_parts else "")
-                result = self.worklog_agent.process(query, [])
-
-                return {"success": True, "result": result}
+                # Call worklog agent's direct method (bypasses LLM)
+                result = self.worklog_agent._list_tasks(
+                    status=status,
+                    limit=50
+                )
 
             elif tool_name == "search_tasks":
                 # Hybrid search for tasks
@@ -207,39 +223,31 @@ class CoordinatorAgent:
                     if "project_id" in task and task["project_id"]:
                         task["project_id"] = str(task["project_id"])
 
-                return {
+                result = {
                     "success": True,
                     "tasks": tasks,
                     "count": len(tasks)
                 }
 
             elif tool_name == "complete_task":
-                # Mark task as done
+                # Mark task as done - DIRECT DATABASE CALL
                 task_id = tool_input["task_id"]
-                result = self.worklog_agent.process(f"Mark task {task_id} as done", [])
-
-                return {"success": True, "result": result}
+                result = self.worklog_agent._complete_task(task_id)
 
             elif tool_name == "start_task":
-                # Mark task as in_progress
+                # Mark task as in_progress - DIRECT DATABASE CALL
                 task_id = tool_input["task_id"]
-                result = self.worklog_agent.process(f"Mark task {task_id} as in progress", [])
-
-                return {"success": True, "result": result}
+                result = self.worklog_agent._update_task(task_id, status="in_progress")
 
             elif tool_name == "add_note_to_task":
-                # Add note to task
+                # Add note to task - DIRECT DATABASE CALL
                 task_id = tool_input["task_id"]
                 note = tool_input["note"]
-                result = self.worklog_agent.process(f"Add note to task {task_id}: {note}", [])
-
-                return {"success": True, "result": result}
+                result = self.worklog_agent._add_note("task", task_id, note)
 
             elif tool_name == "get_projects":
-                # Get all projects
-                result = self.worklog_agent.process("Show me all projects", [])
-
-                return {"success": True, "result": result}
+                # Get all projects - DIRECT DATABASE CALL
+                result = self.worklog_agent._list_projects(limit=50)
 
             elif tool_name == "search_projects":
                 # Hybrid search for projects
@@ -253,18 +261,51 @@ class CoordinatorAgent:
                     if "_id" in project:
                         project["_id"] = str(project["_id"])
 
-                return {
+                result = {
                     "success": True,
                     "projects": projects,
                     "count": len(projects)
                 }
 
             else:
-                return {"success": False, "error": f"Unknown tool: {tool_name}"}
+                result = {"success": False, "error": f"Unknown tool: {tool_name}"}
+                error_msg = f"Unknown tool: {tool_name}"
 
         except Exception as e:
             logger.error(f"Tool execution error: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
+            error_msg = str(e)
+            result = {"success": False, "error": str(e)}
+
+        finally:
+            # Always calculate duration, even on error
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            # Create output summary
+            output_summary = ""
+            if result:
+                if result.get("success"):
+                    if "tasks" in result:
+                        output_summary = f"{result['count']} tasks returned"
+                    elif "projects" in result:
+                        output_summary = f"{result['count']} projects returned"
+                    elif "result" in result:
+                        output_summary = str(result["result"])[:200]
+                    else:
+                        output_summary = "Success"
+                else:
+                    output_summary = f"Error: {result.get('error', 'Unknown')}"
+
+            # Build debug info (don't include full result to avoid serialization issues)
+            debug_info = {
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "duration_ms": duration_ms,
+                "output_summary": output_summary,
+                "success": result.get("success", False) if result else False,
+                "error": error_msg
+            }
+
+            return result, debug_info
 
     def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text") -> str:
         """
@@ -285,6 +326,9 @@ class CoordinatorAgent:
         logger.info(f"Input type: {input_type}")
         logger.info(f"User message: {user_message[:200]}...")
         logger.info(f"History length: {len(conversation_history) if conversation_history else 0}")
+
+        # Reset debug info
+        self.last_debug_info = []
 
         # Build messages - SAME PATH FOR VOICE AND TEXT
         messages = conversation_history.copy() if conversation_history else []
@@ -319,14 +363,22 @@ class CoordinatorAgent:
                     logger.info(f"Tool call: {tool_name}")
                     logger.debug(f"Tool input: {tool_input}")
 
-                    # Execute the tool
-                    result = self._execute_tool(tool_name, tool_input)
+                    # Execute the tool and get result + debug info
+                    result, debug_info = self._execute_tool(tool_name, tool_input)
 
-                    # Add tool result
+                    # Add iteration number to debug info
+                    debug_info["iteration"] = iteration
+                    debug_info["index"] = len(self.last_debug_info) + 1
+
+                    # Store debug info
+                    self.last_debug_info.append(debug_info)
+
+                    # Add tool result (convert ObjectIds to strings first)
+                    serializable_result = convert_objectids_to_str(result)
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
-                        "content": json.dumps(result)
+                        "content": json.dumps(serializable_result)
                     })
 
             # Add assistant message with tool use
