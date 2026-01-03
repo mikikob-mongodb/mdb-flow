@@ -880,6 +880,181 @@ class RetrievalAgent:
                 "alternatives": scored_candidates[:3]
             }
 
+    def hybrid_search_tasks(self, query: str, limit: int = 5) -> list:
+        """
+        Hybrid search combining vector + full-text for matching informal voice references.
+
+        Examples:
+            "the debugging doc" → "Create debugging methodologies doc"
+            "checkpointer task" → "Implement MongoDB checkpointer for LangGraph"
+            "voice agent app" → "Build voice agent reference app"
+
+        Args:
+            query: Informal task reference from voice input
+            limit: Maximum number of results to return
+
+        Returns:
+            List of task dicts with _id, title, context, status, project_id, score
+        """
+        logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}")
+
+        # Generate query embedding
+        query_embedding = embedding_embed_query(query)
+        logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions")
+
+        # Build hybrid search pipeline
+        pipeline = [
+            {
+                "$rankFusion": {
+                    "input": {
+                        "pipelines": {
+                            "vectorSearch": [
+                                {
+                                    "$vectorSearch": {
+                                        "index": "vector_index",
+                                        "path": "embedding",
+                                        "queryVector": query_embedding,
+                                        "numCandidates": 50,
+                                        "limit": limit * 2
+                                    }
+                                }
+                            ],
+                            "textSearch": [
+                                {
+                                    "$search": {
+                                        "index": "tasks_text_index",
+                                        "text": {
+                                            "query": query,
+                                            "path": ["title", "context", "notes"],
+                                            "fuzzy": {"maxEdits": 1}
+                                        }
+                                    }
+                                },
+                                {"$limit": limit * 2}
+                            ]
+                        }
+                    },
+                    "combination": {
+                        "weights": {
+                            "vectorSearch": 0.6,
+                            "textSearch": 0.4
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "title": 1,
+                    "context": 1,
+                    "status": 1,
+                    "project_id": 1,
+                    "score": {"$meta": "score"}
+                }
+            },
+            {"$limit": limit}
+        ]
+
+        # Execute search
+        try:
+            tasks_collection = get_collection(TASKS_COLLECTION)
+            results = list(tasks_collection.aggregate(pipeline))
+            logger.info(f"Hybrid search returned {len(results)} task(s)")
+
+            # Log top results
+            for i, task in enumerate(results[:3], 1):
+                logger.debug(f"  {i}. '{task['title'][:50]}...' (score={task.get('score', 0):.3f})")
+
+            return results
+        except Exception as e:
+            logger.error(f"Hybrid search failed: {e}", exc_info=True)
+            return []
+
+    def hybrid_search_projects(self, query: str, limit: int = 5) -> list:
+        """
+        Hybrid search combining vector + full-text for matching informal project references.
+
+        Args:
+            query: Informal project reference from voice input
+            limit: Maximum number of results to return
+
+        Returns:
+            List of project dicts with _id, name, description, context, status, score
+        """
+        logger.info(f"hybrid_search_projects: query='{query}', limit={limit}")
+
+        # Generate query embedding
+        query_embedding = embedding_embed_query(query)
+        logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions")
+
+        # Build hybrid search pipeline
+        pipeline = [
+            {
+                "$rankFusion": {
+                    "input": {
+                        "pipelines": {
+                            "vectorSearch": [
+                                {
+                                    "$vectorSearch": {
+                                        "index": "vector_index",
+                                        "path": "embedding",
+                                        "queryVector": query_embedding,
+                                        "numCandidates": 50,
+                                        "limit": limit * 2
+                                    }
+                                }
+                            ],
+                            "textSearch": [
+                                {
+                                    "$search": {
+                                        "index": "projects_text_index",
+                                        "text": {
+                                            "query": query,
+                                            "path": ["name", "description", "context"],
+                                            "fuzzy": {"maxEdits": 1}
+                                        }
+                                    }
+                                },
+                                {"$limit": limit * 2}
+                            ]
+                        }
+                    },
+                    "combination": {
+                        "weights": {
+                            "vectorSearch": 0.6,
+                            "textSearch": 0.4
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "name": 1,
+                    "description": 1,
+                    "context": 1,
+                    "status": 1,
+                    "score": {"$meta": "score"}
+                }
+            },
+            {"$limit": limit}
+        ]
+
+        # Execute search
+        try:
+            projects_collection = get_collection(PROJECTS_COLLECTION)
+            results = list(projects_collection.aggregate(pipeline))
+            logger.info(f"Hybrid search returned {len(results)} project(s)")
+
+            # Log top results
+            for i, proj in enumerate(results[:3], 1):
+                logger.debug(f"  {i}. '{proj['name'][:50]}...' (score={proj.get('score', 0):.3f})")
+
+            return results
+        except Exception as e:
+            logger.error(f"Hybrid search failed: {e}", exc_info=True)
+            return []
+
     def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Process a user message and execute appropriate tools.
