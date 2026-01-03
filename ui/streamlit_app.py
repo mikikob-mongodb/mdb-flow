@@ -119,19 +119,35 @@ class SlashCommandExecutor:
         logger.info(f"=== /tasks command ===")
         logger.info(f"sub: {sub}, args: {args}, kwargs: {kwargs}")
 
+        # Handle search subcommand FIRST
+        if sub == "search" and args:
+            query = " ".join(args)
+            logger.info(f"Searching tasks for: {query}")
+            limit = int(kwargs.get("limit", 10))
+            results = self.retrieval.hybrid_search_tasks(query, limit)
+            logger.info(f"Search returned {len(results)} tasks")
+            # Enrich with project names
+            return self._enrich_tasks_with_project_names(results)
+
+        # Handle completed:timeframe pattern
+        if kwargs.get("completed"):
+            timeframe = kwargs["completed"]
+            logger.info(f"Getting tasks completed {timeframe}")
+            return self._get_tasks_by_activity_type("completed", timeframe)
+
+        # Handle temporal subcommands
         if sub == "today":
-            now = datetime.now()
-            since = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            tasks = self.retrieval.get_tasks_by_activity(since=since)
+            logger.info("Getting tasks with activity today")
+            return self._get_temporal_tasks("today")
         elif sub == "yesterday":
-            now = datetime.now()
-            since = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            until = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            tasks = self.retrieval.get_tasks_by_activity(since=since, until=until)
+            logger.info("Getting tasks with activity yesterday")
+            return self._get_temporal_tasks("yesterday")
         elif sub == "week":
-            now = datetime.now()
-            since = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-            tasks = self.retrieval.get_tasks_by_activity(since=since)
+            logger.info("Getting tasks with activity this week")
+            return self._get_temporal_tasks("week")
+        elif sub == "stale":
+            logger.info("Getting stale tasks (in_progress > 7 days)")
+            return self._get_stale_tasks()
         else:
             # Regular task list with filters and $lookup for project names
             # Build match query from kwargs
@@ -216,6 +232,201 @@ class SlashCommandExecutor:
         # For time-based queries, enrich with project names
         return self._enrich_tasks_with_project_names(tasks)
 
+    def _get_temporal_tasks(self, timeframe):
+        """Get tasks with activity in a specific timeframe."""
+        from shared.db import get_collection, TASKS_COLLECTION
+        import logging
+
+        logger = logging.getLogger(__name__)
+        now = datetime.utcnow()
+
+        if timeframe == "today":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now
+        elif timeframe == "yesterday":
+            start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif timeframe == "week":
+            days_since_monday = now.weekday()
+            start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now
+        else:
+            start = now - timedelta(days=7)
+            end = now
+
+        logger.info(f"Temporal query: {timeframe}, Start: {start}, End: {end}")
+
+        # Query tasks with activity in the time range
+        query = {
+            "activity_log": {
+                "$elemMatch": {
+                    "timestamp": {"$gte": start, "$lte": end}
+                }
+            }
+        }
+
+        logger.info(f"MongoDB query: {query}")
+
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        tasks = list(tasks_collection.aggregate([
+            {"$match": query},
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project.name", 0]}
+                }
+            },
+            {
+                "$project": {
+                    "embedding": 0,
+                    "project": 0
+                }
+            },
+            {"$sort": {"created_at": -1}},
+            {"$limit": 50}
+        ]))
+
+        logger.info(f"Query returned {len(tasks)} tasks")
+
+        # Convert ObjectIds to strings
+        for task in tasks:
+            if task.get("_id"):
+                task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return tasks
+
+    def _get_tasks_by_activity_type(self, activity_type, timeframe):
+        """Get tasks by activity type (completed, started, etc.) in a timeframe."""
+        from shared.db import get_collection, TASKS_COLLECTION
+        import logging
+
+        logger = logging.getLogger(__name__)
+        now = datetime.utcnow()
+
+        if timeframe == "today":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif timeframe == "yesterday":
+            start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        elif timeframe == "this_week":
+            days_since_monday = now.weekday()
+            start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            start = now - timedelta(days=7)  # Default to last 7 days
+
+        logger.info(f"Getting tasks by activity: {activity_type} {timeframe}, Start: {start}")
+
+        query = {
+            "activity_log": {
+                "$elemMatch": {
+                    "action": activity_type,
+                    "timestamp": {"$gte": start}
+                }
+            }
+        }
+
+        logger.info(f"MongoDB query: {query}")
+
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        tasks = list(tasks_collection.aggregate([
+            {"$match": query},
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project.name", 0]}
+                }
+            },
+            {
+                "$project": {
+                    "embedding": 0,
+                    "project": 0
+                }
+            },
+            {"$sort": {"created_at": -1}},
+            {"$limit": 50}
+        ]))
+
+        logger.info(f"Query returned {len(tasks)} tasks")
+
+        # Convert ObjectIds to strings
+        for task in tasks:
+            if task.get("_id"):
+                task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return tasks
+
+    def _get_stale_tasks(self):
+        """Get stale tasks (in_progress for more than 7 days)."""
+        from shared.db import get_collection, TASKS_COLLECTION
+        import logging
+
+        logger = logging.getLogger(__name__)
+        now = datetime.utcnow()
+        stale_threshold = now - timedelta(days=7)
+
+        logger.info(f"Getting stale tasks (in_progress before {stale_threshold})")
+
+        query = {
+            "status": "in_progress",
+            "updated_at": {"$lt": stale_threshold}
+        }
+
+        logger.info(f"MongoDB query: {query}")
+
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        tasks = list(tasks_collection.aggregate([
+            {"$match": query},
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project.name", 0]}
+                }
+            },
+            {
+                "$project": {
+                    "embedding": 0,
+                    "project": 0
+                }
+            },
+            {"$sort": {"updated_at": 1}},
+            {"$limit": 50}
+        ]))
+
+        logger.info(f"Query returned {len(tasks)} stale tasks")
+
+        # Convert ObjectIds to strings
+        for task in tasks:
+            if task.get("_id"):
+                task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return tasks
+
     def _enrich_tasks_with_project_names(self, tasks):
         """Enrich tasks with project names by looking up project_id."""
         if not tasks:
@@ -276,25 +487,23 @@ class SlashCommandExecutor:
         logger.info(f"sub: {sub}, args: {args}, kwargs: {kwargs}")
 
         # Handle search subcommand
-        if sub == "search" or (args and not sub):
-            # /projects search <query> or /projects <query>
-            query_parts = []
-            if sub == "search" and args:
-                query_parts = args
-            elif args:
-                query_parts = [sub] + args if sub else args
+        if sub == "search" and args:
+            query = " ".join(args)
+            logger.info(f"Searching projects for: {query}")
+            limit = int(kwargs.get("limit", 5))
 
-            if query_parts:
-                query = " ".join(query_parts)
-                logger.info(f"Searching projects for: {query}")
-                limit = int(kwargs.get("limit", 5))
+            # Use hybrid search
+            results = self.retrieval.hybrid_search_projects(query, limit)
+            logger.info(f"Search returned {len(results)} projects")
 
-                # Use hybrid search
-                results = self.retrieval.hybrid_search_projects(query, limit)
-                logger.info(f"Search returned {len(results)} projects")
+            # Enrich with task counts
+            return self._enrich_projects_with_task_counts(results)
 
-                # Enrich with task counts
-                return self._enrich_projects_with_task_counts(results)
+        # Handle /projects <name> - Get specific project with its tasks
+        if sub and not args:
+            project_name = sub
+            logger.info(f"Getting specific project: {project_name}")
+            return self._get_project_detail(project_name)
 
         # Regular project list with task counts via aggregation
         # Build aggregation pipeline with $lookup to get task counts
@@ -423,6 +632,78 @@ class SlashCommandExecutor:
 
         return projects
 
+    def _get_project_detail(self, project_name):
+        """Get a single project with its tasks."""
+        from shared.db import get_collection, PROJECTS_COLLECTION, TASKS_COLLECTION
+        from bson import ObjectId
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Find the project (case-insensitive exact match first)
+        projects_collection = get_collection(PROJECTS_COLLECTION)
+        project = projects_collection.find_one(
+            {"name": {"$regex": f"^{project_name}$", "$options": "i"}},
+            {"embedding": 0}
+        )
+
+        if not project:
+            # Try partial match
+            logger.info(f"Exact match not found, trying partial match")
+            project = projects_collection.find_one(
+                {"name": {"$regex": project_name, "$options": "i"}},
+                {"embedding": 0}
+            )
+
+        if not project:
+            logger.warning(f"Project '{project_name}' not found")
+            return {"error": f"Project '{project_name}' not found"}
+
+        logger.info(f"Found project: {project.get('name')}")
+
+        # Get tasks for this project with project_name field
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        tasks = list(tasks_collection.aggregate([
+            {"$match": {"project_id": project["_id"]}},
+            {
+                "$addFields": {
+                    "project_name": project.get("name")
+                }
+            },
+            {
+                "$project": {
+                    "embedding": 0
+                }
+            },
+            {"$sort": {"status": 1, "created_at": -1}},
+            {"$limit": 100}
+        ]))
+
+        logger.info(f"Found {len(tasks)} tasks for project")
+
+        # Convert ObjectIds to strings
+        project["_id"] = str(project["_id"])
+        for task in tasks:
+            if task.get("_id"):
+                task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        # Count tasks by status
+        todo_count = len([t for t in tasks if t.get("status") == "todo"])
+        in_progress_count = len([t for t in tasks if t.get("status") == "in_progress"])
+        done_count = len([t for t in tasks if t.get("status") == "done"])
+
+        return {
+            "type": "project_detail",
+            "project": project,
+            "tasks": tasks,
+            "task_count": len(tasks),
+            "todo_count": todo_count,
+            "in_progress_count": in_progress_count,
+            "done_count": done_count
+        }
+
     def _handle_search(self, sub, args, kwargs):
         """Handle /search commands."""
         if not args:
@@ -483,16 +764,23 @@ class SlashCommandExecutor:
         return {
             "help_text": """**Flow Companion Slash Commands**
 
-**QUERIES**
+**TASK QUERIES**
 • `/tasks` - List all tasks (table format)
 • `/tasks status:<status>` - Filter by status (todo, in_progress, done)
 • `/tasks priority:<level>` - Filter by priority (low, medium, high)
 • `/tasks project:<name>` - Filter by project name (case-insensitive)
 • `/tasks status:in_progress priority:high` - Multiple filters (combined with AND)
+• `/tasks search <query>` - Hybrid search for tasks (semantic + text)
 • `/tasks today` - Tasks with activity today
 • `/tasks yesterday` - Tasks with activity yesterday
 • `/tasks week` - Tasks with activity this week
+• `/tasks stale` - In-progress tasks older than 7 days
+• `/tasks completed:today` - Tasks completed today
+• `/tasks completed:this_week` - Tasks completed this week
+
+**PROJECT QUERIES**
 • `/projects` - List all projects with task counts
+• `/projects <name>` - Show specific project with all its tasks
 • `/projects search <query>` - Search projects by name/description
 
 **SEARCH**
@@ -510,10 +798,14 @@ class SlashCommandExecutor:
 • `/help` - Show this help
 • `<command> raw` - Show JSON output instead of table (e.g., `/tasks raw`)
 
-**Filter Examples:**
+**Examples:**
 • `/tasks project:AgentOps` - All tasks in AgentOps project
 • `/tasks project:AgentOps status:todo` - Todo tasks in AgentOps
 • `/tasks priority:high status:in_progress` - High priority tasks in progress
+• `/tasks search debugging` - Search for tasks about debugging
+• `/tasks completed:today` - Tasks completed today
+• `/projects AgentOps` - Show AgentOps project with all its tasks
+• `/projects search memory` - Search for projects about memory
 
 **Note:** Slash commands bypass the LLM and execute directly against MongoDB for instant results (<100ms typical)."""
         }
@@ -860,8 +1152,29 @@ def render_command_result(result: Dict[str, Any]):
     show_raw = result.get("show_raw", False)
 
     # Handle different result types
-    if "error" in data:
+    if isinstance(data, dict) and "error" in data:
         st.error(data["error"])
+    elif isinstance(data, dict) and data.get("type") == "project_detail":
+        # Project detail view with tasks
+        project = data.get("project", {})
+        tasks = data.get("tasks", [])
+
+        st.markdown(f"**Project:** {project.get('name', 'Untitled')}")
+        if project.get("description"):
+            st.markdown(f"*{project.get('description')}*")
+
+        st.markdown(f"**Status:** {data.get('todo_count', 0)} todo • {data.get('in_progress_count', 0)} in progress • {data.get('done_count', 0)} done")
+        st.markdown("")
+
+        if tasks:
+            st.markdown(f"**Tasks ({len(tasks)}):**")
+            table = format_tasks_table(tasks, show_raw)
+            if table:
+                st.markdown(table)
+            else:
+                st.json(tasks)
+        else:
+            st.info("No tasks in this project")
     elif "help_text" in data:
         # Help output - new format
         st.markdown(data["help_text"])
