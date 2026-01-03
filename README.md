@@ -159,7 +159,44 @@ Vector search indexes must be created in the Atlas UI:
 
 ⚠️ **Important**: Index names must match exactly as shown above.
 
-### 5. Run the Application
+### 5. Load Sample Data (Optional but Recommended)
+
+To get started quickly with realistic sample data:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Load sample data (10 projects with 44 tasks)
+python scripts/load_sample_data.py
+```
+
+This will:
+- Clear any existing data
+- Load 10 realistic projects (AgentOps, Memory Engineering, Voice Agents, etc.)
+- Create 44 tasks across projects with various statuses
+- Generate embeddings for semantic search
+- Set up realistic activity logs and timestamps
+
+**Options:**
+```bash
+# Skip embeddings for faster loading (semantic search won't work)
+python scripts/load_sample_data.py --skip-embeddings
+```
+
+**Sample Projects Included:**
+- AgentOps Framework (5 tasks)
+- Memory Engineering Content (4 tasks)
+- LangGraph Integration (4 tasks)
+- Voice Agent Architecture (5 tasks)
+- Gaming NPC Demo (6 tasks)
+- AWS re:Invent Prep (4 tasks)
+- CrewAI Memory Patterns (3 tasks)
+- Education Adaptive Tutoring Demo (4 tasks)
+- Q4 FY25 Deliverables (4 tasks - archived)
+- Developer Webinar Series (5 tasks)
+
+### 6. Run the Application
 
 Make sure your virtual environment is activated, then run:
 
