@@ -495,6 +495,8 @@ class SlashCommandExecutor:
             self.logger.info(f">>> BRANCH: Get specific project")
             # Reconstruct project name from sub + args
             project_name = f"{sub} {' '.join(args)}" if args else sub
+            # Strip quote characters that might be from escaping: /projects "Voice Agent"
+            project_name = project_name.strip('"').strip("'")
             self.logger.info(f"Getting specific project: {project_name}")
             return self._get_project_detail(project_name)
 
