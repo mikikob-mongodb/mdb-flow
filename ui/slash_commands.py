@@ -73,6 +73,8 @@ class SlashCommandExecutor:
                 result = self._handle_search(sub, args, kwargs)
             elif cmd == "bench":
                 result = self._handle_bench(sub, args, kwargs)
+            elif cmd == "do":
+                result = self._handle_do(sub, args, kwargs)
             elif cmd == "help":
                 result = self._handle_help(sub)
             else:
@@ -87,11 +89,15 @@ class SlashCommandExecutor:
                 "show_raw": show_raw
             }
         except Exception as e:
+            import traceback
+            self.logger.error(f"Command execution error: {e}")
+            self.logger.error(traceback.format_exc())
             return {
                 "success": False,
                 "command": parsed_command["raw"],
                 "duration_ms": int((time.time() - start) * 1000),
                 "error": str(e),
+                "traceback": traceback.format_exc(),
                 "show_raw": show_raw
             }
 
@@ -729,6 +735,157 @@ class SlashCommandExecutor:
             "p99_ms": round(times[int(len(times) * 0.99)], 1) if runs >= 100 else None
         }
 
+    def _handle_do(self, sub, args, kwargs):
+        """Handle /do commands - task actions."""
+        from shared.db import update_task, add_task_note, create_task, get_task
+        from shared.models import Task
+        from bson import ObjectId
+
+        self.logger.info(f"=== /do command ===")
+        self.logger.info(f"sub: {sub}, args: {args}, kwargs: {kwargs}")
+
+        if not sub:
+            return {"error": "Usage: /do <action> <task_reference> [options]"}
+
+        action = sub.lower()
+
+        # Handle create action (doesn't need task lookup)
+        if action == "create":
+            if not args:
+                return {"error": "Usage: /do create <title> [project:<name>] [priority:<level>]"}
+
+            title = " ".join(args)
+            self.logger.info(f"Creating task: {title}")
+
+            # Build task object
+            task_data = {
+                "title": title,
+                "description": "",
+                "status": "todo",
+                "priority": kwargs.get("priority", "medium"),
+                "project_id": None
+            }
+
+            # Resolve project if provided
+            if kwargs.get("project"):
+                from shared.db import get_collection, PROJECTS_COLLECTION
+                projects_collection = get_collection(PROJECTS_COLLECTION)
+                project_doc = projects_collection.find_one(
+                    {"name": {"$regex": kwargs["project"], "$options": "i"}},
+                    {"_id": 1, "name": 1}
+                )
+                if project_doc:
+                    task_data["project_id"] = project_doc["_id"]
+                    self.logger.info(f"Assigned to project: {project_doc['name']}")
+
+            # Create task
+            task = Task(**task_data)
+            task_id = create_task(task, action_note=f"Created via /do command")
+
+            # Fetch created task
+            created_task = get_task(task_id)
+            return {
+                "action": "create",
+                "task": {
+                    "_id": str(created_task.id),
+                    "title": created_task.title,
+                    "status": created_task.status,
+                    "priority": created_task.priority
+                },
+                "message": f"✅ Created task: {created_task.title}"
+            }
+
+        # For other actions, we need to find the task first
+        if not args:
+            return {"error": f"Usage: /do {action} <task_reference>"}
+
+        # Extract task reference and optional note (for 'note' action)
+        task_reference = " ".join(args)
+        note_text = None
+
+        # For note action, extract note from quotes or kwargs
+        if action == "note":
+            # Look for quoted text
+            import re
+            quoted = re.search(r'"([^"]+)"', task_reference)
+            if quoted:
+                note_text = quoted.group(1)
+                task_reference = task_reference.replace(quoted.group(0), "").strip()
+            elif "note" in kwargs:
+                note_text = kwargs["note"]
+
+            if not note_text:
+                return {"error": "Usage: /do note <task> \"<note_text>\""}
+
+        self.logger.info(f"Looking up task: {task_reference}")
+
+        # Use fuzzy matching to find the task
+        match_result = self.retrieval.fuzzy_match_task(task_reference, threshold=0.6)
+
+        if not match_result or "match" not in match_result:
+            # Try hybrid search as fallback
+            self.logger.info("Fuzzy match failed, trying hybrid search")
+            search_results = self.retrieval.hybrid_search_tasks(task_reference, limit=1)
+            if not search_results:
+                return {"error": f"Task not found: {task_reference}"}
+            task = search_results[0]
+        else:
+            task = match_result["match"]
+
+        task_id = task["_id"] if isinstance(task["_id"], ObjectId) else ObjectId(task["_id"])
+        task_title = task.get("title", "Unknown")
+
+        self.logger.info(f"Found task: {task_title} (ID: {task_id})")
+
+        # Perform the action
+        if action == "complete":
+            success = update_task(task_id, {"status": "done"}, "Completed via /do command")
+            if success:
+                return {
+                    "action": "complete",
+                    "task": {"_id": str(task_id), "title": task_title, "status": "done"},
+                    "message": f"✅ Completed: {task_title}"
+                }
+            else:
+                return {"error": "Failed to update task"}
+
+        elif action == "start":
+            success = update_task(task_id, {"status": "in_progress"}, "Started via /do command")
+            if success:
+                return {
+                    "action": "start",
+                    "task": {"_id": str(task_id), "title": task_title, "status": "in_progress"},
+                    "message": f"▶️ Started: {task_title}"
+                }
+            else:
+                return {"error": "Failed to update task"}
+
+        elif action == "stop":
+            success = update_task(task_id, {"status": "todo"}, "Stopped via /do command")
+            if success:
+                return {
+                    "action": "stop",
+                    "task": {"_id": str(task_id), "title": task_title, "status": "todo"},
+                    "message": f"⏸️ Stopped: {task_title}"
+                }
+            else:
+                return {"error": "Failed to update task"}
+
+        elif action == "note":
+            success = add_task_note(task_id, note_text)
+            if success:
+                return {
+                    "action": "note",
+                    "task": {"_id": str(task_id), "title": task_title},
+                    "note": note_text,
+                    "message": f"📝 Added note to: {task_title}"
+                }
+            else:
+                return {"error": "Failed to add note"}
+
+        else:
+            return {"error": f"Unknown action: {action}. Valid actions: complete, start, stop, note, create"}
+
     def _handle_help(self, sub):
         """Show help for slash commands."""
         return {
@@ -747,6 +904,14 @@ class SlashCommandExecutor:
 • `/tasks stale` - In-progress tasks older than 7 days
 • `/tasks completed:today` - Tasks completed today
 • `/tasks completed:this_week` - Tasks completed this week
+
+**TASK ACTIONS**
+• `/do complete <task>` - Mark task as done
+• `/do start <task>` - Mark task as in_progress
+• `/do stop <task>` - Mark task as todo
+• `/do note <task> "<note>"` - Add note to task
+• `/do create <title>` - Create new task
+• `/do create <title> project:<name> priority:<level>` - Create with options
 
 **PROJECT QUERIES**
 • `/projects` - List all projects with task counts
@@ -769,6 +934,10 @@ class SlashCommandExecutor:
 • `<command> raw` - Show JSON output instead of table (e.g., `/tasks raw`)
 
 **Examples:**
+• `/do complete debugging doc` - Complete task matching "debugging doc"
+• `/do start voice agent` - Start task matching "voice agent"
+• `/do note checkpointer "Fixed connection pooling"` - Add note
+• `/do create "Write tests" project:AgentOps priority:high` - Create task
 • `/tasks project:AgentOps` - All tasks in AgentOps project
 • `/tasks project:AgentOps status:todo` - Todo tasks in AgentOps
 • `/tasks priority:high status:in_progress` - High priority tasks in progress
