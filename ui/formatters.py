@@ -111,40 +111,6 @@ def format_projects_table(projects, show_raw=False):
     return "\n".join(lines)
 
 
-def format_benchmark_table(bench_data, show_raw=False):
-    """Format benchmark results as a markdown table."""
-    if show_raw:
-        return None  # Signal to show JSON instead
-
-    # Single benchmark result
-    if "operation" in bench_data:
-        lines = ["| Operation | Runs | Avg | Min | Max | P50 | P95 | Status |"]
-        lines.append("|-----------|------|-----|-----|-----|-----|-----|--------|")
-
-        p95 = f"{bench_data['p95_ms']}ms" if bench_data.get('p95_ms') else "-"
-        runs = bench_data.get('runs', '-')
-        lines.append(
-            f"| {bench_data['operation']} | {runs} | {bench_data['avg_ms']}ms | {bench_data['min_ms']}ms | "
-            f"{bench_data['max_ms']}ms | {bench_data['p50_ms']}ms | {p95} | ✓ |"
-        )
-        return "\n".join(lines)
-
-    # Multiple benchmark results
-    lines = ["| Operation | Runs | Avg | Min | Max | P50 | P95 | Status |"]
-    lines.append("|-----------|------|-----|-----|-----|-----|-----|--------|")
-
-    for name, bench in bench_data.items():
-        if isinstance(bench, dict) and "operation" in bench:
-            p95 = f"{bench['p95_ms']}ms" if bench.get('p95_ms') else "-"
-            runs = bench.get('runs', '-')
-            lines.append(
-                f"| {bench['operation']} | {runs} | {bench['avg_ms']}ms | {bench['min_ms']}ms | "
-                f"{bench['max_ms']}ms | {bench['p50_ms']}ms | {p95} | ✓ |"
-            )
-
-    return "\n".join(lines)
-
-
 def format_search_results_table(results, show_raw=False):
     """Format TASK search results as a markdown table."""
     if not results:
@@ -261,20 +227,6 @@ def render_command_result(result: Dict[str, Any]):
                 st.caption(f"Examples: {', '.join(f'`{ex}`' for ex in cmd['examples'])}")
         if data.get("note"):
             st.info(data["note"])
-    elif isinstance(data, dict) and any(k in data for k in ["operation", "runs", "avg_ms"]):
-        # Single benchmark result - format as table
-        table = format_benchmark_table(data, show_raw)
-        if table:
-            st.markdown(table)
-        else:
-            st.json(data)
-    elif isinstance(data, dict) and all(isinstance(v, dict) and "operation" in v for v in data.values()):
-        # Multiple benchmark results - format as table
-        table = format_benchmark_table(data, show_raw)
-        if table:
-            st.markdown(table)
-        else:
-            st.json(data)
     elif isinstance(data, list):
         # List of tasks, projects, or search results
         if len(data) == 0:

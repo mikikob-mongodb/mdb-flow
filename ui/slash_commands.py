@@ -71,12 +71,8 @@ class SlashCommandExecutor:
                 result = self._handle_projects(sub, args, kwargs)
             elif cmd == "search":
                 result = self._handle_search(sub, args, kwargs)
-            elif cmd == "bench":
-                result = self._handle_bench(sub, args, kwargs)
             elif cmd == "do":
                 result = self._handle_do(sub, args, kwargs)
-            elif cmd == "help":
-                result = self._handle_help(sub)
             else:
                 result = {"error": f"Unknown command: /{cmd}"}
 
@@ -732,44 +728,6 @@ class SlashCommandExecutor:
         else:
             return {"error": f"Unknown search type: {sub}"}
 
-    def _handle_bench(self, sub, args, kwargs):
-        """Handle /bench commands - run performance benchmarks."""
-        runs = int(kwargs.get("runs", 10))
-
-        if sub == "get":
-            return self._benchmark(lambda: self.worklog._list_tasks(limit=50), runs, "get_tasks")
-        elif sub == "search":
-            query = " ".join(args) if args else "debugging"
-            return self._benchmark(lambda: self.retrieval.hybrid_search_tasks(query, 5), runs, f"search_tasks({query})")
-        elif sub == "all":
-            return {
-                "get_tasks": self._benchmark(lambda: self.worklog._list_tasks(limit=50), runs, "get_tasks"),
-                "get_projects": self._benchmark(lambda: self.worklog._list_projects(limit=50), runs, "get_projects"),
-                "search_tasks": self._benchmark(lambda: self.retrieval.hybrid_search_tasks("debugging", 5), runs, "search_tasks"),
-            }
-        else:
-            return {"error": "Usage: /bench <get|search|all> [runs:N]"}
-
-    def _benchmark(self, fn, runs, name):
-        """Run a function multiple times and return timing statistics."""
-        times = []
-        for _ in range(runs):
-            start = time.time()
-            fn()
-            times.append((time.time() - start) * 1000)
-
-        times.sort()
-        return {
-            "operation": name,
-            "runs": runs,
-            "avg_ms": round(sum(times) / len(times), 1),
-            "min_ms": round(min(times), 1),
-            "max_ms": round(max(times), 1),
-            "p50_ms": round(times[len(times) // 2], 1),
-            "p95_ms": round(times[int(len(times) * 0.95)], 1) if runs >= 10 else None,
-            "p99_ms": round(times[int(len(times) * 0.99)], 1) if runs >= 100 else None
-        }
-
     def _handle_do(self, sub, args, kwargs):
         """Handle /do commands - task actions."""
         from shared.db import update_task, add_task_note, create_task, get_task
@@ -989,69 +947,3 @@ class SlashCommandExecutor:
 
         else:
             return {"error": f"Unknown action: {action}. Valid actions: complete, start, stop, note, create"}
-
-    def _handle_help(self, sub):
-        """Show help for slash commands."""
-        return {
-            "help_text": """**Flow Companion Slash Commands**
-
-**TASK QUERIES**
-• `/tasks` - List all tasks (table format)
-• `/tasks status:<status>` - Filter by status (todo, in_progress, done)
-• `/tasks priority:<level>` - Filter by priority (low, medium, high)
-• `/tasks project:<name>` - Filter by project name (case-insensitive)
-• `/tasks status:in_progress priority:high` - Multiple filters (combined with AND)
-• `/tasks search <query>` - Hybrid search for tasks (semantic + text)
-• `/tasks today` - Tasks with activity today
-• `/tasks yesterday` - Tasks with activity yesterday
-• `/tasks week` - Tasks with activity this week
-• `/tasks stale` - In-progress tasks older than 7 days
-• `/tasks completed:today` - Tasks completed today
-• `/tasks completed:this_week` - Tasks completed this week
-
-**TASK ACTIONS**
-• `/do complete <task>` - Mark task as done
-• `/do start <task>` - Mark task as in_progress
-• `/do stop <task>` - Mark task as todo
-• `/do note <task> "<note>"` - Add note to task
-• `/do create -t "<title>"` - Create new task
-• `/do create -t "<title>" -p <project>` - Create with project
-• `/do create -t "<title>" -p <project> --priority <level>` - Full options
-• Backward compatible: `/do create <title> project:<name> priority:<level>`
-
-**PROJECT QUERIES**
-• `/projects` - List all projects with task counts
-• `/projects <name>` - Show specific project with all its tasks
-• `/projects search <query>` - Search projects by name/description
-
-**SEARCH**
-• `/search <query>` - Hybrid search for tasks (semantic + text)
-• `/search projects <query>` - Search projects
-• `/search limit:10 bug` - Limit results (default: 5)
-
-**BENCHMARKS**
-• `/bench get` - Benchmark get_tasks operation
-• `/bench search <query>` - Benchmark search with specific query
-• `/bench all` - Benchmark all operations
-• `/bench get runs:100` - Custom number of runs (default: 10)
-
-**UTILITIES**
-• `/help` - Show this help
-• `<command> raw` - Show JSON output instead of table (e.g., `/tasks raw`)
-
-**Examples:**
-• `/do complete debugging doc` - Complete task matching "debugging doc"
-• `/do start voice agent` - Start task matching "voice agent"
-• `/do note checkpointer "Fixed connection pooling"` - Add note
-• `/do create -t "Write tests" -p AgentOps --priority high` - Create task
-• `/do create "Simple task"` - Create without project (backward compat)
-• `/tasks project:AgentOps` - All tasks in AgentOps project
-• `/tasks project:AgentOps status:todo` - Todo tasks in AgentOps
-• `/tasks priority:high status:in_progress` - High priority tasks in progress
-• `/tasks search debugging` - Search for tasks about debugging
-• `/tasks completed:today` - Tasks completed today
-• `/projects AgentOps` - Show AgentOps project with all its tasks
-• `/projects search memory` - Search for projects about memory
-
-**Note:** Slash commands bypass the LLM and execute directly against MongoDB for instant results (<100ms typical)."""
-        }

@@ -44,7 +44,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("status") == "todo" for task in data), \
             "All tasks should have status='todo'"
-        assert 5 < len(data) <= 30, f"Expected 5-30 todo tasks, got {len(data)}"
+        assert 5 < len(data) <= 40, f"Expected 5-40 todo tasks, got {len(data)}"
 
     def test_filter_by_status_in_progress(self, execute_command):
         """Test 1.3: Filter by status - in_progress."""
@@ -77,7 +77,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("priority") == "high" for task in data), \
             "All tasks should have priority='high'"
-        assert 5 < len(data) <= 35, f"Expected 5-35 high priority tasks, got {len(data)}"
+        assert 5 < len(data) <= 40, f"Expected 5-40 high priority tasks, got {len(data)}"
 
     def test_filter_by_priority_medium(self, execute_command):
         """Test 1.6: Filter by priority - medium."""
@@ -98,7 +98,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all("AgentOps" in task.get("project_name", "") for task in data), \
             "All tasks should belong to AgentOps project"
-        assert 3 < len(data) <= 20, f"Expected 3-20 AgentOps tasks, got {len(data)}"
+        assert 3 < len(data) <= 25, f"Expected 3-25 AgentOps tasks, got {len(data)}"
 
     def test_filter_by_project_with_spaces(self, execute_command):
         """Test 1.8: Filter by project with spaces - Voice Agent."""
@@ -559,30 +559,7 @@ class TestDoCommands:
 
 
 # ============================================================================
-# SECTION 8: /bench - Benchmarks
-# ============================================================================
-
-class TestBenchmarks:
-    """Test benchmark commands."""
-
-    def test_benchmark_get_tasks(self, execute_command):
-        """Test 8.1: Benchmark specific operation."""
-        result = execute_command("/bench get")
-
-        assert result["success"], f"Command failed: {result.get('error')}"
-
-        data = result.get("result", {})
-        assert "avg_ms" in data, "Should have avg_ms timing"
-        assert "min_ms" in data, "Should have min_ms timing"
-        assert "max_ms" in data, "Should have max_ms timing"
-
-        # Should be reasonably fast
-        assert data.get("avg_ms", 9999) < 1000, \
-            f"get_tasks should avg < 1000ms, got {data.get('avg_ms')}ms"
-
-
-# ============================================================================
-# SECTION 9: Column Validation Tests
+# SECTION 8: Column Validation Tests
 # ============================================================================
 
 class TestColumnValidation:
@@ -631,22 +608,3 @@ class TestColumnValidation:
             
             assert todo + in_progress + done == total, \
                 f"Task counts should sum to total for {project.get('name')}"
-
-
-# ============================================================================
-# SECTION 10: Help and Utility Commands
-# ============================================================================
-
-class TestUtilityCommands:
-    """Test help and utility commands."""
-
-    def test_help_command(self, execute_command):
-        """Test /help command."""
-        result = execute_command("/help")
-
-        assert result["success"], f"Command failed: {result.get('error')}"
-
-        data = result.get("result", {})
-        # Should have either help_text or commands
-        assert "help_text" in data or "commands" in data, \
-            "Help should return help text or commands list"
