@@ -363,6 +363,59 @@ def activity_log_factory():
 
 
 # ============================================================================
+# Test Data Helpers (Always mark test data)
+# ============================================================================
+
+@pytest.fixture
+def create_test_task():
+    """Create a task marked as test data."""
+    from shared.db import create_task
+    from shared.models import Task
+    from datetime import datetime
+
+    def _create(title, project_id=None, **kwargs):
+        """Create a task with is_test=True."""
+        task_data = {
+            "title": title,
+            "status": kwargs.get("status", "todo"),
+            "priority": kwargs.get("priority"),
+            "project_id": project_id,
+            "context": kwargs.get("context", ""),
+            "is_test": True,  # Always mark as test data
+            "created_at": datetime.utcnow()
+        }
+        task = Task(**task_data)
+        task_id = create_task(task, action_note="Test task created")
+        return task_id
+
+    return _create
+
+
+@pytest.fixture
+def create_test_project():
+    """Create a project marked as test data."""
+    from shared.db import get_collection, PROJECTS_COLLECTION
+    from datetime import datetime
+
+    def _create(name, **kwargs):
+        """Create a project with is_test=True."""
+        projects_collection = get_collection(PROJECTS_COLLECTION)
+        project_data = {
+            "name": name,
+            "description": kwargs.get("description", "Test project"),
+            "status": kwargs.get("status", "active"),
+            "is_test": True,  # Always mark as test data
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "activity_log": []
+        }
+        result = projects_collection.insert_one(project_data)
+        return result.inserted_id
+
+    return _create
+
+
+# ============================================================================
 # Test Helper Fixtures
 # ============================================================================
 

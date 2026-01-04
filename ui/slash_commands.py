@@ -141,7 +141,7 @@ class SlashCommandExecutor:
         else:
             # Regular task list with filters and $lookup for project names
             # Build match query from kwargs
-            match_query = {}
+            match_query = {"is_test": {"$ne": True}}  # Always exclude test data
 
             # Status filter
             if kwargs.get("status"):
@@ -160,7 +160,10 @@ class SlashCommandExecutor:
 
                 projects_collection = get_collection(PROJECTS_COLLECTION)
                 project_doc = projects_collection.find_one(
-                    {"name": {"$regex": project_name, "$options": "i"}},
+                    {
+                        "name": {"$regex": project_name, "$options": "i"},
+                        "is_test": {"$ne": True}  # Exclude test projects
+                    },
                     {"_id": 1}
                 )
 
@@ -487,11 +490,20 @@ class SlashCommandExecutor:
         # Regular project list with task counts via aggregation
         # Build aggregation pipeline with $lookup to get task counts
         pipeline = [
+            # Filter out test projects
+            {"$match": {"is_test": {"$ne": True}}},
             {
                 "$lookup": {
                     "from": "tasks",
-                    "localField": "_id",
-                    "foreignField": "project_id",
+                    "let": {"project_id": "$_id"},
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {"$eq": ["$project_id", "$$project_id"]},
+                                "is_test": {"$ne": True}  # Filter test tasks
+                            }
+                        }
+                    ],
                     "as": "tasks"
                 }
             },
@@ -584,7 +596,10 @@ class SlashCommandExecutor:
         # Fetch all tasks for these projects
         tasks_collection = get_collection(TASKS_COLLECTION)
         tasks = list(tasks_collection.find(
-            {"project_id": {"$in": project_ids}},
+            {
+                "project_id": {"$in": project_ids},
+                "is_test": {"$ne": True}  # Exclude test tasks
+            },
             {"project_id": 1, "status": 1}
         ))
 
@@ -619,7 +634,10 @@ class SlashCommandExecutor:
         # Find the project (case-insensitive exact match first)
         projects_collection = get_collection(PROJECTS_COLLECTION)
         project = projects_collection.find_one(
-            {"name": {"$regex": f"^{project_name}$", "$options": "i"}},
+            {
+                "name": {"$regex": f"^{project_name}$", "$options": "i"},
+                "is_test": {"$ne": True}  # Exclude test projects
+            },
             {"embedding": 0}
         )
 
@@ -627,7 +645,10 @@ class SlashCommandExecutor:
             # Try partial match
             self.logger.info(f"Exact match not found, trying partial match")
             project = projects_collection.find_one(
-                {"name": {"$regex": project_name, "$options": "i"}},
+                {
+                    "name": {"$regex": project_name, "$options": "i"},
+                    "is_test": {"$ne": True}  # Exclude test projects
+                },
                 {"embedding": 0}
             )
 
@@ -767,45 +788,51 @@ class SlashCommandExecutor:
             except ValueError as e:
                 return {"error": f"Invalid syntax: {e}"}
 
+            # Check if any flags are present
+            has_flags = any(arg.startswith("-") for arg in parsed_args)
+
             # Extract flags
             title = None
             project_name = None
             priority = kwargs.get("priority", "medium")  # Also check kwargs for backward compat
 
-            i = 0
-            while i < len(parsed_args):
-                arg = parsed_args[i]
+            if has_flags:
+                # Parse flag-based syntax: -t "title" -p project --priority high
+                i = 0
+                while i < len(parsed_args):
+                    arg = parsed_args[i]
 
-                if arg in ["-t", "--title"]:
-                    if i + 1 < len(parsed_args):
-                        title = parsed_args[i + 1]
-                        i += 2
+                    if arg in ["-t", "--title"]:
+                        if i + 1 < len(parsed_args):
+                            title = parsed_args[i + 1]
+                            i += 2
+                        else:
+                            return {"error": f"Flag {arg} requires a value"}
+                    elif arg in ["-p", "--project"]:
+                        if i + 1 < len(parsed_args):
+                            project_name = parsed_args[i + 1]
+                            i += 2
+                        else:
+                            return {"error": f"Flag {arg} requires a value"}
+                    elif arg == "--priority":
+                        if i + 1 < len(parsed_args):
+                            priority = parsed_args[i + 1]
+                            i += 2
+                        else:
+                            return {"error": "Flag --priority requires a value"}
                     else:
-                        return {"error": f"Flag {arg} requires a value"}
-                elif arg in ["-p", "--project"]:
-                    if i + 1 < len(parsed_args):
-                        project_name = parsed_args[i + 1]
-                        i += 2
-                    else:
-                        return {"error": f"Flag {arg} requires a value"}
-                elif arg == "--priority":
-                    if i + 1 < len(parsed_args):
-                        priority = parsed_args[i + 1]
-                        i += 2
-                    else:
-                        return {"error": "Flag --priority requires a value"}
-                else:
-                    # If no flags used, treat as title
-                    if title is None:
-                        title = arg
-                    i += 1
+                        # Skip unrecognized args
+                        i += 1
+            else:
+                # Backward compatibility: no flags means entire string is title
+                title = " ".join(parsed_args)
 
             # Also check kwargs for backward compatibility with colon syntax
             if not project_name and kwargs.get("project"):
                 project_name = kwargs["project"]
 
             if not title:
-                return {"error": "Title is required. Use: /do create -t \"Task title\""}
+                return {"error": "Title is required. Use: /do create -t \"Task title\" or /do create Title here"}
 
             self.logger.info(f"Creating task: title='{title}', project='{project_name}', priority='{priority}'")
 
@@ -823,7 +850,10 @@ class SlashCommandExecutor:
                 from shared.db import get_collection, PROJECTS_COLLECTION
                 projects_collection = get_collection(PROJECTS_COLLECTION)
                 project_doc = projects_collection.find_one(
-                    {"name": {"$regex": project_name, "$options": "i"}},
+                    {
+                        "name": {"$regex": project_name, "$options": "i"},
+                        "is_test": {"$ne": True}  # Exclude test projects
+                    },
                     {"_id": 1, "name": 1}
                 )
                 if not project_doc:

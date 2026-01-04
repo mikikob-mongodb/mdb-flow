@@ -640,7 +640,7 @@ class RetrievalAgent:
         logger.debug(f"Embedding generated: {len(query_embedding)} dimensions")
 
         # Build base match condition
-        match_condition = {}
+        match_condition = {"is_test": {"$ne": True}}  # Always exclude test data
         if project_hint:
             # Try to match project by name or ID
             project_match = self.fuzzy_match_project(project_hint, threshold=0.6)
@@ -659,6 +659,8 @@ class RetrievalAgent:
                     "limit": 10
                 }
             },
+            # Filter test data and optionally project
+            {"$match": match_condition},
             {
                 "$project": {
                     "_id": 1,
@@ -673,10 +675,6 @@ class RetrievalAgent:
                 }
             }
         ]
-
-        # Add project filter if specified
-        if match_condition:
-            pipeline.insert(1, {"$match": match_condition})
 
         try:
             logger.debug("Executing vector search pipeline...")
@@ -950,6 +948,12 @@ class RetrievalAgent:
                     }
                 }
             },
+            # Filter out test data
+            {
+                "$match": {
+                    "is_test": {"$ne": True}
+                }
+            },
             {
                 "$project": {
                     "_id": 1,
@@ -1051,6 +1055,12 @@ class RetrievalAgent:
                             "textSearch": 0.4
                         }
                     }
+                }
+            },
+            # Filter out test data
+            {
+                "$match": {
+                    "is_test": {"$ne": True}
                 }
             },
             {

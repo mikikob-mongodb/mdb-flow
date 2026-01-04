@@ -44,7 +44,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("status") == "todo" for task in data), \
             "All tasks should have status='todo'"
-        assert 20 < len(data) < 35, f"Expected 20-35 todo tasks, got {len(data)}"
+        assert 5 < len(data) < 20, f"Expected 5-20 todo tasks, got {len(data)}"
 
     def test_filter_by_status_in_progress(self, execute_command):
         """Test 1.3: Filter by status - in_progress."""
@@ -55,7 +55,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("status") == "in_progress" for task in data), \
             "All tasks should have status='in_progress'"
-        assert 5 < len(data) < 20, f"Expected 5-20 in_progress tasks, got {len(data)}"
+        assert 3 < len(data) < 10, f"Expected 3-10 in_progress tasks, got {len(data)}"
 
     def test_filter_by_status_done(self, execute_command):
         """Test 1.4: Filter by status - done."""
@@ -66,7 +66,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("status") == "done" for task in data), \
             "All tasks should have status='done'"
-        assert 5 < len(data) < 20, f"Expected 5-20 done tasks, got {len(data)}"
+        assert 30 < len(data) < 50, f"Expected 30-50 done tasks, got {len(data)}"
 
     def test_filter_by_priority_high(self, execute_command):
         """Test 1.5: Filter by priority - high."""

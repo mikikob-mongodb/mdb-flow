@@ -57,6 +57,9 @@ class Task(BaseModel):
     # Vector embedding (1024 dimensions for voyage-3)
     embedding: Optional[List[float]] = None
 
+    # Test data flag (for filtering test data from production queries)
+    is_test: bool = False
+
     class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
@@ -93,6 +96,9 @@ class Project(BaseModel):
 
     # Vector embedding (1024 dimensions for voyage-3)
     embedding: Optional[List[float]] = None
+
+    # Test data flag (for filtering test data from production queries)
+    is_test: bool = False
 
     class Config:
         populate_by_name = True
