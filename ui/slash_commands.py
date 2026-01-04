@@ -752,31 +752,86 @@ class SlashCommandExecutor:
         # Handle create action (doesn't need task lookup)
         if action == "create":
             if not args:
-                return {"error": "Usage: /do create <title> [project:<name>] [priority:<level>]"}
+                return {"error": "Usage: /do create -t <title> [-p <project>] [--priority <level>]"}
 
-            title = " ".join(args)
-            self.logger.info(f"Creating task: {title}")
+            # Parse flags for create command
+            import shlex
+
+            # Reconstruct the original command string for proper quote handling
+            create_args_str = " ".join(args)
+            self.logger.info(f"Parsing create command: {create_args_str}")
+
+            try:
+                # Parse shell-style arguments
+                parsed_args = shlex.split(create_args_str)
+            except ValueError as e:
+                return {"error": f"Invalid syntax: {e}"}
+
+            # Extract flags
+            title = None
+            project_name = None
+            priority = kwargs.get("priority", "medium")  # Also check kwargs for backward compat
+
+            i = 0
+            while i < len(parsed_args):
+                arg = parsed_args[i]
+
+                if arg in ["-t", "--title"]:
+                    if i + 1 < len(parsed_args):
+                        title = parsed_args[i + 1]
+                        i += 2
+                    else:
+                        return {"error": f"Flag {arg} requires a value"}
+                elif arg in ["-p", "--project"]:
+                    if i + 1 < len(parsed_args):
+                        project_name = parsed_args[i + 1]
+                        i += 2
+                    else:
+                        return {"error": f"Flag {arg} requires a value"}
+                elif arg == "--priority":
+                    if i + 1 < len(parsed_args):
+                        priority = parsed_args[i + 1]
+                        i += 2
+                    else:
+                        return {"error": "Flag --priority requires a value"}
+                else:
+                    # If no flags used, treat as title
+                    if title is None:
+                        title = arg
+                    i += 1
+
+            # Also check kwargs for backward compatibility with colon syntax
+            if not project_name and kwargs.get("project"):
+                project_name = kwargs["project"]
+
+            if not title:
+                return {"error": "Title is required. Use: /do create -t \"Task title\""}
+
+            self.logger.info(f"Creating task: title='{title}', project='{project_name}', priority='{priority}'")
 
             # Build task object
             task_data = {
                 "title": title,
                 "description": "",
                 "status": "todo",
-                "priority": kwargs.get("priority", "medium"),
+                "priority": priority,
                 "project_id": None
             }
 
             # Resolve project if provided
-            if kwargs.get("project"):
+            if project_name:
                 from shared.db import get_collection, PROJECTS_COLLECTION
                 projects_collection = get_collection(PROJECTS_COLLECTION)
                 project_doc = projects_collection.find_one(
-                    {"name": {"$regex": kwargs["project"], "$options": "i"}},
+                    {"name": {"$regex": project_name, "$options": "i"}},
                     {"_id": 1, "name": 1}
                 )
-                if project_doc:
-                    task_data["project_id"] = project_doc["_id"]
-                    self.logger.info(f"Assigned to project: {project_doc['name']}")
+                if not project_doc:
+                    # Project validation - MUST exist
+                    return {"error": f"Project not found: '{project_name}'. Use /projects to see available projects."}
+
+                task_data["project_id"] = project_doc["_id"]
+                self.logger.info(f"Assigned to project: {project_doc['name']}")
 
             # Create task
             task = Task(**task_data)
@@ -915,8 +970,10 @@ class SlashCommandExecutor:
 • `/do start <task>` - Mark task as in_progress
 • `/do stop <task>` - Mark task as todo
 • `/do note <task> "<note>"` - Add note to task
-• `/do create <title>` - Create new task
-• `/do create <title> project:<name> priority:<level>` - Create with options
+• `/do create -t "<title>"` - Create new task
+• `/do create -t "<title>" -p <project>` - Create with project
+• `/do create -t "<title>" -p <project> --priority <level>` - Full options
+• Backward compatible: `/do create <title> project:<name> priority:<level>`
 
 **PROJECT QUERIES**
 • `/projects` - List all projects with task counts
@@ -942,7 +999,8 @@ class SlashCommandExecutor:
 • `/do complete debugging doc` - Complete task matching "debugging doc"
 • `/do start voice agent` - Start task matching "voice agent"
 • `/do note checkpointer "Fixed connection pooling"` - Add note
-• `/do create "Write tests" project:AgentOps priority:high` - Create task
+• `/do create -t "Write tests" -p AgentOps --priority high` - Create task
+• `/do create "Simple task"` - Create without project (backward compat)
 • `/tasks project:AgentOps` - All tasks in AgentOps project
 • `/tasks project:AgentOps status:todo` - Todo tasks in AgentOps
 • `/tasks priority:high status:in_progress` - High priority tasks in progress
