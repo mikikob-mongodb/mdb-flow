@@ -146,7 +146,7 @@ def format_benchmark_table(bench_data, show_raw=False):
 
 
 def format_search_results_table(results, show_raw=False):
-    """Format search results as a markdown table."""
+    """Format TASK search results as a markdown table."""
     if not results:
         return "No results found."
 
@@ -172,6 +172,41 @@ def format_search_results_table(results, show_raw=False):
         priority = item.get("priority") or "-"
 
         lines.append(f"| {i} | {title} | {score} | {status} | {project} | {priority} |")
+
+    return "\n".join(lines)
+
+
+def format_project_search_results_table(results, show_raw=False):
+    """Format PROJECT search results as a markdown table."""
+    if not results:
+        return "No results found."
+
+    if show_raw:
+        return None  # Signal to show JSON instead
+
+    # Header for project search results
+    lines = ["| # | Name | Description | Status | Score |"]
+    lines.append("|---|------|-------------|--------|-------|")
+
+    for i, project in enumerate(results, 1):
+        name = project.get("name", "Untitled")[:40]
+        if len(project.get("name", "")) > 40:
+            name += "..."
+
+        description = project.get("description", "")[:50]
+        if len(project.get("description", "")) > 50:
+            description += "..."
+        if not description:
+            description = "-"
+
+        status = project.get("status", "active")
+
+        # Score from hybrid search
+        score = project.get("score", "-")
+        if isinstance(score, float):
+            score = f"{score:.2f}"
+
+        lines.append(f"| {i} | {name} | {description} | {status} | {score} |")
 
     return "\n".join(lines)
 
@@ -248,27 +283,35 @@ def render_command_result(result: Dict[str, Any]):
             # Determine type and format appropriately
             first_item = data[0]
 
-            # Check if it's a search result (has score field)
-            if isinstance(first_item, dict) and "score" in first_item:
+            # Check if it's a PROJECT SEARCH result (has both "name" and "score" fields)
+            if isinstance(first_item, dict) and "name" in first_item and "score" in first_item:
+                table = format_project_search_results_table(data, show_raw)
+                if table:
+                    st.markdown(f"**Found {len(data)} project(s):**")
+                    st.markdown(table)
+                else:
+                    st.json(data)
+            # Check if it's a project list (has "name" but no "score")
+            elif isinstance(first_item, dict) and "name" in first_item:
+                table = format_projects_table(data, show_raw)
+                if table:
+                    st.markdown(f"**Found {len(data)} project(s):**")
+                    st.markdown(table)
+                else:
+                    st.json(data)
+            # Check if it's a TASK search result (has "score" and "title")
+            elif isinstance(first_item, dict) and "score" in first_item and "title" in first_item:
                 table = format_search_results_table(data, show_raw)
                 if table:
                     st.markdown(f"**Found {len(data)} result(s):**")
                     st.markdown(table)
                 else:
                     st.json(data)
-            # Check if it's a task
+            # Check if it's a task list (has "title" and "status" but no "score")
             elif isinstance(first_item, dict) and "title" in first_item and "status" in first_item:
                 table = format_tasks_table(data, show_raw)
                 if table:
                     st.markdown(f"**Found {len(data)} task(s):**")
-                    st.markdown(table)
-                else:
-                    st.json(data)
-            # Check if it's a project
-            elif isinstance(first_item, dict) and "name" in first_item:
-                table = format_projects_table(data, show_raw)
-                if table:
-                    st.markdown(f"**Found {len(data)} project(s):**")
                     st.markdown(table)
                 else:
                     st.json(data)

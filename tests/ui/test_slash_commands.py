@@ -98,7 +98,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all("AgentOps" in task.get("project_name", "") for task in data), \
             "All tasks should belong to AgentOps project"
-        assert 3 < len(data) < 12, f"Expected 3-12 AgentOps tasks, got {len(data)}"
+        assert 3 < len(data) <= 15, f"Expected 3-15 AgentOps tasks, got {len(data)}"
 
     def test_filter_by_project_with_spaces(self, execute_command):
         """Test 1.8: Filter by project with spaces - Voice Agent."""

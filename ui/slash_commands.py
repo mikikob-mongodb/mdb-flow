@@ -482,8 +482,10 @@ class SlashCommandExecutor:
             return self._enrich_projects_with_task_counts(results)
 
         # Handle /projects <name> - Get specific project with its tasks
-        if sub and not args:
-            project_name = sub
+        # Support multi-word project names: /projects Voice Agent
+        if sub and sub != "search":
+            # Reconstruct project name from sub + args
+            project_name = f"{sub} {' '.join(args)}" if args else sub
             self.logger.info(f"Getting specific project: {project_name}")
             return self._get_project_detail(project_name)
 
