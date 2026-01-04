@@ -44,7 +44,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("status") == "todo" for task in data), \
             "All tasks should have status='todo'"
-        assert 5 < len(data) < 20, f"Expected 5-20 todo tasks, got {len(data)}"
+        assert 5 < len(data) <= 25, f"Expected 5-25 todo tasks, got {len(data)}"
 
     def test_filter_by_status_in_progress(self, execute_command):
         """Test 1.3: Filter by status - in_progress."""

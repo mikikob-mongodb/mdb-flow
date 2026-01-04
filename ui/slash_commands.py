@@ -466,10 +466,18 @@ class SlashCommandExecutor:
         from shared.db import get_collection, PROJECTS_COLLECTION
 
         self.logger.info(f"=== /projects command ===")
-        self.logger.info(f"sub: {sub}, args: {args}, kwargs: {kwargs}")
+        self.logger.info(f"sub: '{sub}' (type: {type(sub).__name__})")
+        self.logger.info(f"args: {args} (len: {len(args)})")
+        self.logger.info(f"kwargs: {kwargs}")
+        self.logger.info(f"Condition checks:")
+        self.logger.info(f"  - sub == 'search': {sub == 'search'}")
+        self.logger.info(f"  - sub is not None: {sub is not None}")
+        self.logger.info(f"  - bool(sub): {bool(sub)}")
+        self.logger.info(f"  - sub != 'search': {sub != 'search'}")
 
         # Handle search subcommand
         if sub == "search" and args:
+            self.logger.info(f">>> BRANCH: Search subcommand")
             query = " ".join(args)
             self.logger.info(f"Searching projects for: {query}")
             limit = int(kwargs.get("limit", 5))
@@ -484,12 +492,14 @@ class SlashCommandExecutor:
         # Handle /projects <name> - Get specific project with its tasks
         # Support multi-word project names: /projects Voice Agent
         if sub and sub != "search":
+            self.logger.info(f">>> BRANCH: Get specific project")
             # Reconstruct project name from sub + args
             project_name = f"{sub} {' '.join(args)}" if args else sub
             self.logger.info(f"Getting specific project: {project_name}")
             return self._get_project_detail(project_name)
 
         # Regular project list with task counts via aggregation
+        self.logger.info(f">>> BRANCH: List all projects")
         # Build aggregation pipeline with $lookup to get task counts
         pipeline = [
             # Filter out test projects
