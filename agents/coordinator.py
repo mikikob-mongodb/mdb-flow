@@ -527,6 +527,11 @@ class CoordinatorAgent:
 
         # Use Claude's native tool use - TIME THIS CALL
         logger.info("Calling Claude with tool use enabled")
+        logger.info(f"📊 Turn {turn_number}: Sending {len(COORDINATOR_TOOLS)} tools to LLM")
+        logger.info(f"📊 Messages count: {len(messages)}")
+        # Log last few messages for debugging
+        if len(messages) > 1:
+            logger.debug(f"📊 Last message roles: {[m.get('role') for m in messages[-3:]]}")
         import time
         llm_start = time.time()
         response = self.llm.generate_with_tools(
@@ -537,6 +542,18 @@ class CoordinatorAgent:
             temperature=0.3
         )
         llm_duration = int((time.time() - llm_start) * 1000)
+
+        # DEBUG: Check response
+        logger.info(f"📊 Response stop_reason: {response.stop_reason}")
+        tool_use_blocks = [b for b in response.content if hasattr(b, 'type') and b.type == 'tool_use']
+        logger.info(f"📊 Tool use blocks: {len(tool_use_blocks)}")
+        if tool_use_blocks:
+            logger.info(f"📊 Tools called: {[b.name for b in tool_use_blocks]}")
+        else:
+            # Log why no tool was called - check the text response
+            text_blocks = [b.text for b in response.content if hasattr(b, 'text')]
+            if text_blocks:
+                logger.warning(f"📊 NO TOOLS CALLED - LLM responded with text: {text_blocks[0][:200]}...")
 
         # Track the initial LLM call
         self.current_turn["llm_calls"].append({
