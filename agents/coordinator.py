@@ -520,7 +520,9 @@ class CoordinatorAgent:
         self.last_debug_info = []
 
         # Build messages - SAME PATH FOR VOICE AND TEXT
-        messages = conversation_history.copy() if conversation_history else []
+        # CRITICAL: Serialize conversation history to ensure datetime/ObjectId objects are converted to strings
+        # Otherwise the Anthropic API will fail with "Object of type datetime is not JSON serializable"
+        messages = convert_objectids_to_str(conversation_history.copy()) if conversation_history else []
         messages.append({"role": "user", "content": user_message})
 
         # Use Claude's native tool use - TIME THIS CALL
