@@ -286,7 +286,9 @@ def validate_count_range():
 def db_client():
     """Get MongoDB client for database tests."""
     from shared.db import mongodb
-    return mongodb._client if mongodb._client else mongodb.connect() and mongodb._client
+    if not mongodb._client:
+        mongodb.connect()
+    return mongodb._client
 
 
 @pytest.fixture(scope="session")
