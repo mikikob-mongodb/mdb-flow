@@ -822,6 +822,7 @@ class SlashCommandExecutor:
         # Use fuzzy matching to find the task
         match_result = self.retrieval.fuzzy_match_task(task_reference, threshold=0.6)
 
+        task = None
         if not match_result or "match" not in match_result:
             # Try hybrid search as fallback
             self.logger.info("Fuzzy match failed, trying hybrid search")
@@ -831,6 +832,10 @@ class SlashCommandExecutor:
             task = search_results[0]
         else:
             task = match_result["match"]
+
+        # Verify task was found
+        if not task or not task.get("_id"):
+            return {"error": f"Task not found: {task_reference}"}
 
         task_id = task["_id"] if isinstance(task["_id"], ObjectId) else ObjectId(task["_id"])
         task_title = task.get("title", "Unknown")

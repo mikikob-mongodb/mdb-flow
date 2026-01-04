@@ -431,14 +431,142 @@ class TestDirectSearch:
 
 
 # ============================================================================
-# SECTION 7: /bench - Benchmarks
+# SECTION 7: /do - Task Actions
+# ============================================================================
+
+class TestDoCommands:
+    """Test /do commands for task actions."""
+
+    def test_do_complete_task(self, execute_command, tasks_collection):
+        """Test 7.1: Complete a task using /do complete."""
+        result = execute_command("/do complete debugging doc")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        assert data.get("action") == "complete", "Action should be 'complete'"
+        assert "message" in data, "Should have success message"
+
+        # Verify task exists in result
+        task = data.get("task", {})
+        assert task.get("status") == "done", "Task status should be 'done'"
+        assert "debugging" in task.get("title", "").lower(), \
+            "Task title should contain 'debugging'"
+
+    def test_do_start_task(self, execute_command):
+        """Test 7.2: Start a task using /do start."""
+        result = execute_command("/do start voice agent app")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        assert data.get("action") == "start", "Action should be 'start'"
+
+        task = data.get("task", {})
+        assert task.get("status") == "in_progress", \
+            "Task status should be 'in_progress'"
+
+    def test_do_stop_task(self, execute_command):
+        """Test 7.3: Stop a task using /do stop."""
+        # First start a task
+        execute_command("/do start checkpointer")
+
+        # Then stop it
+        result = execute_command("/do stop checkpointer")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        assert data.get("action") == "stop", "Action should be 'stop'"
+
+        task = data.get("task", {})
+        assert task.get("status") == "todo", "Task status should be 'todo'"
+
+    def test_do_note_task(self, execute_command):
+        """Test 7.4: Add note to task using /do note."""
+        result = execute_command('/do note debugging doc "Fixed edge case with null embeddings"')
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        assert data.get("action") == "note", "Action should be 'note'"
+        assert "note" in data, "Should include the note text"
+        assert "Fixed edge case" in data.get("note", ""), \
+            "Note should contain the text"
+
+    def test_do_create_task_basic(self, execute_command):
+        """Test 7.5: Create a new task using /do create."""
+        result = execute_command("/do create Write unit tests for slash commands")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        assert data.get("action") == "create", "Action should be 'create'"
+
+        task = data.get("task", {})
+        assert "unit tests" in task.get("title", "").lower(), \
+            "Task title should contain 'unit tests'"
+        assert task.get("status") == "todo", "New task should have status 'todo'"
+
+    def test_do_create_task_with_options(self, execute_command):
+        """Test 7.6: Create task with project and priority."""
+        result = execute_command(
+            "/do create Review documentation project:AgentOps priority:high"
+        )
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        assert data.get("action") == "create", "Action should be 'create'"
+
+        task = data.get("task", {})
+        assert task.get("priority") == "high", "Priority should be 'high'"
+        # Note: Project assignment validation would require checking project_id
+
+    def test_do_fuzzy_matching(self, execute_command):
+        """Test 7.7: Fuzzy matching finds tasks with partial names."""
+        # "checkpointer" should match "Implement MongoDB checkpointer for LangGraph"
+        result = execute_command("/do complete checkpointer")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        task = data.get("task", {})
+        assert "checkpointer" in task.get("title", "").lower(), \
+            "Should find task containing 'checkpointer'"
+
+    def test_do_task_not_found(self, execute_command):
+        """Test 7.8: Handle task not found gracefully."""
+        result = execute_command("/do complete nonexistent_task_xyz123")
+
+        # The command executes successfully but returns an error in the result
+        data = result.get("result", {})
+        assert "error" in data, "Should have error in result"
+        assert "not found" in data.get("error", "").lower(), \
+            f"Error should mention 'not found', got: {data.get('error')}"
+
+    def test_do_invalid_action(self, execute_command):
+        """Test 7.9: Handle invalid action gracefully."""
+        # Use an existing task name so the task is found first
+        result = execute_command("/do invalid_action debugging doc")
+
+        # Should fail with error about unknown action
+        data = result.get("result", {})
+        assert "error" in data, "Should have error for invalid action"
+        error_msg = data.get("error", "").lower()
+        assert "unknown" in error_msg or "invalid" in error_msg, \
+            f"Error should mention unknown/invalid action, got: {data.get('error')}"
+
+
+# ============================================================================
+# SECTION 8: /bench - Benchmarks
 # ============================================================================
 
 class TestBenchmarks:
     """Test benchmark commands."""
 
     def test_benchmark_get_tasks(self, execute_command):
-        """Test 8.2: Benchmark specific operation."""
+        """Test 8.1: Benchmark specific operation."""
         result = execute_command("/bench get")
 
         assert result["success"], f"Command failed: {result.get('error')}"
@@ -454,7 +582,7 @@ class TestBenchmarks:
 
 
 # ============================================================================
-# SECTION 8: Column Validation Tests
+# SECTION 9: Column Validation Tests
 # ============================================================================
 
 class TestColumnValidation:
@@ -506,7 +634,7 @@ class TestColumnValidation:
 
 
 # ============================================================================
-# SECTION 9: Help and Utility Commands
+# SECTION 10: Help and Utility Commands
 # ============================================================================
 
 class TestUtilityCommands:

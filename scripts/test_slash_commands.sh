@@ -96,7 +96,7 @@ done
 echo "Running tests..."
 echo ""
 
-pytest tests/test_slash_commands.py \
+pytest tests/ui/test_slash_commands.py \
     $VERBOSE \
     $COVERAGE \
     $SPECIFIC_TEST \
