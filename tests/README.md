@@ -150,6 +150,19 @@ pytest tests/performance/
 - `worklog_agent` - Worklog agent
 - `executor` - SlashCommandExecutor
 
+### Test Data Creation Fixtures
+**IMPORTANT: Always use these fixtures when creating test data**
+
+- `create_test_task(title, project_id=None, **kwargs)` - Create task marked as test data
+  - Automatically sets `is_test=True` flag
+  - Returns task ID
+  - Example: `task_id = create_test_task("Test task", project_id=project_id, status="todo")`
+
+- `create_test_project(name, **kwargs)` - Create project marked as test data
+  - Automatically sets `is_test=True` flag
+  - Returns project ID
+  - Example: `project_id = create_test_project("Test Project", description="Test")`
+
 ### Mock Data Factories
 - `task_factory` - Create test tasks
 - `project_factory` - Create test projects
@@ -211,22 +224,26 @@ test_voice_input_informal_reference_finds_correct_task()
 test_confirmation_single_match_asks_for_confirmation()
 ```
 
-### Using Factories
+### Using Test Data Fixtures
 ```python
-def test_with_mock_data(task_factory, projects_collection):
-    """Example test using factories."""
-    # Create test data
-    project = project_factory.create(name="Test Project")
-    projects_collection.insert_one(project)
-    
-    task = task_factory.create_with_project(
-        project, 
-        title="Test Task",
-        status="in_progress"
+def test_with_test_data(create_test_task, create_test_project):
+    """Example test using test data fixtures."""
+    # Create test project (automatically marked is_test=True)
+    project_id = create_test_project(
+        name="Test Project",
+        description="Test project description"
     )
-    tasks_collection.insert_one(task)
-    
+
+    # Create test task (automatically marked is_test=True)
+    task_id = create_test_task(
+        title="Test Task",
+        project_id=project_id,
+        status="in_progress",
+        priority="high"
+    )
+
     # Test logic here...
+    # Production queries will automatically exclude this test data
 ```
 
 ## Test Coverage Goals
@@ -330,6 +347,75 @@ Tests are designed to run in CI/CD pipelines:
   uses: codecov/codecov-action@v3
 ```
 
+## Test Data Management
+
+### Test Data Isolation
+
+All test data is automatically isolated from production data using the `is_test` flag:
+
+- **Tasks and Projects models** have an `is_test: bool` field (defaults to `False`)
+- **Production queries** automatically filter out test data with `{"is_test": {"$ne": True}}`
+- **Test fixtures** (`create_test_task`, `create_test_project`) always set `is_test=True`
+
+### Benefits
+
+1. **No Pollution**: Tests can create data freely without affecting production queries
+2. **Automatic Filtering**: All production code automatically excludes test data
+3. **Easy Cleanup**: Simple query to remove all test data
+4. **Debugging**: Can toggle test data visibility when needed
+
+### Cleaning Up Test Data
+
+To remove test data created during testing:
+
+```bash
+# Mark test-like data and optionally delete
+python scripts/cleanup_test_data.py
+```
+
+The script will:
+1. Mark test-like patterns, orphans, and invalid references with `is_test=True`
+2. Ask for confirmation before deleting
+3. Show counts of production vs test data
+
+Manual cleanup:
+```python
+# In MongoDB shell or Python
+db.tasks.delete_many({"is_test": True})
+db.projects.delete_many({"is_test": True})
+```
+
+### Writing Tests with Test Data
+
+**Always use the test fixtures:**
+
+```python
+def test_example(create_test_task, create_test_project):
+    """Example showing proper test data creation."""
+    # Create test project (automatically marked is_test=True)
+    project_id = create_test_project("Test Project")
+
+    # Create test task (automatically marked is_test=True)
+    task_id = create_test_task(
+        "Test Task",
+        project_id=project_id,
+        status="todo",
+        priority="high"
+    )
+
+    # Your test logic here...
+    # Production queries will NOT see this test data
+```
+
+**Don't manually insert test data:**
+```python
+# ❌ BAD - Creates production data during tests
+tasks_collection.insert_one({"title": "Test", "status": "todo"})
+
+# ✅ GOOD - Uses fixture that marks as test data
+task_id = create_test_task("Test", status="todo")
+```
+
 ## Test Philosophy
 
 1. **Independent Tests**: Each test can run in any order
@@ -337,6 +423,7 @@ Tests are designed to run in CI/CD pipelines:
 3. **Fast**: Unit tests < 100ms, integration tests < 1s
 4. **Clear**: Every test has docstring explaining scenario
 5. **Edge Cases**: Critical edge cases are documented and tested
+6. **Isolated Data**: All test data marked with `is_test=True` flag
 
 ## Migration from Old Test Files
 
