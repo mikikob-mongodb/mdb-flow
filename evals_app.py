@@ -26,6 +26,7 @@ st.set_page_config(
 from evals.configs import EVAL_CONFIGS, DEFAULT_SELECTED
 from evals.runner import ComparisonRunner
 from evals.result import ComparisonRun
+from evals.storage import save_comparison_run, list_comparison_runs, load_comparison_run
 
 # Import coordinator
 from agents.coordinator import coordinator
@@ -439,8 +440,17 @@ def run_comparison():
     try:
         run = runner.run_comparison(configs, skip_voice=True)
         st.session_state.comparison_run = run
+
+        # Save to MongoDB
+        progress.progress(1.0, text="Saving results...")
+        try:
+            save_comparison_run(run)
+            st.success(f"Completed {len(run.tests)} tests. Saved as {run.run_id}")
+        except Exception as e:
+            st.warning(f"Results not saved to DB: {e}")
+            st.success(f"Completed {len(run.tests)} tests (not persisted)")
+
         progress.empty()
-        st.success(f"Completed {len(run.tests)} tests across {len(configs)} configs")
         st.rerun()
     except Exception as e:
         progress.empty()
@@ -509,6 +519,64 @@ def export_results():
     )
 
 
+def render_history_sidebar():
+    """Render sidebar with past runs."""
+    st.sidebar.header("📜 Past Runs")
+
+    try:
+        runs = list_comparison_runs(limit=10)
+    except:
+        runs = []
+
+    if not runs:
+        st.sidebar.caption("No saved runs yet")
+        return
+
+    for run in runs:
+        run_id = run.get("run_id", "unknown")
+        timestamp = run.get("timestamp", "")
+        configs = run.get("configs_compared", [])
+
+        # Format timestamp
+        if isinstance(timestamp, str):
+            display_time = timestamp[:16].replace("T", " ")
+        else:
+            display_time = timestamp.strftime("%Y-%m-%d %H:%M") if timestamp else ""
+
+        # Summary
+        summary = run.get("summary_by_config", {})
+        baseline_latency = summary.get("baseline", {}).get("avg_latency_ms", 0)
+
+        col1, col2 = st.sidebar.columns([3, 1])
+        with col1:
+            st.caption(f"{display_time}")
+            st.caption(f"{len(configs)} configs")
+        with col2:
+            if st.button("Load", key=f"load_{run_id}"):
+                load_saved_run(run_id)
+
+
+def load_saved_run(run_id: str):
+    """Load a saved run into session state."""
+    try:
+        doc = load_comparison_run(run_id)
+        if doc:
+            # Reconstruct ComparisonRun from dict
+            run = ComparisonRun(
+                run_id=doc.get("run_id"),
+                timestamp=doc.get("timestamp"),
+                configs_compared=doc.get("configs_compared", []),
+            )
+            run.summary_by_config = doc.get("summary_by_config", {})
+            # Note: Full test reconstruction would need more work
+            # For now just load summaries for charts
+            st.session_state.comparison_run = run
+            st.session_state.selected_configs = doc.get("configs_compared", [])
+            st.rerun()
+    except Exception as e:
+        st.sidebar.error(f"Failed to load: {e}")
+
+
 def main():
     st.title("📊 Flow Companion Evals Dashboard")
     st.caption("Compare optimization configurations across test queries")
@@ -516,6 +584,10 @@ def main():
     init_session_state()
     init_coordinator()
 
+    # Sidebar with history
+    render_history_sidebar()
+
+    # Main content
     render_config_section()
     st.markdown("---")
     render_summary_section()
