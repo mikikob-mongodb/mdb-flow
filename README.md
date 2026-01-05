@@ -1,11 +1,12 @@
 # Flow Companion
 
-**Version 1.0.0 (Milestone 1)**
+**Version 3.1 (Milestone 3 - Evals Dashboard)**
 
-A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and Claude API.
+A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and Claude API. Features voice input, context engineering optimizations, and a comprehensive evaluation dashboard for measuring performance.
 
 ## Features
 
+### Core Functionality (Milestone 1)
 - **Conversational Task Management** - Natural language interface for creating and managing tasks
 - **Multi-Agent System** - Coordinator routes requests to specialized agents:
   - **Worklog Agent** - Handles task/project CRUD operations
@@ -16,13 +17,35 @@ A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and
 - **Rich Context** - Store detailed context, notes, decisions, and methods
 - **Progress Tracking** - Monitor project completion and task statistics
 
+### Voice Input (Milestone 2)
+- **Voice Commands** - Speak to manage tasks with OpenAI Whisper transcription
+- **Audio Recording** - Built-in browser audio capture
+- **Slash Commands** - Fast direct queries bypassing LLM (`/tasks`, `/projects`, `/search`)
+- **Task List Sidebar** - Visual task management with status indicators
+
+### Context Engineering (Milestone 2)
+- **Tool Result Compression** - Reduce context size by 60-70% while preserving key information
+- **Streamlined Prompts** - Directive-based system prompts for faster response
+- **Prompt Caching** - Cache system prompts with Anthropic API for reduced latency
+- **Configurable Toggles** - Enable/disable optimizations in real-time
+
+### Evals Dashboard (Milestone 3)
+- **Multi-Config Comparison** - Test different optimization configurations side-by-side
+- **40-Test Suite** - Comprehensive test queries across slash commands, text queries, actions, multi-turn, and voice
+- **Performance Metrics** - Track latency, token usage, cache hits, and accuracy
+- **Visual Analytics** - 5 interactive Plotly charts showing impact analysis
+- **MongoDB Persistence** - Save and load comparison runs for historical analysis
+- **JSON Export** - Export results for slides and reports
+
 ## Tech Stack
 
-- **UI**: Streamlit chat interface
+- **UI**: Streamlit (main app + evals dashboard)
 - **AI**: Claude API (Sonnet 4.5) for agent reasoning
+- **Voice**: OpenAI Whisper API for speech-to-text
 - **Embeddings**: Voyage AI (voyage-3) for semantic search
 - **Database**: MongoDB Atlas (operational DB + vector store)
-- **Language**: Python 3.9+
+- **Charts**: Plotly for interactive visualizations
+- **Language**: Python 3.13+
 
 ## Project Structure
 
@@ -30,20 +53,36 @@ A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and
 mdb-flow/
 ├── agents/
 │   ├── coordinator.py      # Intent routing agent
-│   ├── worklog.py         # Task/project management agent
-│   └── retrieval.py       # Search & analytics agent
+│   ├── worklog.py          # Task/project management agent
+│   └── retrieval.py        # Search & analytics agent
 ├── shared/
-│   ├── config.py          # Environment configuration
-│   ├── db.py              # MongoDB connection & helpers
-│   ├── embeddings.py      # Voyage AI integration
-│   ├── llm.py             # Claude API integration
-│   └── models.py          # Pydantic data models
+│   ├── config.py           # Environment configuration
+│   ├── db.py               # MongoDB connection & helpers
+│   ├── embeddings.py       # Voyage AI integration
+│   ├── llm.py              # Claude API integration
+│   └── models.py           # Pydantic data models
 ├── ui/
-│   └── streamlit_app.py   # Chat interface
+│   ├── streamlit_app.py    # Main chat interface (port 8501)
+│   ├── slash_commands.py   # Direct DB query commands
+│   └── formatters.py       # Result formatting utilities
+├── evals/                  # NEW: Evaluation system
+│   ├── configs.py          # Optimization configurations
+│   ├── test_suite.py       # 40 test queries
+│   ├── result.py           # Data classes for results
+│   ├── runner.py           # Multi-config test execution
+│   └── storage.py          # MongoDB persistence
+├── evals_app.py            # NEW: Evals dashboard (port 8502)
+├── utils/
+│   └── audio.py            # Audio recording and transcription
 ├── scripts/
-│   └── setup_indexes.py   # Database index setup
+│   ├── setup_indexes.py    # Database index setup
+│   └── load_sample_data.py # Sample data loader
+├── docs/
+│   ├── ARCHITECTURE.md     # System architecture
+│   ├── TESTING.md          # Testing guide
+│   └── SLASH_COMMANDS.md   # Slash command reference
 ├── requirements.txt
-└── .env.example           # Environment variables template
+└── .env.example            # Environment variables template
 ```
 
 ## Setup Instructions
@@ -198,20 +237,38 @@ python scripts/load_sample_data.py --skip-embeddings
 - Q4 FY25 Deliverables (4 tasks - archived)
 - Developer Webinar Series (5 tasks)
 
-### 6. Run the Application
+### 6. Run the Applications
 
 Make sure your virtual environment is activated, then run:
+
+#### Main Chat Interface
 
 ```bash
 # Activate virtual environment (if not already active)
 source venv/bin/activate  # On macOS/Linux
 # venv\Scripts\activate  # On Windows
 
-# Run the app
+# Run the main app
 streamlit run ui/streamlit_app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
+
+#### Evals Dashboard (Optional)
+
+In a separate terminal, run the evals dashboard to compare optimization configurations:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate  # On macOS/Linux
+
+# Run the evals dashboard
+streamlit run evals_app.py --server.port 8502
+```
+
+The evals dashboard will open at `http://localhost:8502`
+
+**Both apps can run simultaneously** and share the same MongoDB database.
 
 ## Usage
 
@@ -251,12 +308,60 @@ Simply chat with the assistant in natural language:
 "Show progress on the Authentication project"
 ```
 
+### Voice Commands
+
+Use the microphone button to speak your commands:
+
+```
+🎤 "Create a task for debugging in AgentOps"
+🎤 "Mark the authentication task as done"
+🎤 "What tasks are in progress?"
+```
+
+Voice input uses OpenAI Whisper for transcription and works identically to text input.
+
+### Slash Commands (Fast Queries)
+
+Bypass the LLM for instant results:
+
+```
+/tasks                           # All tasks
+/tasks status:in_progress        # Filter by status
+/tasks priority:high             # Filter by priority
+/tasks project:"AgentOps"        # Filter by project
+/tasks search debugging          # Hybrid search
+
+/projects                        # All projects
+/projects "Voice Agent"          # Single project
+/projects search memory          # Search projects
+```
+
+### Context Engineering Toggles
+
+Configure optimizations in the sidebar:
+- **📦 Compress Tool Results** - Reduce context size by 60-70%
+- **⚡ Streamlined Prompt** - Use directive-based system prompt
+- **💾 Prompt Caching** - Cache system prompt for faster response
+
 ### Task List Sidebar
 
 The right sidebar shows all tasks grouped by project:
 - **Status icons**: ○ todo, ◐ in_progress, ✓ done
 - **Priority badges**: 🔴 high, 🟡 medium, 🟢 low
 - Click task to expand and see details
+
+### Evals Dashboard
+
+Compare optimization configurations:
+
+1. Open `http://localhost:8502`
+2. Select 2+ configs (e.g., "Baseline" + "All Context Engineering")
+3. Click "🚀 Run Comparison"
+4. View results:
+   - **Summary**: Avg latency, tokens, accuracy metrics
+   - **Matrix**: Test-by-test comparison with best config highlighted
+   - **Charts**: 5 interactive visualizations of performance impact
+5. Export results to JSON for reports
 
 ## Data Models
 
@@ -357,14 +462,42 @@ The right sidebar shows all tasks grouped by project:
 - Verify Voyage AI API key is valid
 - Check API key has sufficient credits
 
-## Future Enhancements (Milestone 2+)
+## Milestone Roadmap
 
-- Real-time collaboration
-- File attachments
-- Calendar integration
-- Recurring tasks
-- Advanced analytics dashboard
-- Mobile app
+### ✅ Milestone 1: Core Functionality (Complete)
+- Multi-agent system with coordinator
+- Task and project management
+- Semantic search with vector embeddings
+- MongoDB Atlas integration
+- Streamlit chat interface
+
+### ✅ Milestone 2: Voice Input & Context Engineering (Complete)
+- OpenAI Whisper integration for voice commands
+- Slash commands for fast queries
+- Tool result compression (60-70% reduction)
+- Streamlined system prompts
+- Prompt caching support
+- Real-time optimization toggles
+
+### ✅ Milestone 3: Evals Dashboard (Complete - v3.1)
+- Separate evaluation dashboard app
+- 40-test comprehensive suite
+- Multi-config comparison
+- Performance metrics tracking
+- Interactive Plotly charts
+- MongoDB persistence & history
+- JSON export for reporting
+
+### 🔮 Future Enhancements (Milestone 4+)
+- **Agent Memory** - Long-term memory and context retention
+- **Real-time Collaboration** - Multi-user support
+- **File Attachments** - Link documents to tasks
+- **Calendar Integration** - Sync with Google Calendar
+- **Recurring Tasks** - Automated task creation
+- **Mobile App** - Native iOS/Android apps
+- **Advanced Analytics** - Predictive insights and trends
+- **Auto-Evaluation** - Automated pass/fail checking in evals
+- **Cost Tracking** - Token usage and API cost monitoring
 
 ## License
 
