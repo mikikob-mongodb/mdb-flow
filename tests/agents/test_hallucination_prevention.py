@@ -268,12 +268,14 @@ class TestSystemPromptEnforcement:
             system_prompt = call_args[1].get('system', '')
 
             # Check for critical hallucination prevention phrases
-            assert "ALWAYS USE TOOLS" in system_prompt, \
-                "System prompt must include 'ALWAYS USE TOOLS' directive"
+            # Both prompts enforce tool usage (verbose: "ALWAYS USE TOOLS", streamlined: "Use tools for ALL actions")
+            assert ("ALWAYS USE TOOLS" in system_prompt or "Use tools for ALL actions" in system_prompt), \
+                "System prompt must include tool usage enforcement directive"
             assert "NEVER" in system_prompt and "without" in system_prompt, \
                 "System prompt must forbid responding without tools"
-            assert "HALLUCINATING" in system_prompt or "LYING" in system_prompt, \
-                "System prompt must warn against hallucination"
+            # Both prompts forbid claiming actions without tools
+            assert "NEVER claim" in system_prompt or "NEVER answer" in system_prompt, \
+                "System prompt must forbid claiming actions without calling tools"
 
 
 class TestVoiceInputHallucinationPrevention:
