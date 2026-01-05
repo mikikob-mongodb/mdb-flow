@@ -8,6 +8,9 @@ Run: streamlit run evals_app.py --server.port 8502
 import streamlit as st
 import os
 import sys
+import plotly.express as px
+import plotly.graph_objects as go
+import pandas as pd
 
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -265,12 +268,139 @@ def render_charts_section():
     st.subheader("📉 Impact Analysis")
 
     run: ComparisonRun = st.session_state.get("comparison_run")
-    if not run:
+    if not run or not run.summary_by_config:
         st.info("Charts will appear here after running comparison.")
         return
 
-    # TODO: Render charts
-    st.write("Charts will appear here.")
+    # Prepare data
+    configs = run.configs_compared
+    summaries = run.summary_by_config
+
+    # Row 1: Latency and Tokens charts
+    col1, col2 = st.columns(2)
+
+    with col1:
+        render_latency_chart(configs, summaries)
+
+    with col2:
+        render_tokens_chart(configs, summaries)
+
+    # Row 2: Accuracy and Breakdown
+    col1, col2 = st.columns(2)
+
+    with col1:
+        render_accuracy_chart(configs, summaries)
+
+    with col2:
+        render_breakdown_chart(configs, summaries)
+
+    # Row 3: Latency over sequence
+    render_sequence_chart(run)
+
+
+def render_latency_chart(configs, summaries):
+    """Bar chart of average latency by config."""
+    data = []
+    for cfg in configs:
+        summary = summaries.get(cfg, {})
+        data.append({
+            "Config": EVAL_CONFIGS[cfg]["short"],
+            "Latency (s)": summary.get("avg_latency_ms", 0) / 1000
+        })
+
+    df = pd.DataFrame(data)
+    fig = px.bar(df, x="Config", y="Latency (s)", title="⏱️ Average Latency by Config")
+    fig.update_layout(height=300)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_tokens_chart(configs, summaries):
+    """Bar chart of average tokens by config."""
+    data = []
+    for cfg in configs:
+        summary = summaries.get(cfg, {})
+        data.append({
+            "Config": EVAL_CONFIGS[cfg]["short"],
+            "Tokens In": summary.get("avg_tokens_in", 0)
+        })
+
+    df = pd.DataFrame(data)
+    fig = px.bar(df, x="Config", y="Tokens In", title="🪙 Average Tokens by Config")
+    fig.update_layout(height=300)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_accuracy_chart(configs, summaries):
+    """Bar chart of accuracy/pass rate by config."""
+    data = []
+    for cfg in configs:
+        summary = summaries.get(cfg, {})
+        data.append({
+            "Config": EVAL_CONFIGS[cfg]["short"],
+            "Pass Rate (%)": summary.get("pass_rate", 0) * 100
+        })
+
+    df = pd.DataFrame(data)
+    fig = px.bar(df, x="Config", y="Pass Rate (%)", title="✅ Accuracy by Config")
+    fig.update_layout(height=300, yaxis_range=[0, 100])
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_breakdown_chart(configs, summaries):
+    """Show improvement breakdown vs baseline."""
+    if "baseline" not in summaries:
+        st.info("Need baseline for comparison")
+        return
+
+    baseline = summaries["baseline"]
+    baseline_latency = baseline.get("avg_latency_ms", 1)
+
+    data = []
+    for cfg in configs:
+        if cfg == "baseline":
+            continue
+        summary = summaries.get(cfg, {})
+        reduction = baseline_latency - summary.get("avg_latency_ms", 0)
+        reduction_pct = (reduction / baseline_latency) * 100 if baseline_latency > 0 else 0
+        data.append({
+            "Config": EVAL_CONFIGS[cfg]["short"],
+            "Reduction (%)": round(reduction_pct, 1)
+        })
+
+    if not data:
+        return
+
+    df = pd.DataFrame(data)
+    fig = px.bar(df, x="Config", y="Reduction (%)",
+                 title="📊 Latency Reduction vs Baseline")
+    fig.update_layout(height=300)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_sequence_chart(run: ComparisonRun):
+    """Line chart showing latency over test sequence (cache warming effect)."""
+    st.markdown("#### 📉 Latency Over Test Sequence")
+
+    if not run.tests:
+        return
+
+    data = []
+    for test in run.tests:
+        for cfg, result in test.results_by_config.items():
+            data.append({
+                "Test": f"#{test.test_id}",
+                "Test ID": test.test_id,
+                "Config": EVAL_CONFIGS[cfg]["short"],
+                "Latency (s)": result.latency_ms / 1000
+            })
+
+    df = pd.DataFrame(data)
+    fig = px.line(df, x="Test ID", y="Latency (s)", color="Config",
+                  title="Latency Over Test Sequence (shows cache warming)")
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.caption("Note: Cache warming visible in 'Caching' config - first query slower, subsequent faster.")
 
 
 def run_comparison():
