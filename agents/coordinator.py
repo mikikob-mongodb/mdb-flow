@@ -162,26 +162,282 @@ COORDINATOR_TOOLS = [
             },
             "required": ["timeframe"]
         }
+    },
+    {
+        "name": "create_task",
+        "description": "Create a new task in a project. Requires project name - no orphan tasks allowed. Use when user says 'create a task', 'add a task', 'make a new task', etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Task title"
+                },
+                "project_name": {
+                    "type": "string",
+                    "description": "Project to add task to (required - look up by name using search_projects if needed)"
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["high", "medium", "low"],
+                    "description": "Task priority (default: medium)"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Optional context/description for the task"
+                }
+            },
+            "required": ["title", "project_name"]
+        }
+    },
+    {
+        "name": "update_task",
+        "description": "Update an existing task's title, priority, context, status, or move it to a different project.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the task"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "New task title"
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["high", "medium", "low"],
+                    "description": "New priority"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "New or additional context"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["todo", "in_progress", "done"],
+                    "description": "New status"
+                },
+                "project_name": {
+                    "type": "string",
+                    "description": "Move task to this project (will look up by name)"
+                }
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "stop_task",
+        "description": "Stop working on a task and mark it as todo. Use when user says 'I stopped working on X' or 'pause X'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the task"
+                }
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "create_project",
+        "description": "Create a new project. Use when user says 'create a project', 'make a new project', 'start a project called X'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Project name"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Project description"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Rich context about the project"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "update_project",
+        "description": "Update an existing project's name, description, context, or status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the project"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "New project name"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "New description"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "New or additional context"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "archived"],
+                    "description": "Project status"
+                }
+            },
+            "required": ["project_id"]
+        }
+    },
+    {
+        "name": "add_note_to_project",
+        "description": "Add a note to a project. Use for general notes, updates, or observations about the project.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the project"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "The note text to add"
+                }
+            },
+            "required": ["project_id", "note"]
+        }
+    },
+    {
+        "name": "add_context_to_task",
+        "description": "Add or update rich context for a task. Context is different from notes - it's the main descriptive content.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the task"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Context to add or update"
+                }
+            },
+            "required": ["task_id", "context"]
+        }
+    },
+    {
+        "name": "add_context_to_project",
+        "description": "Add or update rich context for a project. Context is different from notes - it's the main descriptive content.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the project"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Context to add or update"
+                }
+            },
+            "required": ["project_id", "context"]
+        }
+    },
+    {
+        "name": "add_decision_to_project",
+        "description": "Record an important decision made about the project. Use for architectural decisions, technology choices, etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the project"
+                },
+                "decision": {
+                    "type": "string",
+                    "description": "The decision to record"
+                }
+            },
+            "required": ["project_id", "decision"]
+        }
+    },
+    {
+        "name": "add_method_to_project",
+        "description": "Add a technology, method, or approach being used in the project. Use for tracking tech stack, methodologies, frameworks, etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the project"
+                },
+                "method": {
+                    "type": "string",
+                    "description": "Technology, method, or approach to add"
+                }
+            },
+            "required": ["project_id", "method"]
+        }
+    },
+    {
+        "name": "get_task",
+        "description": "Get details of a single task by ID. Use when you have the task_id and need full details.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the task"
+                }
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "get_project",
+        "description": "Get details of a single project by ID. Use when you have the project_id and need full details.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "MongoDB ObjectId of the project"
+                }
+            },
+            "required": ["project_id"]
+        }
     }
 ]
 
 SYSTEM_PROMPT = """You are a task management assistant. Help users manage their tasks and projects using the available tools.
 
+**CRITICAL RULE - ALWAYS USE TOOLS:**
+- You MUST use tools for EVERY operation - reading tasks, searching, creating, updating, etc.
+- NEVER answer from memory or previous context - ALWAYS call the appropriate tool
+- NEVER say "I found X tasks" unless you actually called search_tasks or get_tasks
+- NEVER claim you performed an action unless you actually called the tool
+- If you respond without calling a tool when one is needed, you are HALLUCINATING and LYING to the user
+- Tools are fast and reliable - there is NO reason to skip them
+
 **Important guidelines:**
 
 1. **CRITICAL - Task action confirmation (complete, start, add note):**
    - When user says "I finished X" or "I completed X" or "I'm working on X":
-     - FIRST: Use search_tasks to find matches
+     - FIRST: ALWAYS call search_tasks to find matches (NEVER skip this!)
      - THEN: Show the matches and ask user to confirm which one
      - NEVER auto-execute the action, even with 1 match
 
-   - If 1 match found:
+   - After calling search_tasks and getting 1 match:
      "I found 1 task matching 'X':
       1. **Task name** (Status) - Project Name
 
       Is this the task you want to [complete/start/update]? Please confirm."
 
-   - If multiple matches found:
+   - After calling search_tasks and getting multiple matches:
      "I found N tasks matching 'X':
       1. **Task name** (Status) - Project Name
       2. **Task name** (Status) - Project Name
@@ -189,12 +445,14 @@ SYSTEM_PROMPT = """You are a task management assistant. Help users manage their 
       Which one did you [complete/start/want to update]? (Reply with the number or name)"
 
    - ONLY after user confirms (replies "yes", "1", "the first one", etc.):
-     - Extract the task_id from the search results
-     - Execute the action (complete_task, start_task, or add_note_to_task)
+     - Extract the task_id from the previous search results
+     - Call the action tool (complete_task, start_task, or add_note_to_task)
      - Confirm: "✓ Marked **Task name** as complete."
 
 2. For simple queries (list tasks, show projects):
+   - ALWAYS call the appropriate tool (get_tasks, get_projects, etc.)
    - No confirmation needed, just execute and display results
+   - NEVER list tasks from memory - always fetch fresh data
 
 3. **CRITICAL - Format responses with proper markdown:**
 
@@ -238,10 +496,12 @@ SYSTEM_PROMPT = """You are a task management assistant. Help users manage their 
    - Use natural, conversational language
 
 6. Voice input handling:
-   - Voice and text are processed identically
-   - User might say "I finished the debugging doc" - ALWAYS search first, show matches, wait for confirmation
-   - Never assume which task they mean without confirmation
-   - For ambiguous references or any task actions, always ask for explicit confirmation"""
+   - Voice and text are processed identically - ALWAYS use tools for both
+   - User might say "I finished the debugging doc" - call search_tasks FIRST, show matches, wait for confirmation
+   - Never assume which task they mean without calling search_tasks
+   - For ambiguous references or any task actions, always call search_tasks then ask for explicit confirmation
+
+REMEMBER: If you don't call a tool when one is available and relevant, you are FAILING at your job. Always use tools."""
 
 
 class CoordinatorAgent:
@@ -425,6 +685,136 @@ class CoordinatorAgent:
                     "activity_type": activity_type
                 }
 
+            elif tool_name == "create_task":
+                # Create a new task - look up project by name first
+                title = tool_input["title"]
+                project_name = tool_input["project_name"]
+                priority = tool_input.get("priority", "medium")
+                context = tool_input.get("context", "")
+
+                # Look up project by name
+                projects = self.retrieval_agent.hybrid_search_projects(project_name, limit=1)
+
+                if not projects:
+                    result = {
+                        "success": False,
+                        "error": f"Project not found: '{project_name}'. Use search_projects or get_projects to see available projects."
+                    }
+                else:
+                    project_id = projects[0]["_id"]
+
+                    # Create task via worklog agent
+                    result = self.worklog_agent._create_task(
+                        title=title,
+                        project_id=str(project_id),
+                        priority=priority,
+                        context=context
+                    )
+
+            elif tool_name == "update_task":
+                # Update task fields
+                task_id = tool_input["task_id"]
+                title = tool_input.get("title")
+                priority = tool_input.get("priority")
+                context = tool_input.get("context")
+                status = tool_input.get("status")
+                project_name = tool_input.get("project_name")
+
+                # Look up project if moving to different project
+                project_id = None
+                if project_name:
+                    projects = self.retrieval_agent.hybrid_search_projects(project_name, limit=1)
+                    if projects:
+                        project_id = str(projects[0]["_id"])
+                    else:
+                        result = {
+                            "success": False,
+                            "error": f"Project not found: '{project_name}'"
+                        }
+
+                if project_name and not project_id:
+                    pass  # Error already set above
+                else:
+                    result = self.worklog_agent._update_task(
+                        task_id=task_id,
+                        title=title,
+                        priority=priority,
+                        context=context,
+                        status=status,
+                        project_id=project_id
+                    )
+
+            elif tool_name == "stop_task":
+                # Mark task as todo (stopped)
+                task_id = tool_input["task_id"]
+                result = self.worklog_agent._update_task(task_id, status="todo")
+
+            elif tool_name == "create_project":
+                # Create a new project
+                name = tool_input["name"]
+                description = tool_input.get("description", "")
+                context = tool_input.get("context", "")
+                result = self.worklog_agent._create_project(
+                    name=name,
+                    description=description,
+                    context=context
+                )
+
+            elif tool_name == "update_project":
+                # Update project fields
+                project_id = tool_input["project_id"]
+                name = tool_input.get("name")
+                description = tool_input.get("description")
+                context = tool_input.get("context")
+                status = tool_input.get("status")
+                result = self.worklog_agent._update_project(
+                    project_id=project_id,
+                    name=name,
+                    description=description,
+                    context=context,
+                    status=status
+                )
+
+            elif tool_name == "add_note_to_project":
+                # Add note to project
+                project_id = tool_input["project_id"]
+                note = tool_input["note"]
+                result = self.worklog_agent._add_note("project", project_id, note)
+
+            elif tool_name == "add_context_to_task":
+                # Add context to task
+                task_id = tool_input["task_id"]
+                context = tool_input["context"]
+                result = self.worklog_agent._add_context("task", task_id, context)
+
+            elif tool_name == "add_context_to_project":
+                # Add context to project
+                project_id = tool_input["project_id"]
+                context = tool_input["context"]
+                result = self.worklog_agent._add_context("project", project_id, context)
+
+            elif tool_name == "add_decision_to_project":
+                # Add decision to project
+                project_id = tool_input["project_id"]
+                decision = tool_input["decision"]
+                result = self.worklog_agent._add_decision(project_id, decision)
+
+            elif tool_name == "add_method_to_project":
+                # Add method/technology to project
+                project_id = tool_input["project_id"]
+                method = tool_input["method"]
+                result = self.worklog_agent._add_method(project_id, method)
+
+            elif tool_name == "get_task":
+                # Get single task by ID
+                task_id = tool_input["task_id"]
+                result = self.worklog_agent._get_task(task_id)
+
+            elif tool_name == "get_project":
+                # Get single project by ID
+                project_id = tool_input["project_id"]
+                result = self.worklog_agent._get_project(project_id)
+
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
                 error_msg = f"Unknown tool: {tool_name}"
@@ -526,13 +916,18 @@ class CoordinatorAgent:
         messages.append({"role": "user", "content": user_message})
 
         # Use Claude's native tool use - TIME THIS CALL
-        logger.info("Calling Claude with tool use enabled")
-        logger.info(f"📊 Turn {turn_number}: Sending {len(COORDINATOR_TOOLS)} tools to LLM")
-        logger.info(f"📊 Messages count: {len(messages)}")
-        # Log last few messages for debugging
-        if len(messages) > 1:
-            logger.debug(f"📊 Last message roles: {[m.get('role') for m in messages[-3:]]}")
         import time
+        logger.info("=" * 80)
+        logger.info("=== INITIAL LLM CALL (DECIDE ACTION) ===")
+        logger.info(f"📊 Turn {turn_number}")
+        logger.info(f"📊 Sending {len(COORDINATOR_TOOLS)} tools to LLM")
+        logger.info(f"📊 Tool names: {', '.join([t['name'] for t in COORDINATOR_TOOLS])}")
+        logger.info(f"📊 Messages count: {len(messages)}")
+        logger.info(f"📊 Last message roles: {[m.get('role') for m in messages[-5:]]}")
+        logger.info(f"📊 Last message preview: {str(messages[-1].get('content', ''))[:150]}...")
+        logger.info(f"📊 System prompt length: {len(SYSTEM_PROMPT)} chars")
+        logger.info("=" * 80)
+
         llm_start = time.time()
         response = self.llm.generate_with_tools(
             messages=messages,
@@ -544,16 +939,25 @@ class CoordinatorAgent:
         llm_duration = int((time.time() - llm_start) * 1000)
 
         # DEBUG: Check response
-        logger.info(f"📊 Response stop_reason: {response.stop_reason}")
+        logger.info("=" * 80)
+        logger.info("=== INITIAL LLM RESPONSE ===")
+        logger.info(f"📊 Stop reason: {response.stop_reason}")
+        logger.info(f"📊 Content blocks: {len(response.content)}")
+        logger.info(f"📊 Content types: {[b.type for b in response.content]}")
+
         tool_use_blocks = [b for b in response.content if hasattr(b, 'type') and b.type == 'tool_use']
         logger.info(f"📊 Tool use blocks: {len(tool_use_blocks)}")
+
         if tool_use_blocks:
-            logger.info(f"📊 Tools called: {[b.name for b in tool_use_blocks]}")
+            logger.info(f"📊 ✅ Tools called: {[b.name for b in tool_use_blocks]}")
         else:
             # Log why no tool was called - check the text response
             text_blocks = [b.text for b in response.content if hasattr(b, 'text')]
             if text_blocks:
-                logger.warning(f"📊 NO TOOLS CALLED - LLM responded with text: {text_blocks[0][:200]}...")
+                logger.warning(f"📊 ❌ NO TOOLS CALLED - LLM responded with text only")
+                logger.warning(f"📊 Text response: {text_blocks[0][:300]}...")
+            logger.warning(f"📊 ⚠️  CRITICAL: LLM should call tools but didn't!")
+        logger.info("=" * 80)
 
         # Track the initial LLM call
         self.current_turn["llm_calls"].append({
@@ -612,7 +1016,15 @@ class CoordinatorAgent:
             })
 
             # Get next response from Claude - TIME THIS CALL
-            logger.info("Sending tool results back to Claude")
+            logger.info("=" * 80)
+            logger.info(f"=== FOLLOW-UP LLM CALL (ITERATION {iteration}) ===")
+            logger.info(f"📊 Sending tool results back to LLM")
+            logger.info(f"📊 Sending {len(COORDINATOR_TOOLS)} tools to LLM")
+            logger.info(f"📊 Messages count: {len(messages)}")
+            logger.info(f"📊 Last message roles: {[m.get('role') for m in messages[-5:]]}")
+            logger.info(f"📊 Tool results count: {len(tool_results)}")
+            logger.info("=" * 80)
+
             llm_start = time.time()
             response = self.llm.generate_with_tools(
                 messages=messages,
@@ -622,6 +1034,13 @@ class CoordinatorAgent:
                 temperature=0.3
             )
             llm_duration = int((time.time() - llm_start) * 1000)
+
+            logger.info("=" * 80)
+            logger.info(f"=== FOLLOW-UP LLM RESPONSE (ITERATION {iteration}) ===")
+            logger.info(f"📊 Stop reason: {response.stop_reason}")
+            logger.info(f"📊 Content blocks: {len(response.content)}")
+            logger.info(f"📊 Content types: {[b.type for b in response.content]}")
+            logger.info("=" * 80)
 
             # Track this LLM call
             self.current_turn["llm_calls"].append({

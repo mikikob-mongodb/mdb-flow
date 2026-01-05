@@ -190,9 +190,11 @@ def render_debug_panel():
 
     # Summary stats at the top
     total_turns = len(debug_history)
+    slash_turns = sum(1 for turn in debug_history if turn.get("is_slash_command"))
+    llm_turns = total_turns - slash_turns
     total_calls = sum(len(turn["tool_calls"]) for turn in debug_history)
     total_time = sum(turn["total_duration_ms"] for turn in debug_history)
-    st.caption(f"**{total_turns} turns** • **{total_calls} tool calls** • **{total_time}ms total**")
+    st.caption(f"**{total_turns} turns** ({llm_turns} LLM, {slash_turns} slash) • **{total_calls} operations** • **{total_time}ms total**")
 
     # Latency breakdown legend
     with st.expander("⏱️ Latency Legend", expanded=False):
@@ -237,15 +239,30 @@ def render_debug_panel():
             tool_pct = 0
 
         # Build label with breakdown
-        expander_label = f"**Turn {turn['turn']}**: {user_input_preview} ({total_time}ms)\n"
-        expander_label += f"        🔵 LLM: {llm_time}ms ({llm_pct}%)"
+        # Check if this is a slash command
+        is_slash = turn.get("is_slash_command", False)
+        command_type = "⚡ Slash" if is_slash else "🤖 LLM"
 
-        if tool_time > 0:
-            expander_label += f" • 🛠️ Tools: {tool_time}ms ({tool_pct}%)"
+        expander_label = f"**Turn {turn['turn']}** ({command_type}): {user_input_preview} ({total_time}ms)\n"
+
+        if is_slash:
+            # Slash commands: only show DB query time
+            expander_label += f"        💾 MongoDB: {total_time}ms (100%)"
+        else:
+            # LLM-routed: show LLM and tool breakdown
+            expander_label += f"        🔵 LLM: {llm_time}ms ({llm_pct}%)"
+            if tool_time > 0:
+                expander_label += f" • 🛠️ Tools: {tool_time}ms ({tool_pct}%)"
 
         with st.expander(expander_label, expanded=is_most_recent):
             # Show timestamp
             st.caption(f"🕐 {turn['timestamp']}")
+
+            # Show command type indicator
+            if is_slash:
+                st.info("⚡ **Slash Command** - Direct MongoDB query (no LLM)")
+            else:
+                st.info("🤖 **LLM-Routed** - Claude decided and executed tools")
 
             # Show full user input if it was truncated
             if len(turn["user_input"]) > 50:
@@ -450,6 +467,46 @@ def render_chat():
                         "is_command_result": True
                     })
 
+                    # Add to debug history for tracking
+                    from datetime import datetime
+                    turn_number = len(st.session_state.debug_history) + 1
+
+                    # Build output summary
+                    if result.get('success'):
+                        result_data = result.get('result', {})
+                        if isinstance(result_data, dict):
+                            count = result_data.get('count', result_data.get('tasks', result_data.get('projects', 'N/A')))
+                            if isinstance(count, list):
+                                count = len(count)
+                            output_summary = f"Direct DB query - {count} items"
+                        elif isinstance(result_data, list):
+                            output_summary = f"Direct DB query - {len(result_data)} items"
+                        else:
+                            output_summary = f"Direct DB query - Success"
+                    else:
+                        output_summary = f"Error: {result.get('error', 'Unknown')}"
+
+                    slash_turn = {
+                        "turn": turn_number,
+                        "user_input": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                        "timestamp": datetime.now().strftime("%H:%M:%S"),
+                        "is_slash_command": True,
+                        "command": result.get("command", prompt),
+                        "tool_calls": [{
+                            "name": f"slash_command_{parsed_command['command']}",
+                            "input": {"command": result.get("command")},
+                            "output": output_summary,
+                            "duration_ms": result.get("duration_ms", 0),
+                            "breakdown": None,
+                            "success": result.get("success", False),
+                            "error": None if result.get("success") else result.get("error")
+                        }],
+                        "llm_calls": [],  # No LLM for slash commands
+                        "llm_time_ms": 0,
+                        "total_duration_ms": result.get("duration_ms", 0)
+                    }
+                    st.session_state.debug_history.append(slash_turn)
+
             # Rerun to update the display
             st.rerun()
 
@@ -470,7 +527,11 @@ def render_chat():
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
                     # Prepare conversation history for the coordinator
-                    history = st.session_state.messages[:-1]  # Exclude the current message
+                    # Filter out slash commands and their results - they shouldn't be sent to the API
+                    history = [
+                        msg for msg in st.session_state.messages[:-1]
+                        if not msg.get("is_slash_command") and not msg.get("is_command_result")
+                    ]
 
                     # Calculate turn number
                     turn_number = len(st.session_state.debug_history) + 1
@@ -532,7 +593,11 @@ def render_chat():
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
                     # Prepare conversation history for the coordinator
-                    history = st.session_state.messages[:-1]  # Exclude the current message
+                    # Filter out slash commands and their results - they shouldn't be sent to the API
+                    history = [
+                        msg for msg in st.session_state.messages[:-1]
+                        if not msg.get("is_slash_command") and not msg.get("is_command_result")
+                    ]
 
                     # Calculate turn number
                     turn_number = len(st.session_state.debug_history) + 1
