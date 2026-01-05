@@ -507,3 +507,258 @@ This prevents:
 **Example:**
 - "Create a high priority task for fixing memory leak in AgentOps" → LLM (understands intent)
 - `/tasks status:in_progress project:"AgentOps"` → Slash (direct query)
+
+---
+
+## Evals Dashboard Architecture (Milestone 3)
+
+### System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Evals Dashboard (Port 8502)                  │
+│                                                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │ Config       │  │  Summary     │  │  Matrix      │           │
+│  │ Selection    │  │  Metrics     │  │  View        │           │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘          │
+│         │                                                         │
+│         ▼                                                         │
+│  ┌──────────────────────────────┐                                │
+│  │  Run Comparison              │                                │
+│  │  • Select 2+ configs         │                                │
+│  │  • Execute 40 test queries   │                                │
+│  │  • Track metrics             │                                │
+│  └──────────────┬───────────────┘                                │
+└─────────────────┼───────────────────────────────────────────────┘
+                  ▼
+       ┌────────────────────────┐
+       │  ComparisonRunner      │
+       │  • Run tests per config│
+       │  • Collect metrics     │
+       │  • Compute summaries   │
+       └────────┬───────────────┘
+                │
+       ┌────────┴────────┐
+       ▼                 ▼
+┌─────────────┐   ┌──────────────────┐
+│ Coordinator │   │ SlashCommandExec │
+│ (with opts) │   │ (direct DB)      │
+└─────┬───────┘   └──────┬───────────┘
+      │                  │
+      └──────────┬───────┘
+                 ▼
+      ┌──────────────────┐
+      │  MongoDB Storage │
+      │  • Tasks/Projects│
+      │  • Comparison runs│
+      └──────────────────┘
+```
+
+### Data Flow
+
+1. **Test Suite Definition** (`evals/test_suite.py`)
+   - 40 test queries across 5 sections
+   - Input types: SLASH, TEXT, VOICE
+   - Dependency tracking for multi-turn tests
+
+2. **Configuration Variants** (`evals/configs.py`)
+   - **baseline**: No optimizations
+   - **compress_results**: Tool result compression only
+   - **streamlined_prompt**: Directive-based prompt only
+   - **prompt_caching**: Prompt caching only
+   - **all_context**: All optimizations combined
+
+3. **Test Execution** (`evals/runner.py`)
+   ```
+   For each test in suite:
+     For each config:
+       1. Apply optimization settings
+       2. Execute query (slash or LLM)
+       3. Measure latency, tokens, cache hits
+       4. Store result
+
+   Compute summaries:
+     - Avg latency per config
+     - Avg tokens per config
+     - Pass rate per config
+     - Best config per test
+     - Improvement % vs baseline
+   ```
+
+4. **Result Storage** (`evals/result.py`)
+   ```python
+   ConfigResult       # Single test, single config
+   ├── latency_ms
+   ├── tokens_in/out
+   ├── cache_hit
+   └── tools_called
+
+   TestComparison     # Single test, all configs
+   ├── results_by_config
+   ├── best_config
+   └── improvement_pct
+
+   ComparisonRun      # All tests, all configs
+   ├── summary_by_config
+   ├── tests[]
+   └── run metadata
+   ```
+
+5. **Persistence** (`evals/storage.py`)
+   - MongoDB collection: `eval_comparison_runs`
+   - Save after each run
+   - Load history for comparison
+   - List past runs in sidebar
+
+### Performance Metrics Tracked
+
+| Metric | Description | Usage |
+|--------|-------------|-------|
+| **Latency** | Total response time | Primary optimization target |
+| **LLM Time** | Time spent in Claude API | Identify LLM bottlenecks |
+| **Tool Time** | Time in DB/API calls | Identify tool bottlenecks |
+| **Tokens In** | Input tokens to LLM | Context size measurement |
+| **Tokens Out** | Output tokens from LLM | Response verbosity |
+| **Cache Hit** | Prompt cache utilized | Caching effectiveness |
+| **Tools Called** | Which tools executed | Tool usage patterns |
+| **Pass Rate** | % successful completions | Reliability tracking |
+
+### Charts and Visualizations
+
+1. **Average Latency** - Bar chart comparing latencies
+2. **Average Tokens** - Token usage by config
+3. **Accuracy** - Pass rate comparison
+4. **Latency Reduction** - % improvement vs baseline
+5. **Sequence Over Time** - Line chart showing cache warming
+
+### Example Comparison
+
+```
+Test #11: "What are my tasks?"
+
+Baseline Config:
+  Latency: 3200ms
+  Tokens In: 2150
+  Cache Hit: false
+
+All Context Engineering:
+  Latency: 1900ms (-40.6%)
+  Tokens In: 1420 (-33.9%)
+  Cache Hit: true
+
+Improvement: 40.6% faster, 33.9% fewer tokens
+```
+
+---
+
+## Context Engineering Optimizations (Milestone 2)
+
+### 1. Tool Result Compression
+
+**Problem**: Tool results contain verbose, repetitive data that inflates context.
+
+**Solution**: Compress results while preserving key information.
+
+```python
+# Before (15 tasks × 200 chars = 3000 chars)
+[
+  {"_id": "abc", "title": "Debug", "status": "todo", "priority": "high", ...},
+  {"_id": "def", "title": "Test", "status": "in_progress", ...},
+  ...
+]
+
+# After (~1000 chars, 67% reduction)
+15 tasks. Todo: 8, In Progress: 5, Done: 2
+High Priority: 3 tasks (Debug, Deploy, Review)
+Recent: Debug (created 2h ago), Test (started 1h ago)
+```
+
+**Impact**: 60-70% context reduction, minimal information loss.
+
+### 2. Streamlined System Prompt
+
+**Before**: 850 tokens of detailed instructions and examples
+**After**: 420 tokens of directive-based instructions
+**Reduction**: 51%
+
+**Key Changes**:
+- Remove verbose examples
+- Use bullet points instead of prose
+- Focus on essential directives
+- Rely on Claude's base capabilities
+
+**Impact**: Faster processing, lower cache warming cost.
+
+### 3. Prompt Caching
+
+**Mechanism**: Anthropic's prompt caching feature
+- Cache system prompt prefix
+- First query: Normal latency + cache write
+- Subsequent queries: 40-60% faster
+
+**Implementation**:
+```python
+messages = [
+  {
+    "role": "user",
+    "content": system_prompt,
+    "cache_control": {"type": "ephemeral"}  # Cache this
+  },
+  ...conversation...
+]
+```
+
+**Impact**:
+- First query: +200ms (cache write)
+- Subsequent: -1200ms (cache read)
+- Break-even: After 2 queries
+
+---
+
+## Voice Input Flow (Milestone 2)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ USER                                                        │
+│ 🎤 Clicks microphone, speaks: "What tasks are in progress?"│
+└────────────────────────┬────────────────────────────────────┘
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 1: Browser captures audio                             │
+│                                                             │
+│ navigator.mediaDevices.getUserMedia()                       │
+│ Records audio chunks → WAV format                           │
+│ Stop recording → Binary audio data                          │
+└────────────────────────┬────────────────────────────────────┘
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 2: Send to Streamlit backend                          │
+│                                                             │
+│ POST audio bytes to st.session_state                        │
+└────────────────────────┬────────────────────────────────────┘
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 3: OpenAI Whisper transcription                       │
+│                                                             │
+│ utils/audio.py:                                             │
+│   transcribe_audio(audio_bytes)                             │
+│   → OpenAI Whisper API call                                 │
+│   → Returns: "What tasks are in progress?"                  │
+│                                                             │
+│ ⏱️ ~500-800ms                                               │
+└────────────────────────┬────────────────────────────────────┘
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 4: Process as text                                    │
+│                                                             │
+│ Text flows through normal pipeline:                         │
+│ → Check if slash command                                    │
+│ → If not, send to coordinator                               │
+│ → LLM processes and responds                                │
+│                                                             │
+│ (Same flow as typing the text)                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Insight**: Voice is just an input method. After transcription, it's identical to text input.
