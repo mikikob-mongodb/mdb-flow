@@ -111,6 +111,7 @@ class LLMService:
         system: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 1.0,
+        cache_prompts: bool = True,
         **kwargs
     ) -> Any:
         """
@@ -122,6 +123,7 @@ class LLMService:
             system: Optional system prompt
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
+            cache_prompts: Enable prompt caching for system and tools (default: True)
             **kwargs: Additional parameters to pass to the API
 
         Returns:
@@ -143,9 +145,32 @@ class LLMService:
         }
 
         if system:
-            params["system"] = system
+            if cache_prompts:
+                # Use prompt caching - structure system as list with cache control
+                params["system"] = [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"}
+                    }
+                ]
+                # Add beta header for prompt caching API
+                params["extra_headers"] = {"anthropic-beta": "prompt-caching-2024-07-31"}
+            else:
+                params["system"] = system
 
-        return self.client.messages.create(**params)
+        response = self.client.messages.create(**params)
+
+        # Log cache performance
+        if cache_prompts and system and hasattr(response, 'usage'):
+            cache_read = getattr(response.usage, 'cache_read_input_tokens', 0)
+            cache_creation = getattr(response.usage, 'cache_creation_input_tokens', 0)
+            if cache_read > 0:
+                logger.info(f"💾 Cache HIT: {cache_read} tokens from cache")
+            elif cache_creation > 0:
+                logger.info(f"💾 Cache MISS: {cache_creation} tokens cached for next call")
+
+        return response
 
 
 # Global LLM service instance

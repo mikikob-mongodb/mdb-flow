@@ -814,12 +814,16 @@ class CoordinatorAgent:
         system_prompt = get_system_prompt(streamlined)
         prompt_stats = get_prompt_stats(streamlined)
 
+        # Get prompt caching setting
+        cache_prompts = self.optimizations.get("prompt_caching", True)
+
         logger.info("=" * 80)
         logger.info("=== NEW REQUEST ===")
         logger.info(f"Input type: {input_type}")
         logger.info(f"User message: {user_message[:200]}...")
         logger.info(f"History length: {len(conversation_history) if conversation_history else 0}")
         logger.info(f"📊 Prompt: {prompt_stats['type']} ({prompt_stats['word_count']} words, ~{int(prompt_stats['estimated_tokens'])} tokens)")
+        logger.info(f"📊 Caching: {'enabled' if cache_prompts else 'disabled'}")
 
         # Create new turn for debug tracking
         self.current_turn = {
@@ -859,7 +863,8 @@ class CoordinatorAgent:
             tools=COORDINATOR_TOOLS,
             system=system_prompt,
             max_tokens=4096,
-            temperature=0.3
+            temperature=0.3,
+            cache_prompts=cache_prompts
         )
         llm_duration = int((time.time() - llm_start) * 1000)
 
@@ -960,7 +965,8 @@ class CoordinatorAgent:
                 tools=COORDINATOR_TOOLS,
                 system=system_prompt,
                 max_tokens=4096,
-                temperature=0.3
+                temperature=0.3,
+                cache_prompts=cache_prompts
             )
             llm_duration = int((time.time() - llm_start) * 1000)
 
