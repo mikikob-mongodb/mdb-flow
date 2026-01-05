@@ -122,6 +122,46 @@ def get_priority_badge(priority: str) -> str:
     return ""
 
 
+def render_context_engineering_toggles():
+    """Render context engineering optimization toggles in the sidebar."""
+    st.sidebar.subheader("⚡ Context Engineering")
+
+    compress_results = st.sidebar.toggle(
+        "Compress Results",
+        value=True,
+        help="Compress tool results to reduce context size"
+    )
+    streamline_prompt = st.sidebar.toggle(
+        "Streamlined Prompt",
+        value=True,
+        help="Use directive prompt patterns"
+    )
+    cache_prompts = st.sidebar.toggle(
+        "Prompt Caching",
+        value=True,
+        help="Cache system prompt for faster subsequent calls"
+    )
+
+    # Store in session state
+    st.session_state.optimizations = {
+        "compress_results": compress_results,
+        "streamlined_prompt": streamline_prompt,
+        "prompt_caching": cache_prompts
+    }
+
+    # Show active status
+    active = []
+    if compress_results:
+        active.append("📦")
+    if streamline_prompt:
+        active.append("⚡")
+    if cache_prompts:
+        active.append("💾")
+    st.sidebar.caption(f"Active: {' '.join(active) if active else 'None'}")
+
+    st.sidebar.markdown("---")
+
+
 def render_task_list():
     """Render the task list in the sidebar."""
     st.sidebar.title("📋 Tasks & Projects")
@@ -634,7 +674,8 @@ def main():
     # Initialize session state
     init_session_state()
 
-    # Create layout: sidebar for tasks, main area for chat
+    # Create layout: sidebar for toggles and tasks, main area for chat
+    render_context_engineering_toggles()
     render_task_list()
     render_chat()
 
