@@ -8,6 +8,8 @@ Run: streamlit run evals_app.py --server.port 8502
 import streamlit as st
 import os
 import sys
+import json
+from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
@@ -71,16 +73,27 @@ def render_config_section():
     st.session_state.selected_configs = selected
 
     # Action buttons
-    col1, col2, col3 = st.columns([1, 1, 2])
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+
     with col1:
         if st.button("🚀 Run Comparison", type="primary", disabled=len(selected) < 2):
             st.session_state.run_comparison = True
+
     with col2:
-        if st.button("📥 Export"):
+        has_results = st.session_state.get("comparison_run") is not None
+        if st.button("📥 Export JSON", disabled=not has_results):
             st.session_state.export_results = True
+
     with col3:
+        if st.button("🗑️ Clear Results"):
+            st.session_state.comparison_run = None
+            st.rerun()
+
+    with col4:
         if len(selected) < 2:
-            st.caption("Select at least 2 configs to compare")
+            st.caption("Select 2+ configs")
+        else:
+            st.caption(f"{len(selected)} configs selected")
 
 
 def render_summary_section():
@@ -434,6 +447,68 @@ def run_comparison():
         st.error(f"Error: {e}")
 
 
+def calculate_improvements(run: ComparisonRun) -> dict:
+    """Calculate improvement percentages for export."""
+    if "baseline" not in run.summary_by_config:
+        return {}
+
+    baseline = run.summary_by_config["baseline"]
+    improvements = {}
+
+    for cfg, summary in run.summary_by_config.items():
+        if cfg == "baseline":
+            continue
+
+        baseline_latency = baseline.get("avg_latency_ms", 1)
+        baseline_tokens = baseline.get("avg_tokens_in", 1)
+        baseline_accuracy = baseline.get("pass_rate", 0)
+
+        cfg_latency = summary.get("avg_latency_ms", 0)
+        cfg_tokens = summary.get("avg_tokens_in", 0)
+        cfg_accuracy = summary.get("pass_rate", 0)
+
+        improvements[cfg] = {
+            "latency_reduction_pct": round((baseline_latency - cfg_latency) / baseline_latency * 100, 1) if baseline_latency else 0,
+            "tokens_reduction_pct": round((baseline_tokens - cfg_tokens) / baseline_tokens * 100, 1) if baseline_tokens else 0,
+            "accuracy_change_pct": round((cfg_accuracy - baseline_accuracy) * 100, 1)
+        }
+
+    return improvements
+
+
+def export_results():
+    """Export comparison results to JSON."""
+    run: ComparisonRun = st.session_state.get("comparison_run")
+
+    if not run:
+        st.warning("No results to export. Run a comparison first.")
+        return
+
+    # Convert to exportable format
+    export_data = {
+        "run_id": run.run_id,
+        "timestamp": run.timestamp,
+        "exported_at": datetime.utcnow().isoformat(),
+        "configs_compared": run.configs_compared,
+        "config_details": {
+            k: EVAL_CONFIGS[k] for k in run.configs_compared
+        },
+        "summary_by_config": run.summary_by_config,
+        "improvements": calculate_improvements(run),
+        "tests": [t.to_dict() for t in run.tests]
+    }
+
+    # Trigger download
+    filename = f"evals_{run.run_id}.json"
+
+    st.download_button(
+        label="📥 Download JSON",
+        data=json.dumps(export_data, indent=2, default=str),
+        file_name=filename,
+        mime="application/json"
+    )
+
+
 def main():
     st.title("📊 Flow Companion Evals Dashboard")
     st.caption("Compare optimization configurations across test queries")
@@ -453,6 +528,11 @@ def main():
     if st.session_state.get("run_comparison"):
         st.session_state.run_comparison = False
         run_comparison()
+
+    # Handle Export
+    if st.session_state.get("export_results"):
+        st.session_state.export_results = False
+        export_results()
 
 
 if __name__ == "__main__":
