@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, Literal
 from bson import ObjectId
 
 from shared.llm import llm_service
+from shared.logger import get_logger
 from shared.embeddings import embed_document
 from shared.db import (
     create_task as db_create_task,
@@ -23,6 +24,8 @@ from shared.db import (
 )
 from shared.models import Task, Project
 
+logger = get_logger("worklog")
+
 
 class WorklogAgent:
     """Agent for handling task and project management operations using Claude."""
@@ -30,6 +33,7 @@ class WorklogAgent:
     def __init__(self):
         self.llm = llm_service
         self.tools = self._define_tools()
+        self.last_query_timings = {}  # Track latency breakdown for debug panel
 
     def _define_tools(self) -> List[Dict[str, Any]]:
         """Define all available tools for the agent."""
@@ -420,6 +424,11 @@ class WorklogAgent:
         project_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Update an existing task."""
+        import time
+
+        # Track timings for debug panel
+        timings = {}
+
         task_oid = ObjectId(task_id)
         current_task = db_get_task(task_oid)
 
@@ -451,17 +460,23 @@ class WorklogAgent:
 
         # Re-generate embedding if title or context changed
         if title is not None or context is not None:
+            start = time.time()
             new_title = title if title is not None else current_task.title
             new_context = context if context is not None else current_task.context
             embedding_text = f"{new_title}\n{new_context}".strip()
             updates["embedding"] = embed_document(embedding_text)
+            timings["embedding_generation"] = int((time.time() - start) * 1000)
 
-        # Update in database
+        # Time MongoDB update operation
         action_note = "; ".join(changes) if changes else "Task updated"
+        start = time.time()
         success = db_update_task(task_oid, updates, "updated", action_note)
-
-        # Return updated task
         updated_task = db_get_task(task_oid)
+        timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+        # Store timings for coordinator to access
+        self.last_query_timings = timings
+
         return {
             "success": success,
             "task": self._task_to_dict(updated_task)
@@ -473,6 +488,11 @@ class WorklogAgent:
         completion_note: Optional[str] = None
     ) -> Dict[str, Any]:
         """Mark a task as completed."""
+        import time
+
+        # Track timings for debug panel
+        timings = {}
+
         task_oid = ObjectId(task_id)
 
         updates = {
@@ -481,9 +501,16 @@ class WorklogAgent:
         }
 
         action_note = completion_note if completion_note else "Task completed"
-        success = db_update_task(task_oid, updates, "completed", action_note)
 
+        # Time MongoDB update operation
+        start = time.time()
+        success = db_update_task(task_oid, updates, "completed", action_note)
         updated_task = db_get_task(task_oid)
+        timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+        # Store timings for coordinator to access
+        self.last_query_timings = timings
+
         return {
             "success": success,
             "task": self._task_to_dict(updated_task)
@@ -661,6 +688,11 @@ class WorklogAgent:
         limit: int = 20
     ) -> Dict[str, Any]:
         """List tasks with optional filters."""
+        import time
+
+        # Track timings for debug panel
+        timings = {}
+
         collection = get_collection(TASKS_COLLECTION)
 
         # Build query
@@ -670,9 +702,14 @@ class WorklogAgent:
         if status:
             query["status"] = status
 
-        # Execute query
-        cursor = collection.find(query).sort("created_at", -1).limit(limit)
+        # Time MongoDB query execution
+        start = time.time()
+        cursor = collection.find(query, {"embedding": 0}).sort("created_at", -1).limit(limit)
         tasks = [Task(**doc) for doc in cursor]
+        timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+        # Store timings for coordinator to access
+        self.last_query_timings = timings
 
         return {
             "success": True,
@@ -693,8 +730,8 @@ class WorklogAgent:
         if status:
             query["status"] = status
 
-        # Execute query
-        cursor = collection.find(query).sort("created_at", -1).limit(limit)
+        # Execute query - exclude embedding field for performance
+        cursor = collection.find(query, {"embedding": 0}).sort("created_at", -1).limit(limit)
         projects = [Project(**doc) for doc in cursor]
 
         return {
@@ -727,6 +764,236 @@ class WorklogAgent:
         return {
             "success": True,
             "project": self._project_to_dict(project)
+        }
+
+    def apply_voice_update(
+        self,
+        task_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        updates: Optional[Dict[str, Any]] = None,
+        voice_log_entry: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Apply batch updates from parsed voice input to a task or project.
+
+        Args:
+            task_id: Optional task ID to update
+            project_id: Optional project ID to update
+            updates: dict with fields to update:
+                - status: new status
+                - notes_to_add: list of notes to add
+                - context: context to add/update
+            voice_log_entry: dict with:
+                - summary: cleaned summary
+                - raw_transcript: original speech
+                - extracted: parsed voice structure
+
+        Returns:
+            dict with success status and updated entity
+        """
+        logger.info(f"apply_voice_update: task_id={task_id}, project_id={project_id}")
+        logger.debug(f"Updates: {updates}")
+        logger.debug(f"Voice log summary: {voice_log_entry.get('summary', 'N/A')}")
+
+        if not task_id and not project_id:
+            logger.warning("apply_voice_update called without task_id or project_id")
+            return {"success": False, "error": "Must provide either task_id or project_id"}
+
+        updates = updates or {}
+        voice_log_entry = voice_log_entry or {}
+
+        # Process task update
+        if task_id:
+            logger.info(f"Applying voice update to task {task_id}")
+            task_oid = ObjectId(task_id)
+            current_task = db_get_task(task_oid)
+
+            if not current_task:
+                logger.error(f"Task {task_id} not found")
+                return {"success": False, "error": "Task not found"}
+
+            # Build update dict
+            update_fields = {}
+            changes = []
+
+            # Update status if provided
+            if "status" in updates:
+                logger.info(f"Updating task status: {current_task.status} → {updates['status']}")
+                update_fields["status"] = updates["status"]
+                changes.append(f"status changed to '{updates['status']}'")
+                if updates["status"] == "done":
+                    update_fields["completed_at"] = datetime.utcnow()
+
+            # Add context if provided
+            if "context" in updates:
+                # Append to existing context
+                new_context = current_task.context
+                if new_context:
+                    new_context += f"\n\n{updates['context']}"
+                else:
+                    new_context = updates["context"]
+                update_fields["context"] = new_context
+                changes.append("context updated")
+
+                # Regenerate embedding
+                embedding_text = f"{current_task.title}\n{new_context}".strip()
+                update_fields["embedding"] = embed_document(embedding_text)
+
+            # Create voice activity log entry
+            from shared.models import ActivityLogEntry
+            log_entry = ActivityLogEntry(
+                action="voice_update",
+                note=voice_log_entry.get("summary", "Voice update"),
+                summary=voice_log_entry.get("summary"),
+                raw_transcript=voice_log_entry.get("raw_transcript"),
+                extracted=voice_log_entry.get("extracted")
+            )
+
+            # Add to activity log
+            if "activity_log" not in update_fields:
+                update_fields["activity_log"] = current_task.activity_log
+            update_fields["activity_log"].append(log_entry)
+
+            # Apply updates
+            action_note = "; ".join(changes) if changes else "Voice update applied"
+            db_update_task(task_oid, update_fields, "voice_update", action_note)
+
+            # Add notes separately if provided
+            if "notes_to_add" in updates:
+                for note in updates["notes_to_add"]:
+                    add_task_note(task_oid, note)
+
+            # Return updated task
+            updated_task = db_get_task(task_oid)
+            return {
+                "success": True,
+                "task": self._task_to_dict(updated_task)
+            }
+
+        # Process project update
+        else:  # project_id
+            project_oid = ObjectId(project_id)
+            current_project = db_get_project(project_oid)
+
+            if not current_project:
+                return {"success": False, "error": "Project not found"}
+
+            # Build update dict
+            update_fields = {}
+            changes = []
+
+            # Update status if provided
+            if "status" in updates:
+                update_fields["status"] = updates["status"]
+                changes.append(f"status changed to '{updates['status']}'")
+
+            # Add context if provided
+            if "context" in updates:
+                # Append to existing context
+                new_context = current_project.context
+                if new_context:
+                    new_context += f"\n\n{updates['context']}"
+                else:
+                    new_context = updates["context"]
+                update_fields["context"] = new_context
+                changes.append("context updated")
+
+                # Regenerate embedding
+                embedding_text = f"{current_project.name}\n{current_project.description}".strip()
+                update_fields["embedding"] = embed_document(embedding_text)
+
+            # Create voice activity log entry
+            from shared.models import ActivityLogEntry
+            log_entry = ActivityLogEntry(
+                action="voice_update",
+                note=voice_log_entry.get("summary", "Voice update"),
+                summary=voice_log_entry.get("summary"),
+                raw_transcript=voice_log_entry.get("raw_transcript"),
+                extracted=voice_log_entry.get("extracted")
+            )
+
+            # Add to activity log
+            if "activity_log" not in update_fields:
+                update_fields["activity_log"] = current_project.activity_log
+            update_fields["activity_log"].append(log_entry)
+
+            # Apply updates
+            action_note = "; ".join(changes) if changes else "Voice update applied"
+            db_update_project(project_oid, update_fields, "voice_update", action_note)
+
+            # Add notes separately if provided
+            if "notes_to_add" in updates:
+                for note in updates["notes_to_add"]:
+                    add_project_note(project_oid, note)
+
+            # Return updated project
+            updated_project = db_get_project(project_oid)
+            return {
+                "success": True,
+                "project": self._project_to_dict(updated_project)
+            }
+
+    def create_task_from_voice(
+        self,
+        title: str,
+        project_id: Optional[str] = None,
+        source: Optional[str] = None,
+        context: str = "",
+        from_transcript: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a task that was mentioned in voice input.
+
+        Args:
+            title: Task title
+            project_id: Optional project ID
+            source: Source attribution (e.g., "mentioned by Sarah in standup")
+            context: Task context
+            from_transcript: Original transcript snippet
+
+        Returns:
+            dict with success status and created task
+        """
+        # Build context with source attribution
+        full_context = context
+        if source:
+            attribution = f"Source: {source}"
+            full_context = f"{attribution}\n\n{context}" if context else attribution
+
+        # Create task model
+        task = Task(
+            title=title,
+            project_id=ObjectId(project_id) if project_id else None,
+            context=full_context,
+            status="todo"
+        )
+
+        # Generate embedding
+        embedding_text = f"{title}\n{full_context}".strip()
+        task.embedding = embed_document(embedding_text)
+
+        # Add voice creation log entry
+        from shared.models import ActivityLogEntry
+        log_entry = ActivityLogEntry(
+            action="created_from_voice",
+            note=f"Task created from voice input{': ' + source if source else ''}",
+            summary=f"Created: {title}",
+            raw_transcript=from_transcript
+        )
+        task.activity_log.append(log_entry)
+
+        # Create in database
+        action_note = f"Task created from voice: {title}"
+        if source:
+            action_note += f" (source: {source})"
+        task_id = db_create_task(task, action_note=action_note)
+
+        # Return created task
+        created_task = db_get_task(task_id)
+        return {
+            "success": True,
+            "task_id": str(task_id),
+            "task": self._task_to_dict(created_task)
         }
 
     def _task_to_dict(self, task: Optional[Task]) -> Optional[Dict[str, Any]]:

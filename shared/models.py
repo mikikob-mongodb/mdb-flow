@@ -26,6 +26,11 @@ class ActivityLogEntry(BaseModel):
     action: str
     note: Optional[str] = None
 
+    # Voice-specific fields
+    summary: Optional[str] = None  # Cleaned summary for voice_update
+    raw_transcript: Optional[str] = None  # Original speech transcript
+    extracted: Optional[dict] = None  # Parsed voice structure
+
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
 
@@ -51,6 +56,9 @@ class Task(BaseModel):
 
     # Vector embedding (1024 dimensions for voyage-3)
     embedding: Optional[List[float]] = None
+
+    # Test data flag (for filtering test data from production queries)
+    is_test: bool = False
 
     class Config:
         populate_by_name = True
@@ -88,6 +96,9 @@ class Project(BaseModel):
 
     # Vector embedding (1024 dimensions for voyage-3)
     embedding: Optional[List[float]] = None
+
+    # Test data flag (for filtering test data from production queries)
+    is_test: bool = False
 
     class Config:
         populate_by_name = True

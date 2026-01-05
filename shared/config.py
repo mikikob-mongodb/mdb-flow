@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # Voyage AI
     voyage_api_key: str = Field(..., alias="VOYAGE_API_KEY")
 
+    # OpenAI (for Whisper)
+    openai_api_key: str = Field(..., alias="OPENAI_API_KEY")
+
     # MongoDB
     mongodb_uri: str = Field(..., alias="MONGODB_URI")
     mongodb_database: str = Field(..., alias="MONGODB_DATABASE")
