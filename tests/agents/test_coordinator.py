@@ -22,39 +22,93 @@ class TestToolSelection:
 
     def test_coordinator_selects_retrieval_for_search(self, coordinator_instance):
         """Coordinator selects retrieval agent for search queries."""
-        with patch.object(coordinator_instance, 'retrieval_agent') as mock_retrieval:
-            mock_retrieval.hybrid_search_tasks.return_value = [
-                {"_id": "1", "title": "Test task", "status": "todo"}
-            ]
+        # Create proper tool use mock
+        tool_use = Mock()
+        tool_use.type = "tool_use"
+        tool_use.name = "get_tasks"
+        tool_use.id = "toolu_get_tasks"
+        tool_use.input = {}
 
-            response = coordinator_instance.process(
-                "show me my tasks",
-                conversation_history=[],
-                input_type="text"
-            )
+        # Create text block mock
+        text_block = Mock()
+        text_block.type = "text"
+        text_block.text = "Here are your tasks"
 
-            # Should have called retrieval agent
-            assert mock_retrieval.hybrid_search_tasks.called or \
-                   mock_retrieval.get_tasks.called, \
-                "Should use retrieval agent for task search"
+        # Mock LLM responses
+        mock_response = Mock()
+        mock_response.stop_reason = "tool_use"
+        mock_response.content = [tool_use]
+
+        mock_response_2 = Mock()
+        mock_response_2.stop_reason = "end_turn"
+        mock_response_2.content = [text_block]
+
+        with patch.object(coordinator_instance.llm, 'generate_with_tools') as mock_llm:
+            mock_llm.side_effect = [mock_response, mock_response_2]
+
+            with patch.object(coordinator_instance.worklog_agent, '_list_tasks') as mock_list:
+                mock_list.return_value = {
+                    "success": True,
+                    "tasks": [{"_id": "1", "title": "Test task", "status": "todo"}]
+                }
+
+                response = coordinator_instance.process(
+                    "show me my tasks",
+                    conversation_history=[],
+                    input_type="text",
+                    turn_number=1
+                )
+
+                # Verify tool was called via current_turn tracking
+                assert coordinator_instance.current_turn is not None, "Should track turn"
+                tool_names = [tc["name"] for tc in coordinator_instance.current_turn["tool_calls"]]
+                assert "get_tasks" in tool_names or "search_tasks" in tool_names, \
+                    "Should use get_tasks or search_tasks for task queries"
 
     def test_coordinator_selects_worklog_for_complete(self, coordinator_instance):
         """Coordinator selects worklog agent for task completion."""
-        with patch.object(coordinator_instance, 'worklog_agent') as mock_worklog:
-            mock_worklog.complete_task.return_value = {
-                "success": True,
-                "message": "Task completed"
-            }
+        # Create proper tool use mock
+        tool_use = Mock()
+        tool_use.type = "tool_use"
+        tool_use.name = "search_tasks"
+        tool_use.id = "toolu_search"
+        tool_use.input = {"query": "task 123", "limit": 5}
 
-            response = coordinator_instance.process(
-                "mark task 123 as complete",
-                conversation_history=[],
-                input_type="text"
-            )
+        # Create text block mock
+        text_block = Mock()
+        text_block.type = "text"
+        text_block.text = "Found 1 task. Confirm?"
 
-            # Worklog agent should be involved in completion
-            # (actual implementation may vary, this tests the intent)
-            assert isinstance(response, str), "Should return response string"
+        # Mock LLM responses
+        mock_response = Mock()
+        mock_response.stop_reason = "tool_use"
+        mock_response.content = [tool_use]
+
+        mock_response_2 = Mock()
+        mock_response_2.stop_reason = "end_turn"
+        mock_response_2.content = [text_block]
+
+        with patch.object(coordinator_instance.llm, 'generate_with_tools') as mock_llm:
+            mock_llm.side_effect = [mock_response, mock_response_2]
+
+            with patch.object(coordinator_instance.retrieval_agent, 'hybrid_search_tasks') as mock_search:
+                mock_search.return_value = [
+                    {"_id": "123", "title": "Test task", "status": "todo"}
+                ]
+
+                response = coordinator_instance.process(
+                    "mark task 123 as complete",
+                    conversation_history=[],
+                    input_type="text",
+                    turn_number=1
+                )
+
+                # Should search first (confirmation pattern)
+                assert isinstance(response, str), "Should return response string"
+                assert coordinator_instance.current_turn is not None, "Should track turn"
+                tool_names = [tc["name"] for tc in coordinator_instance.current_turn["tool_calls"]]
+                assert "search_tasks" in tool_names, \
+                    "Should search for task first (confirmation pattern)"
 
     def test_coordinator_selects_worklog_for_note(self, coordinator_instance):
         """Coordinator selects worklog agent for adding notes."""
