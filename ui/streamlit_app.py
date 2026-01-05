@@ -576,9 +576,13 @@ def render_chat():
                     # Calculate turn number
                     turn_number = len(st.session_state.debug_history) + 1
 
+                    # Get optimizations from session state
+                    optimizations = st.session_state.get("optimizations", {})
+
                     # Process message through coordinator
                     response = st.session_state.coordinator.process(
-                        prompt, history, input_type="text", turn_number=turn_number
+                        prompt, history, input_type="text", turn_number=turn_number,
+                        optimizations=optimizations
                     )
 
                     # Display response
@@ -642,9 +646,13 @@ def render_chat():
                     # Calculate turn number
                     turn_number = len(st.session_state.debug_history) + 1
 
+                    # Get optimizations from session state
+                    optimizations = st.session_state.get("optimizations", {})
+
                     # Process message through coordinator with voice flag
                     response = st.session_state.coordinator.process(
-                        transcript, history, input_type="voice", turn_number=turn_number
+                        transcript, history, input_type="voice", turn_number=turn_number,
+                        optimizations=optimizations
                     )
 
                     # Display response

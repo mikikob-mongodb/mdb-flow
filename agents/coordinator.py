@@ -9,6 +9,7 @@ from shared.llm import llm_service
 from shared.logger import get_logger
 from agents.worklog import worklog_agent
 from agents.retrieval import retrieval_agent
+from utils.context_engineering import compress_tool_result
 
 logger = get_logger("coordinator")
 
@@ -875,7 +876,7 @@ class CoordinatorAgent:
 
             return result, debug_info
 
-    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1) -> str:
+    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1, optimizations: Optional[Dict[str, bool]] = None) -> str:
         """
         Process a user message using Claude's native tool use.
 
@@ -886,10 +887,13 @@ class CoordinatorAgent:
             conversation_history: Optional conversation history
             input_type: Type of input ("text" or "voice") - for logging only
             turn_number: The turn number for this request (for debug tracking)
+            optimizations: Optional dict of optimization toggles (compress_results, streamlined_prompt, prompt_caching)
 
         Returns:
             Agent's response
         """
+        # Store optimizations for use throughout the process
+        self.optimizations = optimizations or {}
         logger.info("=" * 80)
         logger.info("=== NEW REQUEST ===")
         logger.info(f"Input type: {input_type}")
@@ -995,8 +999,12 @@ class CoordinatorAgent:
                     # Store debug info
                     self.last_debug_info.append(debug_info)
 
+                    # Apply compression if enabled (before serialization)
+                    compress = self.optimizations.get("compress_results", True)
+                    compressed_result = compress_tool_result(tool_name, result, compress=compress)
+
                     # Add tool result (convert ObjectIds to strings first)
-                    serializable_result = convert_objectids_to_str(result)
+                    serializable_result = convert_objectids_to_str(compressed_result)
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
