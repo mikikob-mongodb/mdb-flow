@@ -157,16 +157,107 @@ def render_summary_section():
 
 
 def render_matrix_section():
-    """Render comparison matrix."""
+    """Render comparison matrix with test results."""
     st.subheader("🧪 Comparison Matrix")
 
     run: ComparisonRun = st.session_state.get("comparison_run")
-    if not run:
+    if not run or not run.tests:
         st.info("Matrix will appear here after running comparison.")
         return
 
-    # TODO: Render matrix with test results
-    st.write("Comparison matrix will appear here.")
+    configs = run.configs_compared
+
+    # Build header
+    header_cols = st.columns([0.5, 2] + [1.5] * len(configs) + [1.5])
+    header_cols[0].write("**#**")
+    header_cols[1].write("**Query**")
+    for i, cfg in enumerate(configs):
+        header_cols[2 + i].write(f"**{EVAL_CONFIGS[cfg]['short']}**")
+    header_cols[-1].write("**Best**")
+
+    st.markdown("---")
+
+    # Render each test row
+    for test in run.tests:
+        render_matrix_row(test, configs)
+
+
+def render_matrix_row(test, configs: list):
+    """Render a single row in the matrix."""
+    cols = st.columns([0.5, 2] + [1.5] * len(configs) + [1.5])
+
+    # Test ID
+    cols[0].write(f"**{test.test_id}**")
+
+    # Query (truncated)
+    query_short = test.query[:25] + "..." if len(test.query) > 25 else test.query
+    cols[1].write(query_short)
+
+    # Results per config
+    for i, cfg in enumerate(configs):
+        result = test.results_by_config.get(cfg)
+        if result:
+            latency_s = result.latency_ms / 1000
+            tokens = result.tokens_in or "-"
+
+            # Color based on relative performance
+            if cfg == test.best_config:
+                cols[2 + i].markdown(f"🟢 **{latency_s:.1f}s**<br>{tokens}", unsafe_allow_html=True)
+            else:
+                cols[2 + i].markdown(f"{latency_s:.1f}s<br>{tokens}", unsafe_allow_html=True)
+        else:
+            cols[2 + i].write("-")
+
+    # Best config
+    if test.best_config and test.improvement_pct:
+        best_name = EVAL_CONFIGS[test.best_config]["short"]
+        cols[-1].write(f"✅ {best_name} (-{test.improvement_pct:.0f}%)")
+    else:
+        cols[-1].write("-")
+
+    # Expandable details
+    with st.expander(f"Details #{test.test_id}"):
+        render_row_details(test, configs)
+
+
+def render_row_details(test, configs: list):
+    """Render expanded details for a test."""
+
+    # Config cards side by side
+    cols = st.columns(len(configs))
+
+    for i, cfg in enumerate(configs):
+        result = test.results_by_config.get(cfg)
+        with cols[i]:
+            st.markdown(f"**{EVAL_CONFIGS[cfg]['name']}**")
+            if result:
+                is_best = cfg == test.best_config
+
+                st.write(f"Latency: **{result.latency_ms}ms** {'✅' if is_best else ''}")
+                st.write(f"Tokens In: {result.tokens_in or '-'}")
+                st.write(f"Tokens Out: {result.tokens_out or '-'}")
+                st.write(f"LLM Time: {result.llm_time_ms or '-'}ms")
+                st.write(f"Tool Time: {result.tool_time_ms or '-'}ms")
+                st.write(f"Cache Hit: {'✅' if result.cache_hit else '❌'}")
+
+                if result.tools_called:
+                    st.write(f"Tools: {', '.join(result.tools_called)}")
+
+                if result.error:
+                    st.error(f"Error: {result.error}")
+            else:
+                st.write("No result")
+
+    # Notes
+    st.markdown("---")
+    notes = st.text_input(
+        "Notes",
+        value=test.notes,
+        key=f"notes_{test.test_id}",
+        placeholder="Add observations..."
+    )
+    if notes != test.notes:
+        test.notes = notes
 
 
 def render_charts_section():
