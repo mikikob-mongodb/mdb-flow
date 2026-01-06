@@ -51,7 +51,7 @@ METRIC_EXPLANATIONS = {
 
 # Chart explanations for tooltips
 CHART_EXPLANATIONS = {
-    "waterfall": "Shows average latency for each optimization configuration. Compare individual techniques (Compress, Streamlined, Caching) against Baseline, and see the combined effect with 'All Ctx'. The percentage shows reduction from Baseline.",
+    "waterfall": "Shows average latency for each optimization configuration (LLM queries only - excludes slash commands which bypass the LLM). Compare individual techniques (Compress, Streamlined, Caching) against Baseline, and see the combined effect with 'All Ctx'. The percentage shows reduction from Baseline.",
     "impact_by_query_type": "Compares latency across different query categories. Slash Commands hit MongoDB directly (fast). Text Queries/Actions require LLM reasoning (slower). Multi-Turn queries include conversation context. Shows which query types benefit most from each optimization.",
     "llm_vs_tool": "Shows what percentage of total response time is spent on LLM thinking vs tool execution (MongoDB queries, embeddings). Demonstrates that LLM is the bottleneck (~96%), not the database. Tool time stays constant; optimizations reduce LLM time.",
     "token_savings": "Shows reduction in input tokens sent to the LLM for each query type. Fewer tokens = faster responses + lower API costs. Compression and streamlined prompts achieve 70-90% reduction by summarizing tool results and removing verbose instructions.",
@@ -444,13 +444,20 @@ def render_matrix_row(test, configs: list, test_info: dict, selected_metric: str
         value = values[config]
         formatted = format_metric_value(value, selected_metric)
 
-        if config == best_config and value is not None:
+        # Don't highlight "best" for slash commands - variation is just MongoDB noise
+        if test_info["type"] == "slash":
+            cols[3 + i].write(formatted)
+        elif config == best_config and value is not None:
             cols[3 + i].markdown(f"🟢 **{formatted}**")
         else:
             cols[3 + i].write(formatted)
 
     # Best column with improvement %
-    if best_config and baseline_value and best_value and baseline_value > 0:
+    # For slash commands, don't show "best" optimization - they bypass the LLM entirely
+    if test_info["type"] == "slash":
+        # Slash commands go directly to MongoDB, LLM optimizations don't apply
+        cols[-1].write("⚡ Direct DB")
+    elif best_config and baseline_value and best_value and baseline_value > 0:
         improvement = ((baseline_value - best_value) / baseline_value) * 100
         best_name = EVAL_CONFIGS[best_config]["short"]
         cols[-1].write(f"✅ {best_name} (-{improvement:.0f}%)")
@@ -649,15 +656,24 @@ def render_optimization_waterfall(run: ComparisonRun):
         st.info("Run baseline + optimizations to see waterfall")
         return
 
-    summaries = run.summary_by_config
-
-    # Collect data
+    # Compute averages EXCLUDING slash commands (they bypass LLM, optimizations don't apply)
+    # Only include text queries, actions, and multi-turn tests
     latencies = []
     labels = []
     for cfg in ordered_configs:
-        summary = summaries.get(cfg, {})
-        latency_s = summary.get("avg_latency_ms", 0) / 1000
-        latencies.append(latency_s)
+        # Filter out slash commands
+        llm_tests = [t for t in run.tests if t.section != "slash_commands"]
+
+        # Compute average for this config
+        config_latencies = []
+        for test in llm_tests:
+            if cfg in test.results_by_config:
+                result = test.results_by_config[cfg]
+                if result.latency_ms:
+                    config_latencies.append(result.latency_ms)
+
+        avg_latency_ms = sum(config_latencies) / len(config_latencies) if config_latencies else 0
+        latencies.append(avg_latency_ms / 1000)  # Convert to seconds
         labels.append(EVAL_CONFIGS[cfg]["short"])
 
     # Calculate % reduction from baseline
