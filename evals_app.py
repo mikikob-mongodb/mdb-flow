@@ -25,7 +25,7 @@ st.set_page_config(
 
 from evals.configs import EVAL_CONFIGS, DEFAULT_SELECTED
 from evals.runner import ComparisonRunner
-from evals.result import ComparisonRun
+from evals.result import ComparisonRun, TestComparison, ConfigResult
 from evals.storage import save_comparison_run, list_comparison_runs, load_comparison_run
 
 # Import coordinator
@@ -876,8 +876,42 @@ def load_saved_run(run_id: str):
                 configs_compared=doc.get("configs_compared", []),
             )
             run.summary_by_config = doc.get("summary_by_config", {})
-            # Note: Full test reconstruction would need more work
-            # For now just load summaries for charts
+
+            # Reconstruct tests from stored data
+            run.tests = []
+            for test_dict in doc.get("tests", []):
+                test = TestComparison(
+                    test_id=test_dict["test_id"],
+                    query=test_dict["query"],
+                    section=test_dict["section"],
+                    input_type=test_dict["input_type"],
+                    expected=test_dict["expected"],
+                )
+                test.best_config = test_dict.get("best_config")
+                test.best_latency_ms = test_dict.get("best_latency_ms")
+                test.improvement_pct = test_dict.get("improvement_pct")
+                test.notes = test_dict.get("notes", "")
+
+                # Reconstruct results_by_config
+                for config_key, result_dict in test_dict.get("results_by_config", {}).items():
+                    result = ConfigResult(
+                        config_key=result_dict["config_key"],
+                        latency_ms=result_dict.get("latency_ms", 0),
+                        llm_time_ms=result_dict.get("llm_time_ms"),
+                        tool_time_ms=result_dict.get("tool_time_ms"),
+                        tokens_in=result_dict.get("tokens_in"),
+                        tokens_out=result_dict.get("tokens_out"),
+                        cache_hit=result_dict.get("cache_hit", False),
+                        tools_called=result_dict.get("tools_called", []),
+                        response=result_dict.get("response", ""),
+                        error=result_dict.get("error"),
+                        result=result_dict.get("result", "pending"),
+                        rating=result_dict.get("rating", 0)
+                    )
+                    test.results_by_config[config_key] = result
+
+                run.tests.append(test)
+
             st.session_state.comparison_run = run
             st.session_state.selected_configs = doc.get("configs_compared", [])
             st.rerun()
