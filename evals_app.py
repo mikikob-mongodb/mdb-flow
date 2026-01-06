@@ -58,6 +58,110 @@ CHART_EXPLANATIONS = {
     "operation_breakdown": "Shows how tool execution time is split between Embedding generation (Voyage API), MongoDB queries, and Python processing. Tool time stays consistent across all configs (~500ms), proving that context optimizations reduce LLM time, not database time."
 }
 
+# Intent-based grouping for comparison matrix
+# Groups queries by what they accomplish, showing different input methods for the same task
+INTENT_GROUPS = [
+    {
+        "intent": "List All Tasks",
+        "icon": "📋",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 1},   # /tasks
+            {"type": "text", "icon": "💬", "test_id": 11},   # What are my tasks?
+            {"type": "voice", "icon": "🎤", "test_id": 34},  # Voice: What are my tasks?
+        ]
+    },
+    {
+        "intent": "Filter by Status (In Progress)",
+        "icon": "🔄",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 2},   # /tasks status:in_progress
+            {"type": "text", "icon": "💬", "test_id": 12},   # What's in progress?
+            {"type": "voice", "icon": "🎤", "test_id": 35},  # Voice version
+        ]
+    },
+    {
+        "intent": "Filter by Priority (High)",
+        "icon": "🔥",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 4},   # /tasks priority:high
+            {"type": "text", "icon": "💬", "test_id": 13},   # Show high priority
+            {"type": "voice", "icon": "🎤", "test_id": None},  # Not implemented
+        ]
+    },
+    {
+        "intent": "Show Project (AgentOps)",
+        "icon": "📁",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 5},   # /tasks project:AgentOps
+            {"type": "text", "icon": "💬", "test_id": 14},   # Show me the AgentOps project
+            {"type": "voice", "icon": "🎤", "test_id": 36},  # Voice version
+        ]
+    },
+    {
+        "intent": "Show Project (Voice Agent)",
+        "icon": "📁",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": None},  # No direct slash command
+            {"type": "text", "icon": "💬", "test_id": 15},   # What's in the Voice Agent project?
+            {"type": "voice", "icon": "🎤", "test_id": None},  # Not implemented
+        ]
+    },
+    {
+        "intent": "Search Tasks (debugging)",
+        "icon": "🔍",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 6},   # /tasks search debugging
+            {"type": "text", "icon": "💬", "test_id": 16},   # Find tasks about debugging
+            {"type": "voice", "icon": "🎤", "test_id": 37},  # Voice version
+        ]
+    },
+    {
+        "intent": "Search Tasks (memory)",
+        "icon": "🔍",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 10},  # /projects search memory
+            {"type": "text", "icon": "💬", "test_id": 17},   # Search for memory-related tasks
+            {"type": "voice", "icon": "🎤", "test_id": None},  # Not implemented
+        ]
+    },
+    {
+        "intent": "Complete Task",
+        "icon": "✅",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": None},  # No direct slash for complete
+            {"type": "text", "icon": "💬", "test_id": 19},   # I finished the debugging doc
+            {"type": "voice", "icon": "🎤", "test_id": 38},  # Voice version
+        ]
+    },
+    {
+        "intent": "Start Task",
+        "icon": "▶️",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": None},  # No direct slash
+            {"type": "text", "icon": "💬", "test_id": 23},   # Start working on the voice agent app
+            {"type": "voice", "icon": "🎤", "test_id": None},  # Not implemented
+        ]
+    },
+    {
+        "intent": "Add Note to Task",
+        "icon": "📝",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": None},  # No direct slash
+            {"type": "text", "icon": "💬", "test_id": 25},   # Add note to voice agent
+            {"type": "voice", "icon": "🎤", "test_id": 40},  # Voice version
+        ]
+    },
+    {
+        "intent": "Multi-Turn: Context Recall",
+        "icon": "🔄",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": None},  # N/A for slash
+            {"type": "text", "icon": "💬", "test_id": 30},   # What's high priority? (after AgentOps)
+            {"type": "voice", "icon": "🎤", "test_id": None},  # Not implemented
+        ]
+    },
+]
+
 
 def init_session_state():
     """Initialize session state variables."""
@@ -212,61 +316,91 @@ def render_summary_section():
 
 
 def render_matrix_section():
-    """Render comparison matrix with test results."""
+    """Render comparison matrix grouped by task intent."""
     st.subheader("🧪 Comparison Matrix")
+    st.caption("Grouped by task intent, showing different input methods for the same goal")
 
     run: ComparisonRun = st.session_state.get("comparison_run")
     if not run or not run.tests:
         st.info("Matrix will appear here after running comparison.")
         return
 
-    configs = run.configs_compared
+    # Build test lookup
+    tests_by_id = {t.test_id: t for t in run.tests}
 
-    # Build header
-    header_cols = st.columns([0.5, 2] + [1.5] * len(configs) + [1.5])
-    header_cols[0].write("**#**")
-    header_cols[1].write("**Query**")
-    for i, cfg in enumerate(configs):
-        header_cols[2 + i].write(f"**{EVAL_CONFIGS[cfg]['short']}**")
-    header_cols[-1].write("**Best**")
+    # Config order
+    config_order = ["baseline", "compress_results", "streamlined_prompt", "prompt_caching", "all_context"]
+    configs = [c for c in config_order if c in run.configs_compared]
 
-    st.markdown("---")
+    # Render each intent group
+    for group in INTENT_GROUPS:
+        with st.expander(f"{group['icon']} {group['intent']}", expanded=False):
+            # Header row
+            header_cols = st.columns([0.4, 0.8, 2.5] + [1.2] * len(configs) + [1.5])
+            header_cols[0].markdown("**#**")
+            header_cols[1].markdown("**Type**")
+            header_cols[2].markdown("**Query**")
+            for i, config in enumerate(configs):
+                header_cols[3 + i].markdown(f"**{EVAL_CONFIGS[config]['short']}**")
+            header_cols[-1].markdown("**Best**")
 
-    # Render each test row
-    for test in run.tests:
-        render_matrix_row(test, configs)
+            st.markdown("---")
+
+            # Test rows within this intent group
+            for test_info in group["tests"]:
+                test_id = test_info["test_id"]
+
+                if test_id is None:
+                    # Not implemented yet - show placeholder row
+                    cols = st.columns([0.4, 0.8, 2.5] + [1.2] * len(configs) + [1.5])
+                    cols[0].write("-")
+                    cols[1].write(f"{test_info['icon']} {test_info['type'].title()}")
+                    cols[2].write("*(coming soon)*")
+                    for i in range(len(configs)):
+                        cols[3 + i].write("-")
+                    cols[-1].write("-")
+                    continue
+
+                test = tests_by_id.get(test_id)
+                if not test:
+                    continue
+
+                # Render test row
+                render_matrix_row(test, configs, test_info)
 
 
-def render_matrix_row(test, configs: list):
-    """Render a single row in the matrix."""
-    cols = st.columns([0.5, 2] + [1.5] * len(configs) + [1.5])
+def render_matrix_row(test, configs: list, test_info: dict):
+    """Render a single row in the grouped matrix."""
+    cols = st.columns([0.4, 0.8, 2.5] + [1.2] * len(configs) + [1.5])
 
     # Test ID
     cols[0].write(f"**{test.test_id}**")
 
+    # Input type icon + label
+    cols[1].write(f"{test_info['icon']} {test_info['type'].title()}")
+
     # Query (truncated)
-    query_short = test.query[:25] + "..." if len(test.query) > 25 else test.query
-    cols[1].write(query_short)
+    query_short = test.query[:30] + "..." if len(test.query) > 30 else test.query
+    cols[2].write(query_short)
 
     # Results per config
     for i, cfg in enumerate(configs):
         result = test.results_by_config.get(cfg)
         if result:
             latency_s = result.latency_ms / 1000
-            tokens = result.tokens_in or "-"
 
             # Color based on relative performance
             if cfg == test.best_config:
-                cols[2 + i].markdown(f"🟢 **{latency_s:.1f}s**<br>{tokens}", unsafe_allow_html=True)
+                cols[3 + i].markdown(f"🟢 **{latency_s:.1f}s**")
             else:
-                cols[2 + i].markdown(f"{latency_s:.1f}s<br>{tokens}", unsafe_allow_html=True)
+                cols[3 + i].markdown(f"{latency_s:.1f}s")
         else:
-            cols[2 + i].write("-")
+            cols[3 + i].write("-")
 
     # Best config
     if test.best_config and test.improvement_pct:
         best_name = EVAL_CONFIGS[test.best_config]["short"]
-        cols[-1].write(f"✅ {best_name} (-{test.improvement_pct:.0f}%)")
+        cols[-1].write(f"✅ {best_name} ({test.improvement_pct:+.0f}%)")
     else:
         cols[-1].write("-")
 
