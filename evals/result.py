@@ -114,6 +114,8 @@ class ComparisonRun:
             latencies = []
             tokens_in = []
             tokens_out = []
+            llm_times = []
+            tool_times = []
             passed = 0
             total = 0
 
@@ -125,6 +127,10 @@ class ComparisonRun:
                         tokens_in.append(result.tokens_in)
                     if result.tokens_out:
                         tokens_out.append(result.tokens_out)
+                    if result.llm_time_ms is not None:
+                        llm_times.append(result.llm_time_ms)
+                    if result.tool_time_ms is not None:
+                        tool_times.append(result.tool_time_ms)
                     if result.result == "pass":
                         passed += 1
                     total += 1
@@ -133,6 +139,8 @@ class ComparisonRun:
                 "avg_latency_ms": round(sum(latencies) / len(latencies)) if latencies else 0,
                 "avg_tokens_in": round(sum(tokens_in) / len(tokens_in)) if tokens_in else 0,
                 "avg_tokens_out": round(sum(tokens_out) / len(tokens_out)) if tokens_out else 0,
+                "avg_llm_time_ms": round(sum(llm_times) / len(llm_times)) if llm_times else 0,
+                "avg_tool_time_ms": round(sum(tool_times) / len(tool_times)) if tool_times else 0,
                 "pass_rate": round(passed / total, 2) if total > 0 else 0,
                 "total_tests": total
             }

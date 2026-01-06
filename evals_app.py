@@ -279,7 +279,7 @@ def render_row_details(test, configs: list):
 
 def render_charts_section():
     """Render impact analysis charts."""
-    st.subheader("📉 Impact Analysis")
+    st.subheader("📈 Impact Analysis")
 
     run: ComparisonRun = st.session_state.get("comparison_run")
     if not run or not run.summary_by_config:
@@ -290,131 +290,241 @@ def render_charts_section():
     configs = run.configs_compared
     summaries = run.summary_by_config
 
-    # Row 1: Latency and Tokens charts
+    # Row 1: Optimization Waterfall and Impact by Query Type
     col1, col2 = st.columns(2)
 
     with col1:
-        render_latency_chart(configs, summaries)
+        render_optimization_waterfall(run)
 
     with col2:
-        render_tokens_chart(configs, summaries)
+        render_impact_by_query_type(run)
 
-    # Row 2: Accuracy and Breakdown
+    # Row 2: LLM vs Tool Time and Token Savings
     col1, col2 = st.columns(2)
 
     with col1:
-        render_accuracy_chart(configs, summaries)
+        render_llm_tool_breakdown(run)
 
     with col2:
-        render_breakdown_chart(configs, summaries)
-
-    # Row 3: Latency over sequence
-    render_sequence_chart(run)
+        render_token_savings_by_type(run)
 
 
-def render_latency_chart(configs, summaries):
-    """Bar chart of average latency by config."""
+def render_optimization_waterfall(run: ComparisonRun):
+    """Waterfall chart showing cumulative latency reduction."""
+    # Order: baseline → compress → streamlined → caching → all_context
+    waterfall_order = ["baseline", "compress_results", "streamlined_prompt", "prompt_caching", "all_context"]
+
+    # Filter to only configs that were run
+    ordered_configs = [cfg for cfg in waterfall_order if cfg in run.configs_compared]
+
+    if len(ordered_configs) < 2:
+        st.info("Run baseline + optimizations to see waterfall")
+        return
+
+    summaries = run.summary_by_config
     data = []
-    for cfg in configs:
+
+    for cfg in ordered_configs:
         summary = summaries.get(cfg, {})
+        latency_s = summary.get("avg_latency_ms", 0) / 1000
         data.append({
             "Config": EVAL_CONFIGS[cfg]["short"],
-            "Latency (s)": summary.get("avg_latency_ms", 0) / 1000
+            "Latency (s)": round(latency_s, 2)
         })
 
     df = pd.DataFrame(data)
-    fig = px.bar(df, x="Config", y="Latency (s)", title="⏱️ Average Latency by Config")
-    fig.update_layout(height=300)
+    fig = px.bar(df, x="Config", y="Latency (s)",
+                 title="⚡ Optimization Waterfall")
+    fig.update_layout(height=350, xaxis_title="", yaxis_title="Avg Latency (s)")
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_tokens_chart(configs, summaries):
-    """Bar chart of average tokens by config."""
-    data = []
-    for cfg in configs:
-        summary = summaries.get(cfg, {})
-        data.append({
-            "Config": EVAL_CONFIGS[cfg]["short"],
-            "Tokens In": summary.get("avg_tokens_in", 0)
-        })
+def render_impact_by_query_type(run: ComparisonRun):
+    """Grouped bar chart: Baseline vs All Context by query type."""
+    from evals.test_suite import Section, SECTION_NAMES
 
-    df = pd.DataFrame(data)
-    fig = px.bar(df, x="Config", y="Tokens In", title="🪙 Average Tokens by Config")
-    fig.update_layout(height=300)
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def render_accuracy_chart(configs, summaries):
-    """Bar chart of accuracy/pass rate by config."""
-    data = []
-    for cfg in configs:
-        summary = summaries.get(cfg, {})
-        data.append({
-            "Config": EVAL_CONFIGS[cfg]["short"],
-            "Pass Rate (%)": summary.get("pass_rate", 0) * 100
-        })
-
-    df = pd.DataFrame(data)
-    fig = px.bar(df, x="Config", y="Pass Rate (%)", title="✅ Accuracy by Config")
-    fig.update_layout(height=300, yaxis_range=[0, 100])
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def render_breakdown_chart(configs, summaries):
-    """Show improvement breakdown vs baseline."""
-    if "baseline" not in summaries:
+    # Need baseline and at least one optimization config
+    if "baseline" not in run.configs_compared:
         st.info("Need baseline for comparison")
         return
 
-    baseline = summaries["baseline"]
-    baseline_latency = baseline.get("avg_latency_ms", 1)
+    # Find best optimization config (prefer all_context, or take first non-baseline)
+    opt_config = None
+    if "all_context" in run.configs_compared:
+        opt_config = "all_context"
+    else:
+        for cfg in run.configs_compared:
+            if cfg != "baseline":
+                opt_config = cfg
+                break
 
+    if not opt_config:
+        st.info("Need at least one optimization config")
+        return
+
+    # Group tests by section and calculate average latency
+    section_data = {}
+    for section in Section:
+        section_data[section.value] = {"baseline": [], opt_config: []}
+
+    for test in run.tests:
+        section = test.section
+        baseline_result = test.results_by_config.get("baseline")
+        opt_result = test.results_by_config.get(opt_config)
+
+        if baseline_result:
+            section_data[section]["baseline"].append(baseline_result.latency_ms)
+        if opt_result:
+            section_data[section][opt_config].append(opt_result.latency_ms)
+
+    # Calculate averages
     data = []
-    for cfg in configs:
-        if cfg == "baseline":
-            continue
-        summary = summaries.get(cfg, {})
-        reduction = baseline_latency - summary.get("avg_latency_ms", 0)
-        reduction_pct = (reduction / baseline_latency) * 100 if baseline_latency > 0 else 0
-        data.append({
-            "Config": EVAL_CONFIGS[cfg]["short"],
-            "Reduction (%)": round(reduction_pct, 1)
-        })
+    for section_key, results in section_data.items():
+        section_name = SECTION_NAMES.get(Section(section_key), section_key).replace(" ", "\n")
+
+        if results["baseline"]:
+            avg_baseline = sum(results["baseline"]) / len(results["baseline"]) / 1000
+            data.append({
+                "Query Type": section_name,
+                "Config": "Baseline",
+                "Latency (s)": round(avg_baseline, 2)
+            })
+
+        if results[opt_config]:
+            avg_opt = sum(results[opt_config]) / len(results[opt_config]) / 1000
+            data.append({
+                "Query Type": section_name,
+                "Config": EVAL_CONFIGS[opt_config]["short"],
+                "Latency (s)": round(avg_opt, 2)
+            })
 
     if not data:
         return
 
     df = pd.DataFrame(data)
-    fig = px.bar(df, x="Config", y="Reduction (%)",
-                 title="📊 Latency Reduction vs Baseline")
-    fig.update_layout(height=300)
+    fig = px.bar(df, x="Query Type", y="Latency (s)", color="Config", barmode="group",
+                 title="📊 Impact by Query Type")
+    fig.update_layout(height=350, xaxis_title="", yaxis_title="Avg Latency (s)")
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_sequence_chart(run: ComparisonRun):
-    """Line chart showing latency over test sequence (cache warming effect)."""
-    st.markdown("#### 📉 Latency Over Test Sequence")
-
-    if not run.tests:
-        return
+def render_llm_tool_breakdown(run: ComparisonRun):
+    """Stacked horizontal bar showing % time in LLM vs tools."""
+    summaries = run.summary_by_config
 
     data = []
-    for test in run.tests:
-        for cfg, result in test.results_by_config.items():
+    for cfg in run.configs_compared:
+        summary = summaries.get(cfg, {})
+        llm_time = summary.get("avg_llm_time_ms", 0)
+        tool_time = summary.get("avg_tool_time_ms", 0)
+        total = llm_time + tool_time
+
+        if total > 0:
+            llm_pct = (llm_time / total) * 100
+            tool_pct = (tool_time / total) * 100
+
             data.append({
-                "Test": f"#{test.test_id}",
-                "Test ID": test.test_id,
                 "Config": EVAL_CONFIGS[cfg]["short"],
-                "Latency (s)": result.latency_ms / 1000
+                "LLM Time (%)": round(llm_pct, 1),
+                "Tool Time (%)": round(tool_pct, 1)
             })
 
+    if not data:
+        st.info("Need LLM/tool time data")
+        return
+
     df = pd.DataFrame(data)
-    fig = px.line(df, x="Test ID", y="Latency (s)", color="Config",
-                  title="Latency Over Test Sequence (shows cache warming)")
-    fig.update_layout(height=400)
+
+    # Create stacked horizontal bar
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="LLM",
+        y=df["Config"],
+        x=df["LLM Time (%)"],
+        orientation='h',
+        marker_color='#FF6B6B'
+    ))
+    fig.add_trace(go.Bar(
+        name="Tools",
+        y=df["Config"],
+        x=df["Tool Time (%)"],
+        orientation='h',
+        marker_color='#4ECDC4'
+    ))
+
+    fig.update_layout(
+        title="🔧 LLM vs Tool Time Breakdown",
+        barmode='stack',
+        height=350,
+        xaxis_title="Time Distribution (%)",
+        yaxis_title="",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.caption("Note: Cache warming visible in 'Caching' config - first query slower, subsequent faster.")
+
+def render_token_savings_by_type(run: ComparisonRun):
+    """Bar chart showing token reduction % by query type."""
+    from evals.test_suite import Section, SECTION_NAMES
+
+    if "baseline" not in run.configs_compared:
+        st.info("Need baseline for comparison")
+        return
+
+    # Find best optimization config
+    opt_config = None
+    if "all_context" in run.configs_compared:
+        opt_config = "all_context"
+    else:
+        for cfg in run.configs_compared:
+            if cfg != "baseline":
+                opt_config = cfg
+                break
+
+    if not opt_config:
+        st.info("Need optimization config")
+        return
+
+    # Group by section
+    section_data = {}
+    for section in Section:
+        section_data[section.value] = {"baseline": [], opt_config: []}
+
+    for test in run.tests:
+        section = test.section
+        baseline_result = test.results_by_config.get("baseline")
+        opt_result = test.results_by_config.get(opt_config)
+
+        if baseline_result and baseline_result.tokens_in:
+            section_data[section]["baseline"].append(baseline_result.tokens_in)
+        if opt_result and opt_result.tokens_in:
+            section_data[section][opt_config].append(opt_result.tokens_in)
+
+    # Calculate savings
+    data = []
+    for section_key, results in section_data.items():
+        section_name = SECTION_NAMES.get(Section(section_key), section_key).replace(" ", "\n")
+
+        if results["baseline"] and results[opt_config]:
+            avg_baseline = sum(results["baseline"]) / len(results["baseline"])
+            avg_opt = sum(results[opt_config]) / len(results[opt_config])
+
+            if avg_baseline > 0:
+                reduction_pct = ((avg_baseline - avg_opt) / avg_baseline) * 100
+                data.append({
+                    "Query Type": section_name,
+                    "Reduction (%)": round(reduction_pct, 1)
+                })
+
+    if not data:
+        st.info("Need token data")
+        return
+
+    df = pd.DataFrame(data)
+    fig = px.bar(df, x="Query Type", y="Reduction (%)",
+                 title="🪙 Token Savings by Query Type")
+    fig.update_layout(height=350, xaxis_title="", yaxis_title="Token Reduction (%)")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def run_comparison():
@@ -592,9 +702,9 @@ def main():
     st.markdown("---")
     render_summary_section()
     st.markdown("---")
-    render_matrix_section()
-    st.markdown("---")
     render_charts_section()
+    st.markdown("---")
+    render_matrix_section()
 
     # Handle Run Comparison
     if st.session_state.get("run_comparison"):
