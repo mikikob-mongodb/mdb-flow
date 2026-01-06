@@ -31,6 +31,15 @@ from evals.storage import save_comparison_run, list_comparison_runs, load_compar
 # Import coordinator
 from agents.coordinator import coordinator
 
+# Color scheme for optimization configs
+CONFIG_COLORS = {
+    "baseline": "#6b7280",          # Gray
+    "compress_results": "#8b5cf6",  # Purple
+    "streamlined_prompt": "#3b82f6", # Blue
+    "prompt_caching": "#f59e0b",    # Amber
+    "all_context": "#10b981",       # Green
+}
+
 
 def init_session_state():
     """Initialize session state variables."""
@@ -414,27 +423,8 @@ def render_optimization_waterfall(run: ComparisonRun):
 
 
 def render_impact_by_query_type(run: ComparisonRun):
-    """Grouped bar chart: Baseline vs optimized config by query type."""
+    """Grouped bar chart showing all optimization configs by query type."""
     from evals.test_suite import Section, SECTION_NAMES
-
-    # Need baseline and at least one optimization config
-    if "baseline" not in run.configs_compared:
-        st.info("Need baseline for comparison")
-        return
-
-    # Find best optimization config (prefer all_context, or take first non-baseline)
-    opt_config = None
-    if "all_context" in run.configs_compared:
-        opt_config = "all_context"
-    else:
-        for cfg in run.configs_compared:
-            if cfg != "baseline":
-                opt_config = cfg
-                break
-
-    if not opt_config:
-        st.info("Need at least one optimization config")
-        return
 
     # Get aggregated data by section
     section_averages = compute_section_averages(run)
@@ -443,38 +433,31 @@ def render_impact_by_query_type(run: ComparisonRun):
     sections = [Section.SLASH_COMMANDS, Section.TEXT_QUERIES, Section.TEXT_ACTIONS, Section.MULTI_TURN]
     section_names = [SECTION_NAMES.get(s, s.value) for s in sections]
 
-    # Collect latencies for each config
-    baseline_latencies = []
-    opt_latencies = []
+    # Order configs consistently
+    config_order = ["baseline", "compress_results", "streamlined_prompt", "prompt_caching", "all_context"]
+    configs_to_show = [c for c in config_order if c in run.configs_compared]
 
-    for section in sections:
-        section_key = section.value
-        section_data = section_averages.get(section_key, {})
-
-        baseline_lat = section_data.get("baseline", {}).get("avg_latency", 0) / 1000
-        opt_lat = section_data.get(opt_config, {}).get("avg_latency", 0) / 1000
-
-        baseline_latencies.append(baseline_lat)
-        opt_latencies.append(opt_lat)
+    if not configs_to_show:
+        st.info("No configs to display")
+        return
 
     # Create grouped bar chart
     fig = go.Figure()
 
-    # Baseline bars
-    fig.add_trace(go.Bar(
-        name="Baseline",
-        x=section_names,
-        y=baseline_latencies,
-        marker_color="#6b7280"
-    ))
+    for config in configs_to_show:
+        latencies = []
+        for section in sections:
+            section_key = section.value
+            section_data = section_averages.get(section_key, {})
+            lat = section_data.get(config, {}).get("avg_latency", 0) / 1000
+            latencies.append(lat)
 
-    # Optimized config bars
-    fig.add_trace(go.Bar(
-        name=EVAL_CONFIGS[opt_config]["short"],
-        x=section_names,
-        y=opt_latencies,
-        marker_color="#10b981"
-    ))
+        fig.add_trace(go.Bar(
+            name=EVAL_CONFIGS[config]["short"],
+            x=section_names,
+            y=latencies,
+            marker_color=CONFIG_COLORS.get(config, "#6b7280")
+        ))
 
     fig.update_layout(
         title="📊 Impact by Query Type",
@@ -484,7 +467,13 @@ def render_impact_by_query_type(run: ComparisonRun):
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
         height=350,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        )
     )
 
     st.plotly_chart(fig, use_container_width=True)
