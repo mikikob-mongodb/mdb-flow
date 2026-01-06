@@ -12,6 +12,9 @@ class ConfigResult:
     latency_ms: int = 0
     llm_time_ms: Optional[int] = None
     tool_time_ms: Optional[int] = None
+    embedding_time_ms: Optional[int] = None
+    mongodb_time_ms: Optional[int] = None
+    processing_time_ms: Optional[int] = None
     tokens_in: Optional[int] = None
     tokens_out: Optional[int] = None
     cache_hit: bool = False

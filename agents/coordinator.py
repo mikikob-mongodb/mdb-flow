@@ -1031,6 +1031,18 @@ class CoordinatorAgent:
 
         # Return debug info if requested (for evals), otherwise just the response text
         if return_debug:
+            # Aggregate timing breakdown across all tool calls
+            embedding_time = 0
+            mongodb_time = 0
+            processing_time = 0
+
+            for tool_call in self.current_turn.get("tool_calls", []):
+                breakdown = tool_call.get("breakdown")
+                if breakdown:
+                    embedding_time += breakdown.get("embedding_generation", 0)
+                    mongodb_time += breakdown.get("mongodb_query", 0)
+                    processing_time += breakdown.get("processing", 0)
+
             return {
                 "response": final_text.strip(),
                 "debug": {
@@ -1039,7 +1051,10 @@ class CoordinatorAgent:
                     "llm_time_ms": self.current_turn.get("llm_time_ms", 0),
                     "tool_time_ms": sum(tc["duration_ms"] for tc in self.current_turn.get("tool_calls", [])),
                     "cache_hit": self.current_turn.get("cache_hit", False),
-                    "tools_called": [tc["name"] for tc in self.current_turn.get("tool_calls", [])]
+                    "tools_called": [tc["name"] for tc in self.current_turn.get("tool_calls", [])],
+                    "embedding_time_ms": embedding_time,
+                    "mongodb_time_ms": mongodb_time,
+                    "processing_time_ms": processing_time
                 }
             }
         else:

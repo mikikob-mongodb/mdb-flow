@@ -375,6 +375,53 @@ def compute_tool_usage(comparison_run: ComparisonRun) -> dict:
     return tool_stats
 
 
+def compute_operation_breakdown(comparison_run: ComparisonRun) -> dict:
+    """
+    Aggregate operation timing breakdown across all tests.
+
+    Returns dict with per-config average timing:
+    {
+        "baseline": {
+            "embedding": 120,  # ms
+            "mongodb": 85,     # ms
+            "processing": 45,  # ms
+            "llm": 2340        # ms
+        },
+        "all_context": {...}
+    }
+    """
+    breakdown = {}
+
+    for config in comparison_run.configs_compared:
+        embedding_times = []
+        mongodb_times = []
+        processing_times = []
+        llm_times = []
+
+        for test in comparison_run.tests:
+            result = test.results_by_config.get(config)
+            if not result:
+                continue
+
+            if result.embedding_time_ms is not None and result.embedding_time_ms > 0:
+                embedding_times.append(result.embedding_time_ms)
+            if result.mongodb_time_ms is not None and result.mongodb_time_ms > 0:
+                mongodb_times.append(result.mongodb_time_ms)
+            if result.processing_time_ms is not None and result.processing_time_ms > 0:
+                processing_times.append(result.processing_time_ms)
+            if result.llm_time_ms is not None and result.llm_time_ms > 0:
+                llm_times.append(result.llm_time_ms)
+
+        breakdown[config] = {
+            "embedding": round(sum(embedding_times) / len(embedding_times)) if embedding_times else 0,
+            "mongodb": round(sum(mongodb_times) / len(mongodb_times)) if mongodb_times else 0,
+            "processing": round(sum(processing_times) / len(processing_times)) if processing_times else 0,
+            "llm": round(sum(llm_times) / len(llm_times)) if llm_times else 0
+        }
+
+    return breakdown
+
+
 def render_charts_section():
     """Render impact analysis charts."""
     st.subheader("📈 Impact Analysis")
@@ -406,8 +453,8 @@ def render_charts_section():
     with col2:
         render_token_savings_by_type(run)
 
-    # Row 3: Tool Usage Breakdown
-    render_tool_usage_breakdown(run)
+    # Row 3: Operation Time Breakdown
+    render_operation_breakdown(run)
 
 
 def render_optimization_waterfall(run: ComparisonRun):
@@ -663,62 +710,57 @@ def render_token_savings_by_type(run: ComparisonRun):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_tool_usage_breakdown(run: ComparisonRun):
-    """Horizontal grouped bar showing which tools are called and their frequency."""
-    # Get tool usage stats
-    tool_stats = compute_tool_usage(run)
+def render_operation_breakdown(run: ComparisonRun):
+    """Stacked horizontal bar showing operation time breakdown (Embedding, MongoDB, Processing, LLM)."""
+    # Get operation timing breakdown
+    operation_stats = compute_operation_breakdown(run)
 
-    if not tool_stats:
-        st.info("No tool usage data available")
+    if not operation_stats:
+        st.info("No operation timing data available")
         return
 
     # Only show baseline and all_context for clarity
     configs = ["baseline", "all_context"]
-    configs = [c for c in configs if c in run.configs_compared and c in tool_stats]
+    configs = [c for c in configs if c in run.configs_compared and c in operation_stats]
 
     if not configs:
-        st.info("Need baseline or all_context configs with tool data")
+        st.info("Need baseline or all_context configs")
         return
 
-    # Get all unique tools across selected configs
-    all_tools = set()
-    for config in configs:
-        all_tools.update(tool_stats[config].keys())
-
-    all_tools = sorted(all_tools)
-
-    if not all_tools:
-        st.info("No tools called in selected configs")
-        return
-
-    # Create grouped bar chart
+    # Create stacked horizontal bar chart
     fig = go.Figure()
 
-    colors = {"baseline": "#6b7280", "all_context": "#10b981"}
+    # Define operations in order (bottom to top in stacked bar)
+    operations = [
+        ("embedding", "Embedding (Voyage API)", "#8b5cf6"),  # Purple
+        ("mongodb", "MongoDB Queries", "#f59e0b"),            # Amber
+        ("processing", "Processing (Python)", "#3b82f6"),    # Blue
+        ("llm", "LLM Thinking", "#10b981")                   # Green
+    ]
 
-    for config in configs:
-        counts = [
-            tool_stats[config].get(tool, {}).get("count", 0)
-            for tool in all_tools
-        ]
+    for op_key, op_label, op_color in operations:
+        values = [operation_stats[config].get(op_key, 0) for config in configs]
 
         fig.add_trace(go.Bar(
-            name=EVAL_CONFIGS[config]["short"],
-            y=all_tools,
-            x=counts,
+            name=op_label,
+            x=values,
+            y=[EVAL_CONFIGS[config]["short"] for config in configs],
             orientation='h',
-            marker_color=colors.get(config, "#6b7280")
+            marker_color=op_color,
+            text=[f"{v}ms" if v > 0 else "" for v in values],
+            textposition='inside',
+            textfont=dict(color='white')
         ))
 
     fig.update_layout(
-        title="🔧 Tool Usage by Config",
-        xaxis_title="Number of Calls",
-        barmode='group',
+        title="⏱️ Operation Time Breakdown",
+        xaxis_title="Time (ms)",
+        barmode='stack',
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
         height=300,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.5, xanchor="center"),
         yaxis=dict(autorange="reversed")
     )
 
@@ -899,6 +941,9 @@ def load_saved_run(run_id: str):
                         latency_ms=result_dict.get("latency_ms", 0),
                         llm_time_ms=result_dict.get("llm_time_ms"),
                         tool_time_ms=result_dict.get("tool_time_ms"),
+                        embedding_time_ms=result_dict.get("embedding_time_ms"),
+                        mongodb_time_ms=result_dict.get("mongodb_time_ms"),
+                        processing_time_ms=result_dict.get("processing_time_ms"),
                         tokens_in=result_dict.get("tokens_in"),
                         tokens_out=result_dict.get("tokens_out"),
                         cache_hit=result_dict.get("cache_hit", False),
