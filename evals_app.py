@@ -711,7 +711,7 @@ def render_token_savings_by_type(run: ComparisonRun):
 
 
 def render_operation_breakdown(run: ComparisonRun):
-    """Stacked horizontal bar showing operation time breakdown (Embedding, MongoDB, Processing, LLM)."""
+    """Stacked horizontal bar showing NON-LLM time breakdown for all configs."""
     # Get operation timing breakdown
     operation_stats = compute_operation_breakdown(run)
 
@@ -719,23 +719,22 @@ def render_operation_breakdown(run: ComparisonRun):
         st.info("No operation timing data available")
         return
 
-    # Only show baseline and all_context for clarity
-    configs = ["baseline", "all_context"]
-    configs = [c for c in configs if c in run.configs_compared and c in operation_stats]
+    # Show all configs in order
+    config_order = ["baseline", "compress_results", "streamlined_prompt", "prompt_caching", "all_context"]
+    configs = [c for c in config_order if c in run.configs_compared and c in operation_stats]
 
     if not configs:
-        st.info("Need baseline or all_context configs")
+        st.info("No configs with operation timing data")
         return
 
     # Create stacked horizontal bar chart
     fig = go.Figure()
 
-    # Define operations in order (bottom to top in stacked bar)
+    # Only non-LLM operations (LLM is shown in LLM vs Tool Breakdown chart)
     operations = [
         ("embedding", "Embedding (Voyage API)", "#8b5cf6"),  # Purple
-        ("mongodb", "MongoDB Queries", "#f59e0b"),            # Amber
+        ("mongodb", "MongoDB Queries", "#10b981"),            # Green
         ("processing", "Processing (Python)", "#3b82f6"),    # Blue
-        ("llm", "LLM Thinking", "#10b981")                   # Green
     ]
 
     for op_key, op_label, op_color in operations:
@@ -747,21 +746,35 @@ def render_operation_breakdown(run: ComparisonRun):
             y=[EVAL_CONFIGS[config]["short"] for config in configs],
             orientation='h',
             marker_color=op_color,
-            text=[f"{v}ms" if v > 0 else "" for v in values],
+            text=[f"{v:.0f}ms" if v > 0 else "" for v in values],
             textposition='inside',
             textfont=dict(color='white')
         ))
 
+    # Calculate totals for insight annotation
+    totals = [sum([operation_stats[c].get(op, 0) for op, _, _ in operations]) for c in configs]
+    avg_total = sum(totals) / len(totals) if totals else 0
+
     fig.update_layout(
-        title="⏱️ Operation Time Breakdown",
+        title="⏱️ Tool Time Breakdown (excl. LLM)",
         xaxis_title="Time (ms)",
         barmode='stack',
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
-        height=300,
+        height=350,  # Taller for 5 bars
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.5, xanchor="center"),
-        yaxis=dict(autorange="reversed")
+        yaxis=dict(autorange="reversed"),
+        annotations=[
+            dict(
+                text=f"💡 Tool time is consistent across configs (~{avg_total:.0f}ms) — optimizations reduce LLM time, not DB time",
+                xref="paper", yref="paper",
+                x=0.5, y=-0.12,
+                showarrow=False,
+                font=dict(size=11, color="#9ca3af"),
+                xanchor="center"
+            )
+        ]
     )
 
     st.plotly_chart(fig, use_container_width=True)
