@@ -49,6 +49,15 @@ METRIC_EXPLANATIONS = {
     "pass_rate": "Number of tests that passed vs total tests run. A test passes if it completes without errors and returns an appropriate response for the query type."
 }
 
+# Chart explanations for tooltips
+CHART_EXPLANATIONS = {
+    "waterfall": "Shows average latency for each optimization configuration. Compare individual techniques (Compress, Streamlined, Caching) against Baseline, and see the combined effect with 'All Ctx'. The percentage shows reduction from Baseline.",
+    "impact_by_query_type": "Compares latency across different query categories. Slash Commands hit MongoDB directly (fast). Text Queries/Actions require LLM reasoning (slower). Multi-Turn queries include conversation context. Shows which query types benefit most from each optimization.",
+    "llm_vs_tool": "Shows what percentage of total response time is spent on LLM thinking vs tool execution (MongoDB queries, embeddings). Demonstrates that LLM is the bottleneck (~96%), not the database. Tool time stays constant; optimizations reduce LLM time.",
+    "token_savings": "Shows reduction in input tokens sent to the LLM for each query type. Fewer tokens = faster responses + lower API costs. Compression and streamlined prompts achieve 70-90% reduction by summarizing tool results and removing verbose instructions.",
+    "operation_breakdown": "Shows how tool execution time is split between Embedding generation (Voyage API), MongoDB queries, and Python processing. Tool time stays consistent across all configs (~500ms), proving that context optimizations reduce LLM time, not database time."
+}
+
 
 def init_session_state():
     """Initialize session state variables."""
@@ -459,21 +468,26 @@ def render_charts_section():
     col1, col2 = st.columns(2)
 
     with col1:
+        st.markdown("**⚡ Optimization Waterfall**", help=CHART_EXPLANATIONS["waterfall"])
         render_optimization_waterfall(run)
 
     with col2:
+        st.markdown("**📊 Impact by Query Type**", help=CHART_EXPLANATIONS["impact_by_query_type"])
         render_impact_by_query_type(run)
 
     # Row 2: LLM vs Tool Time and Token Savings
     col1, col2 = st.columns(2)
 
     with col1:
+        st.markdown("**🔧 LLM vs Tool Time**", help=CHART_EXPLANATIONS["llm_vs_tool"])
         render_llm_tool_breakdown(run)
 
     with col2:
+        st.markdown("**🪙 Token Savings by Query Type**", help=CHART_EXPLANATIONS["token_savings"])
         render_token_savings_by_type(run)
 
     # Row 3: Operation Time Breakdown
+    st.markdown("**⏱️ Tool Time Breakdown**", help=CHART_EXPLANATIONS["operation_breakdown"])
     render_operation_breakdown(run)
 
 
@@ -518,13 +532,13 @@ def render_optimization_waterfall(run: ComparisonRun):
     ))
 
     fig.update_layout(
-        title="⚡ Optimization Waterfall",
         xaxis_title="Latency (seconds)",
         yaxis=dict(autorange="reversed"),  # Baseline at top
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
-        height=350
+        height=350,
+        margin=dict(t=20)  # Reduce top margin since no title
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -568,13 +582,13 @@ def render_impact_by_query_type(run: ComparisonRun):
         ))
 
     fig.update_layout(
-        title="📊 Impact by Query Type",
         yaxis_title="Avg Latency (seconds)",
         barmode='group',
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
         height=350,
+        margin=dict(t=20),  # Reduce top margin since no title
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -636,13 +650,13 @@ def render_llm_tool_breakdown(run: ComparisonRun):
         ))
 
     fig.update_layout(
-        title="🔧 LLM vs Tool Time Breakdown",
         xaxis_title="% of Total Time",
         barmode='stack',
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
         height=250,
+        margin=dict(t=20),  # Reduce top margin since no title
         yaxis=dict(autorange="reversed"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02)
     )
@@ -717,13 +731,13 @@ def render_token_savings_by_type(run: ComparisonRun):
     ))
 
     fig.update_layout(
-        title="🪙 Token Savings by Query Type",
         xaxis_title="Reduction %",
         xaxis=dict(range=[0, max(savings) * 1.3] if savings and max(savings) > 0 else [0, 50]),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
         height=250,
+        margin=dict(t=20),  # Reduce top margin since no title
         yaxis=dict(autorange="reversed")
     )
 
@@ -776,13 +790,13 @@ def render_operation_breakdown(run: ComparisonRun):
     avg_total = sum(totals) / len(totals) if totals else 0
 
     fig.update_layout(
-        title="⏱️ Tool Time Breakdown (excl. LLM)",
         xaxis_title="Time (ms)",
         barmode='stack',
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
         height=350,  # Taller for 5 bars
+        margin=dict(t=20),  # Reduce top margin since no title
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.5, xanchor="center"),
         yaxis=dict(autorange="reversed"),
         annotations=[
