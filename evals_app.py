@@ -361,7 +361,7 @@ def render_charts_section():
 
 
 def render_optimization_waterfall(run: ComparisonRun):
-    """Waterfall chart showing cumulative latency reduction."""
+    """Horizontal waterfall showing cumulative latency reduction."""
     # Order: baseline → compress → streamlined → caching → all_context
     waterfall_order = ["baseline", "compress_results", "streamlined_prompt", "prompt_caching", "all_context"]
 
@@ -373,25 +373,48 @@ def render_optimization_waterfall(run: ComparisonRun):
         return
 
     summaries = run.summary_by_config
-    data = []
 
+    # Collect data
+    latencies = []
+    labels = []
     for cfg in ordered_configs:
         summary = summaries.get(cfg, {})
         latency_s = summary.get("avg_latency_ms", 0) / 1000
-        data.append({
-            "Config": EVAL_CONFIGS[cfg]["short"],
-            "Latency (s)": round(latency_s, 2)
-        })
+        latencies.append(latency_s)
+        labels.append(EVAL_CONFIGS[cfg]["short"])
 
-    df = pd.DataFrame(data)
-    fig = px.bar(df, x="Config", y="Latency (s)",
-                 title="⚡ Optimization Waterfall")
-    fig.update_layout(height=350, xaxis_title="", yaxis_title="Avg Latency (s)")
+    # Calculate % reduction from baseline
+    baseline = latencies[0] if latencies else 1
+    reductions = [f"{((baseline - lat) / baseline * 100):.0f}%" for lat in latencies]
+
+    # Color gradient
+    colors = ['#6b7280', '#8b5cf6', '#3b82f6', '#f59e0b', '#10b981'][:len(latencies)]
+
+    # Create horizontal bar chart
+    fig = go.Figure(go.Bar(
+        x=latencies,
+        y=labels,
+        orientation='h',
+        text=[f"{lat:.1f}s ({red})" for lat, red in zip(latencies, reductions)],
+        textposition='outside',
+        marker_color=colors
+    ))
+
+    fig.update_layout(
+        title="⚡ Optimization Waterfall",
+        xaxis_title="Latency (seconds)",
+        yaxis=dict(autorange="reversed"),  # Baseline at top
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e5e7eb"),
+        height=350
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
 
 def render_impact_by_query_type(run: ComparisonRun):
-    """Grouped bar chart: Baseline vs All Context by query type."""
+    """Grouped bar chart: Baseline vs optimized config by query type."""
     from evals.test_suite import Section, SECTION_NAMES
 
     # Need baseline and at least one optimization config
@@ -416,39 +439,54 @@ def render_impact_by_query_type(run: ComparisonRun):
     # Get aggregated data by section
     section_averages = compute_section_averages(run)
 
-    # Build chart data
-    data = []
-    for section in Section:
-        section_key = section.value
-        section_name = SECTION_NAMES.get(section, section_key).replace(" ", "\n")
+    # Build data for sections (exclude voice)
+    sections = [Section.SLASH_COMMANDS, Section.TEXT_QUERIES, Section.TEXT_ACTIONS, Section.MULTI_TURN]
+    section_names = [SECTION_NAMES.get(s, s.value) for s in sections]
 
+    # Collect latencies for each config
+    baseline_latencies = []
+    opt_latencies = []
+
+    for section in sections:
+        section_key = section.value
         section_data = section_averages.get(section_key, {})
 
-        # Baseline data
-        if "baseline" in section_data:
-            avg_baseline = section_data["baseline"]["avg_latency"] / 1000
-            data.append({
-                "Query Type": section_name,
-                "Config": "Baseline",
-                "Latency (s)": round(avg_baseline, 2)
-            })
+        baseline_lat = section_data.get("baseline", {}).get("avg_latency", 0) / 1000
+        opt_lat = section_data.get(opt_config, {}).get("avg_latency", 0) / 1000
 
-        # Optimization config data
-        if opt_config in section_data:
-            avg_opt = section_data[opt_config]["avg_latency"] / 1000
-            data.append({
-                "Query Type": section_name,
-                "Config": EVAL_CONFIGS[opt_config]["short"],
-                "Latency (s)": round(avg_opt, 2)
-            })
+        baseline_latencies.append(baseline_lat)
+        opt_latencies.append(opt_lat)
 
-    if not data:
-        return
+    # Create grouped bar chart
+    fig = go.Figure()
 
-    df = pd.DataFrame(data)
-    fig = px.bar(df, x="Query Type", y="Latency (s)", color="Config", barmode="group",
-                 title="📊 Impact by Query Type")
-    fig.update_layout(height=350, xaxis_title="", yaxis_title="Avg Latency (s)")
+    # Baseline bars
+    fig.add_trace(go.Bar(
+        name="Baseline",
+        x=section_names,
+        y=baseline_latencies,
+        marker_color="#6b7280"
+    ))
+
+    # Optimized config bars
+    fig.add_trace(go.Bar(
+        name=EVAL_CONFIGS[opt_config]["short"],
+        x=section_names,
+        y=opt_latencies,
+        marker_color="#10b981"
+    ))
+
+    fig.update_layout(
+        title="📊 Impact by Query Type",
+        yaxis_title="Avg Latency (seconds)",
+        barmode='group',
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e5e7eb"),
+        height=350,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
 
