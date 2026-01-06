@@ -491,62 +491,79 @@ def render_impact_by_query_type(run: ComparisonRun):
 
 
 def render_llm_tool_breakdown(run: ComparisonRun):
-    """Stacked horizontal bar showing % time in LLM vs tools."""
-    summaries = run.summary_by_config
+    """Stacked horizontal bars showing LLM time vs Tool time - reinforces LLM bottleneck."""
+    # Only show baseline and all_context for clarity
+    configs = ["baseline", "all_context"]
+    configs = [c for c in configs if c in run.configs_compared]
 
-    data = []
-    for cfg in run.configs_compared:
-        summary = summaries.get(cfg, {})
-        llm_time = summary.get("avg_llm_time_ms", 0)
-        tool_time = summary.get("avg_tool_time_ms", 0)
-        total = llm_time + tool_time
-
-        if total > 0:
-            llm_pct = (llm_time / total) * 100
-            tool_pct = (tool_time / total) * 100
-
-            data.append({
-                "Config": EVAL_CONFIGS[cfg]["short"],
-                "LLM Time (%)": round(llm_pct, 1),
-                "Tool Time (%)": round(tool_pct, 1)
-            })
-
-    if not data:
-        st.info("Need LLM/tool time data")
+    if not configs:
+        st.info("Need baseline and/or all_context configs")
         return
 
-    df = pd.DataFrame(data)
-
-    # Create stacked horizontal bar
+    summaries = run.summary_by_config
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name="LLM",
-        y=df["Config"],
-        x=df["LLM Time (%)"],
-        orientation='h',
-        marker_color='#FF6B6B'
-    ))
-    fig.add_trace(go.Bar(
-        name="Tools",
-        y=df["Config"],
-        x=df["Tool Time (%)"],
-        orientation='h',
-        marker_color='#4ECDC4'
-    ))
+
+    for config in configs:
+        summary = summaries.get(config, {})
+        llm_time = summary.get("avg_llm_time_ms", 0)
+        tool_time = summary.get("avg_tool_time_ms", 0)
+        total = llm_time + tool_time if (llm_time + tool_time) > 0 else 1
+
+        llm_pct = (llm_time / total) * 100
+        tool_pct = (tool_time / total) * 100
+
+        config_name = EVAL_CONFIGS[config]["short"]
+
+        # LLM time bar
+        fig.add_trace(go.Bar(
+            name="LLM Time" if config == configs[0] else None,
+            y=[config_name],
+            x=[llm_pct],
+            orientation='h',
+            marker_color='#3b82f6',
+            text=f"LLM: {llm_pct:.0f}% ({llm_time/1000:.1f}s)",
+            textposition='inside',
+            showlegend=(config == configs[0])
+        ))
+
+        # Tool time bar
+        fig.add_trace(go.Bar(
+            name="Tool Time" if config == configs[0] else None,
+            y=[config_name],
+            x=[tool_pct],
+            orientation='h',
+            marker_color='#10b981',
+            text=f"Tools: {tool_pct:.0f}%",
+            textposition='inside',
+            showlegend=(config == configs[0])
+        ))
 
     fig.update_layout(
         title="🔧 LLM vs Tool Time Breakdown",
+        xaxis_title="% of Total Time",
         barmode='stack',
-        height=350,
-        xaxis_title="Time Distribution (%)",
-        yaxis_title="",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e5e7eb"),
+        height=250,
+        yaxis=dict(autorange="reversed"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02)
     )
+
+    # Add annotation about MongoDB performance
+    fig.add_annotation(
+        text="💡 MongoDB averages <200ms. LLM is the bottleneck.",
+        xref="paper", yref="paper",
+        x=0.5, y=-0.15,
+        showarrow=False,
+        font=dict(size=11, color="#9ca3af")
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
 
 def render_token_savings_by_type(run: ComparisonRun):
-    """Bar chart showing token reduction % by query type."""
+    """Horizontal bars showing token reduction % by query type."""
     from evals.test_suite import Section, SECTION_NAMES
 
     if "baseline" not in run.configs_compared:
@@ -570,33 +587,49 @@ def render_token_savings_by_type(run: ComparisonRun):
     # Get aggregated data by section
     section_averages = compute_section_averages(run)
 
-    # Calculate savings per section
-    data = []
-    for section in Section:
-        section_key = section.value
-        section_name = SECTION_NAMES.get(section, section_key).replace(" ", "\n")
+    # Only show text_queries, text_actions, multi_turn (skip slash_commands and voice)
+    sections = [Section.TEXT_QUERIES, Section.TEXT_ACTIONS, Section.MULTI_TURN]
+    section_names = [SECTION_NAMES.get(s, s.value) for s in sections]
 
+    savings = []
+    annotations = []
+
+    for section in sections:
+        section_key = section.value
         section_data = section_averages.get(section_key, {})
 
-        if "baseline" in section_data and opt_config in section_data:
-            avg_baseline = section_data["baseline"]["avg_tokens_in"]
-            avg_opt = section_data[opt_config]["avg_tokens_in"]
+        baseline_tokens = section_data.get("baseline", {}).get("avg_tokens_in", 0)
+        optimized_tokens = section_data.get(opt_config, {}).get("avg_tokens_in", 0)
 
-            if avg_baseline > 0:
-                reduction_pct = ((avg_baseline - avg_opt) / avg_baseline) * 100
-                data.append({
-                    "Query Type": section_name,
-                    "Reduction (%)": round(reduction_pct, 1)
-                })
+        if baseline_tokens > 0:
+            reduction_pct = ((baseline_tokens - optimized_tokens) / baseline_tokens) * 100
+            savings.append(reduction_pct)
+            annotations.append(f"{int(baseline_tokens)} → {int(optimized_tokens)}")
+        else:
+            savings.append(0)
+            annotations.append("N/A")
 
-    if not data:
-        st.info("Need token data")
-        return
+    # Create horizontal bar chart
+    fig = go.Figure(go.Bar(
+        x=savings,
+        y=section_names,
+        orientation='h',
+        text=[f"{s:.0f}% ({a})" for s, a in zip(savings, annotations)],
+        textposition='outside',
+        marker_color='#f59e0b'
+    ))
 
-    df = pd.DataFrame(data)
-    fig = px.bar(df, x="Query Type", y="Reduction (%)",
-                 title="🪙 Token Savings by Query Type")
-    fig.update_layout(height=350, xaxis_title="", yaxis_title="Token Reduction (%)")
+    fig.update_layout(
+        title="🪙 Token Savings by Query Type",
+        xaxis_title="Reduction %",
+        xaxis=dict(range=[0, max(savings) * 1.3] if savings and max(savings) > 0 else [0, 50]),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e5e7eb"),
+        height=250,
+        yaxis=dict(autorange="reversed")
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
 
