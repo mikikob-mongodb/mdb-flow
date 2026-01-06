@@ -159,7 +159,8 @@ class ComparisonRunner:
             response_data = self.coordinator.process(
                 test.query,
                 self.conversation_history,
-                optimizations=optimizations
+                optimizations=optimizations,
+                return_debug=True
             )
 
             latency_ms = int((time.time() - start_time) * 1000)

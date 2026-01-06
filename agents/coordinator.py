@@ -1,7 +1,7 @@
 """Coordinator Agent that routes requests to appropriate sub-agents."""
 
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from bson import ObjectId
 
@@ -790,7 +790,7 @@ class CoordinatorAgent:
 
             return result, debug_info
 
-    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1, optimizations: Optional[Dict[str, bool]] = None) -> str:
+    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1, optimizations: Optional[Dict[str, bool]] = None, return_debug: bool = False) -> Union[str, Dict[str, Any]]:
         """
         Process a user message using Claude's native tool use.
 
@@ -802,9 +802,11 @@ class CoordinatorAgent:
             input_type: Type of input ("text" or "voice") - for logging only
             turn_number: The turn number for this request (for debug tracking)
             optimizations: Optional dict of optimization toggles (compress_results, streamlined_prompt, prompt_caching)
+            return_debug: If True, return dict with response and debug info instead of just response string
 
         Returns:
-            Agent's response
+            If return_debug=False: Agent's response string (default, backwards compatible)
+            If return_debug=True: Dict with {"response": str, "debug": {...}}
         """
         # Store optimizations for use throughout the process
         self.optimizations = optimizations or {}
@@ -832,7 +834,11 @@ class CoordinatorAgent:
             "timestamp": datetime.now().strftime("%H:%M:%S"),
             "tool_calls": [],
             "llm_calls": [],  # Track LLM thinking time
-            "total_duration_ms": 0
+            "total_duration_ms": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cache_hit": False,
+            "tools_called": []
         }
 
         # Reset old debug info (kept for backwards compatibility)
@@ -867,6 +873,14 @@ class CoordinatorAgent:
             cache_prompts=cache_prompts
         )
         llm_duration = int((time.time() - llm_start) * 1000)
+
+        # Capture token usage
+        if hasattr(response, 'usage'):
+            self.current_turn["tokens_in"] += getattr(response.usage, 'input_tokens', 0)
+            self.current_turn["tokens_out"] += getattr(response.usage, 'output_tokens', 0)
+            cache_read = getattr(response.usage, 'cache_read_input_tokens', 0)
+            if cache_read > 0:
+                self.current_turn["cache_hit"] = True
 
         # DEBUG: Check response
         logger.info("=" * 80)
@@ -970,6 +984,14 @@ class CoordinatorAgent:
             )
             llm_duration = int((time.time() - llm_start) * 1000)
 
+            # Capture token usage
+            if hasattr(response, 'usage'):
+                self.current_turn["tokens_in"] += getattr(response.usage, 'input_tokens', 0)
+                self.current_turn["tokens_out"] += getattr(response.usage, 'output_tokens', 0)
+                cache_read = getattr(response.usage, 'cache_read_input_tokens', 0)
+                if cache_read > 0:
+                    self.current_turn["cache_hit"] = True
+
             logger.info("=" * 80)
             logger.info(f"=== FOLLOW-UP LLM RESPONSE (ITERATION {iteration}) ===")
             logger.info(f"📊 Stop reason: {response.stop_reason}")
@@ -1007,7 +1029,21 @@ class CoordinatorAgent:
         logger.info("Request processing complete")
         logger.info("=" * 80)
 
-        return final_text.strip()
+        # Return debug info if requested (for evals), otherwise just the response text
+        if return_debug:
+            return {
+                "response": final_text.strip(),
+                "debug": {
+                    "tokens_in": self.current_turn.get("tokens_in", 0),
+                    "tokens_out": self.current_turn.get("tokens_out", 0),
+                    "llm_time_ms": self.current_turn.get("llm_time_ms", 0),
+                    "tool_time_ms": sum(tc["duration_ms"] for tc in self.current_turn.get("tool_calls", [])),
+                    "cache_hit": self.current_turn.get("cache_hit", False),
+                    "tools_called": [tc["name"] for tc in self.current_turn.get("tool_calls", [])]
+                }
+            }
+        else:
+            return final_text.strip()
 
 
 # Global coordinator instance
