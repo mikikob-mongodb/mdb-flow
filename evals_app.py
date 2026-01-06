@@ -315,6 +315,24 @@ def render_summary_section():
         )
 
 
+def format_metric_value(value, metric_field):
+    """Format metric value for display."""
+    if value is None:
+        return "-"
+
+    if metric_field in ["latency_ms", "llm_time_ms", "tool_time_ms"]:
+        # Time metrics - show in ms or s
+        if value >= 1000:
+            return f"{value/1000:.1f}s"
+        else:
+            return f"{value:.0f}ms"
+    elif metric_field in ["tokens_in", "tokens_out"]:
+        # Token metrics - show with comma separator
+        return f"{value:,.0f}"
+    else:
+        return str(value)
+
+
 def render_matrix_section():
     """Render comparison matrix grouped by task intent."""
     st.subheader("🧪 Comparison Matrix")
@@ -324,6 +342,25 @@ def render_matrix_section():
     if not run or not run.tests:
         st.info("Matrix will appear here after running comparison.")
         return
+
+    # Metric selector toggle
+    metric_options = ["Latency", "Tokens In", "Tokens Out", "LLM Time", "Tool Time"]
+    selected_metric_name = st.radio(
+        "Select metric to display:",
+        options=metric_options,
+        horizontal=True,
+        key="matrix_metric_selector"
+    )
+
+    # Map display name to field name
+    metric_field_map = {
+        "Latency": "latency_ms",
+        "Tokens In": "tokens_in",
+        "Tokens Out": "tokens_out",
+        "LLM Time": "llm_time_ms",
+        "Tool Time": "tool_time_ms"
+    }
+    selected_metric = metric_field_map[selected_metric_name]
 
     # Build test lookup
     tests_by_id = {t.test_id: t for t in run.tests}
@@ -365,11 +402,11 @@ def render_matrix_section():
                 if not test:
                     continue
 
-                # Render test row
-                render_matrix_row(test, configs, test_info)
+                # Render test row with selected metric
+                render_matrix_row(test, configs, test_info, selected_metric)
 
 
-def render_matrix_row(test, configs: list, test_info: dict):
+def render_matrix_row(test, configs: list, test_info: dict, selected_metric: str):
     """Render a single row in the grouped matrix."""
     cols = st.columns([0.4, 0.8, 2.5] + [1.2] * len(configs) + [1.5])
 
@@ -383,70 +420,45 @@ def render_matrix_row(test, configs: list, test_info: dict):
     query_short = test.query[:30] + "..." if len(test.query) > 30 else test.query
     cols[2].write(query_short)
 
-    # Results per config
-    for i, cfg in enumerate(configs):
-        result = test.results_by_config.get(cfg)
-        if result:
-            latency_s = result.latency_ms / 1000
+    # Get metric values and find best
+    values = {}
+    baseline_value = None
+    best_config = None
+    best_value = None
 
-            # Color based on relative performance
-            if cfg == test.best_config:
-                cols[3 + i].markdown(f"🟢 **{latency_s:.1f}s**")
-            else:
-                cols[3 + i].markdown(f"{latency_s:.1f}s")
+    for config in configs:
+        result = test.results_by_config.get(config)
+        value = getattr(result, selected_metric, None) if result else None
+        values[config] = value
+
+        if config == "baseline":
+            baseline_value = value
+
+        # For all metrics, lower is better (latency, tokens, time)
+        if value is not None and (best_value is None or value < best_value):
+            best_value = value
+            best_config = config
+
+    # Display metric values
+    for i, config in enumerate(configs):
+        value = values[config]
+        formatted = format_metric_value(value, selected_metric)
+
+        if config == best_config and value is not None:
+            cols[3 + i].markdown(f"🟢 **{formatted}**")
         else:
-            cols[3 + i].write("-")
+            cols[3 + i].write(formatted)
 
-    # Best config
-    if test.best_config and test.improvement_pct:
-        best_name = EVAL_CONFIGS[test.best_config]["short"]
-        cols[-1].write(f"✅ {best_name} ({test.improvement_pct:+.0f}%)")
+    # Best column with improvement %
+    if best_config and baseline_value and best_value and baseline_value > 0:
+        improvement = ((baseline_value - best_value) / baseline_value) * 100
+        best_name = EVAL_CONFIGS[best_config]["short"]
+        cols[-1].write(f"✅ {best_name} (-{improvement:.0f}%)")
+    elif best_config:
+        best_name = EVAL_CONFIGS[best_config]["short"]
+        cols[-1].write(f"✅ {best_name}")
     else:
         cols[-1].write("-")
-
-    # Expandable details
-    with st.expander(f"Details #{test.test_id}"):
-        render_row_details(test, configs)
-
-
-def render_row_details(test, configs: list):
-    """Render expanded details for a test."""
-
-    # Config cards side by side
-    cols = st.columns(len(configs))
-
-    for i, cfg in enumerate(configs):
-        result = test.results_by_config.get(cfg)
-        with cols[i]:
-            st.markdown(f"**{EVAL_CONFIGS[cfg]['name']}**")
-            if result:
-                is_best = cfg == test.best_config
-
-                st.write(f"Latency: **{result.latency_ms}ms** {'✅' if is_best else ''}")
-                st.write(f"Tokens In: {result.tokens_in or '-'}")
-                st.write(f"Tokens Out: {result.tokens_out or '-'}")
-                st.write(f"LLM Time: {result.llm_time_ms or '-'}ms")
-                st.write(f"Tool Time: {result.tool_time_ms or '-'}ms")
-                st.write(f"Cache Hit: {'✅' if result.cache_hit else '❌'}")
-
-                if result.tools_called:
-                    st.write(f"Tools: {', '.join(result.tools_called)}")
-
-                if result.error:
-                    st.error(f"Error: {result.error}")
-            else:
-                st.write("No result")
-
-    # Notes
-    st.markdown("---")
-    notes = st.text_input(
-        "Notes",
-        value=test.notes,
-        key=f"notes_{test.test_id}",
-        placeholder="Add observations..."
-    )
-    if notes != test.notes:
-        test.notes = notes
 
 
 def compute_section_averages(comparison_run: ComparisonRun) -> dict:
