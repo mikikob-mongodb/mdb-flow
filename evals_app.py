@@ -277,6 +277,57 @@ def render_row_details(test, configs: list):
         test.notes = notes
 
 
+def compute_section_averages(comparison_run: ComparisonRun) -> dict:
+    """
+    Aggregate test results by section for charts.
+
+    Returns dict with per-section, per-config averages:
+    {
+        "slash_commands": {
+            "baseline": {
+                "avg_latency": 123.4,
+                "avg_tokens_in": 1000,
+                "avg_tokens_out": 50,
+                "avg_llm_time": 100,
+                "avg_tool_time": 23,
+                "test_count": 10
+            },
+            "all_context": {...}
+        },
+        "text_queries": {...},
+        ...
+    }
+    """
+    from evals.test_suite import Section
+
+    sections = [s.value for s in Section]
+    results = {}
+
+    for section in sections:
+        # Get all tests for this section
+        section_tests = [t for t in comparison_run.tests if t.section == section]
+        results[section] = {}
+
+        for config in comparison_run.configs_compared:
+            # Get all results for this config in this section
+            config_results = []
+            for test in section_tests:
+                if config in test.results_by_config:
+                    config_results.append(test.results_by_config[config])
+
+            if config_results:
+                results[section][config] = {
+                    "avg_latency": sum(r.latency_ms or 0 for r in config_results) / len(config_results),
+                    "avg_tokens_in": sum(r.tokens_in or 0 for r in config_results) / len(config_results),
+                    "avg_tokens_out": sum(r.tokens_out or 0 for r in config_results) / len(config_results),
+                    "avg_llm_time": sum(r.llm_time_ms or 0 for r in config_results) / len(config_results),
+                    "avg_tool_time": sum(r.tool_time_ms or 0 for r in config_results) / len(config_results),
+                    "test_count": len(config_results)
+                }
+
+    return results
+
+
 def render_charts_section():
     """Render impact analysis charts."""
     st.subheader("📈 Impact Analysis")
@@ -362,36 +413,29 @@ def render_impact_by_query_type(run: ComparisonRun):
         st.info("Need at least one optimization config")
         return
 
-    # Group tests by section and calculate average latency
-    section_data = {}
-    for section in Section:
-        section_data[section.value] = {"baseline": [], opt_config: []}
+    # Get aggregated data by section
+    section_averages = compute_section_averages(run)
 
-    for test in run.tests:
-        section = test.section
-        baseline_result = test.results_by_config.get("baseline")
-        opt_result = test.results_by_config.get(opt_config)
-
-        if baseline_result:
-            section_data[section]["baseline"].append(baseline_result.latency_ms)
-        if opt_result:
-            section_data[section][opt_config].append(opt_result.latency_ms)
-
-    # Calculate averages
+    # Build chart data
     data = []
-    for section_key, results in section_data.items():
-        section_name = SECTION_NAMES.get(Section(section_key), section_key).replace(" ", "\n")
+    for section in Section:
+        section_key = section.value
+        section_name = SECTION_NAMES.get(section, section_key).replace(" ", "\n")
 
-        if results["baseline"]:
-            avg_baseline = sum(results["baseline"]) / len(results["baseline"]) / 1000
+        section_data = section_averages.get(section_key, {})
+
+        # Baseline data
+        if "baseline" in section_data:
+            avg_baseline = section_data["baseline"]["avg_latency"] / 1000
             data.append({
                 "Query Type": section_name,
                 "Config": "Baseline",
                 "Latency (s)": round(avg_baseline, 2)
             })
 
-        if results[opt_config]:
-            avg_opt = sum(results[opt_config]) / len(results[opt_config]) / 1000
+        # Optimization config data
+        if opt_config in section_data:
+            avg_opt = section_data[opt_config]["avg_latency"] / 1000
             data.append({
                 "Query Type": section_name,
                 "Config": EVAL_CONFIGS[opt_config]["short"],
@@ -485,29 +529,20 @@ def render_token_savings_by_type(run: ComparisonRun):
         st.info("Need optimization config")
         return
 
-    # Group by section
-    section_data = {}
-    for section in Section:
-        section_data[section.value] = {"baseline": [], opt_config: []}
+    # Get aggregated data by section
+    section_averages = compute_section_averages(run)
 
-    for test in run.tests:
-        section = test.section
-        baseline_result = test.results_by_config.get("baseline")
-        opt_result = test.results_by_config.get(opt_config)
-
-        if baseline_result and baseline_result.tokens_in:
-            section_data[section]["baseline"].append(baseline_result.tokens_in)
-        if opt_result and opt_result.tokens_in:
-            section_data[section][opt_config].append(opt_result.tokens_in)
-
-    # Calculate savings
+    # Calculate savings per section
     data = []
-    for section_key, results in section_data.items():
-        section_name = SECTION_NAMES.get(Section(section_key), section_key).replace(" ", "\n")
+    for section in Section:
+        section_key = section.value
+        section_name = SECTION_NAMES.get(section, section_key).replace(" ", "\n")
 
-        if results["baseline"] and results[opt_config]:
-            avg_baseline = sum(results["baseline"]) / len(results["baseline"])
-            avg_opt = sum(results[opt_config]) / len(results[opt_config])
+        section_data = section_averages.get(section_key, {})
+
+        if "baseline" in section_data and opt_config in section_data:
+            avg_baseline = section_data["baseline"]["avg_tokens_in"]
+            avg_opt = section_data[opt_config]["avg_tokens_in"]
 
             if avg_baseline > 0:
                 reduction_pct = ((avg_baseline - avg_opt) / avg_baseline) * 100
