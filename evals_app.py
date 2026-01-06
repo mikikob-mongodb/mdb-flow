@@ -378,7 +378,15 @@ def render_matrix_section():
             header_cols[1].markdown("**Type**")
             header_cols[2].markdown("**Query**")
             for i, config in enumerate(configs):
-                header_cols[3 + i].markdown(f"**{EVAL_CONFIGS[config]['short']}**")
+                if config == "baseline":
+                    header_cols[3 + i].markdown(f"**{EVAL_CONFIGS[config]['short']}**")
+                else:
+                    # Add asterisk for optimization columns with tooltip
+                    header_cols[3 + i].markdown(
+                        f"**{EVAL_CONFIGS[config]['short']}**<sup>*</sup>",
+                        unsafe_allow_html=True,
+                        help="LLM optimization - no effect on slash commands (direct DB queries)"
+                    )
             header_cols[-1].markdown("**Best**")
 
             st.markdown("---")
@@ -404,6 +412,16 @@ def render_matrix_section():
 
                 # Render test row with selected metric
                 render_matrix_row(test, configs, test_info, selected_metric)
+
+    # Add explanatory footnote
+    st.markdown("")  # Spacing
+    st.caption(
+        "<sup>*</sup> **LLM Optimizations** (Compress, Streamlined, Caching, All Ctx): "
+        "These reduce LLM thinking time and token usage. They have no effect on slash commands, "
+        "which query MongoDB directly without LLM processing. *Italic values* in optimization columns "
+        "for slash commands show natural database variance, not optimization impact.",
+        unsafe_allow_html=True
+    )
 
 
 def render_matrix_row(test, configs: list, test_info: dict, selected_metric: str):
@@ -444,11 +462,22 @@ def render_matrix_row(test, configs: list, test_info: dict, selected_metric: str
         value = values[config]
         formatted = format_metric_value(value, selected_metric)
 
-        # Don't highlight "best" for slash commands - variation is just MongoDB noise
-        if test_info["type"] == "slash":
+        is_slash = test_info["type"] == "slash"
+        is_optimization = config != "baseline"
+
+        # Gray italic for slash commands in optimization columns (variation is just noise)
+        if is_slash and is_optimization:
+            cols[3 + i].markdown(
+                f"<span style='color: #6b7280; font-style: italic;'>{formatted}</span>",
+                unsafe_allow_html=True
+            )
+        # Normal display for slash baseline values
+        elif is_slash:
             cols[3 + i].write(formatted)
+        # Highlight best value for non-slash commands
         elif config == best_config and value is not None:
             cols[3 + i].markdown(f"🟢 **{formatted}**")
+        # Normal display for other values
         else:
             cols[3 + i].write(formatted)
 
