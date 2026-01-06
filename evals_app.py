@@ -337,6 +337,44 @@ def compute_section_averages(comparison_run: ComparisonRun) -> dict:
     return results
 
 
+def compute_tool_usage(comparison_run: ComparisonRun) -> dict:
+    """
+    Aggregate tool usage across all tests.
+
+    Returns dict with per-config tool statistics:
+    {
+        "baseline": {
+            "get_tasks": {"count": 10, "avg_count_per_test": 0.25},
+            "search_tasks": {"count": 5, "avg_count_per_test": 0.125},
+            ...
+        },
+        "all_context": {...}
+    }
+    """
+    tool_stats = {}
+
+    for config in comparison_run.configs_compared:
+        tool_stats[config] = {}
+
+        for test in comparison_run.tests:
+            result = test.results_by_config.get(config)
+            if not result or not result.tools_called:
+                continue
+
+            for tool in result.tools_called:
+                if tool not in tool_stats[config]:
+                    tool_stats[config][tool] = {"count": 0}
+                tool_stats[config][tool]["count"] += 1
+
+        # Calculate average calls per test
+        total_tests = len(comparison_run.tests) if comparison_run.tests else 1
+        for tool in tool_stats[config]:
+            count = tool_stats[config][tool]["count"]
+            tool_stats[config][tool]["avg_count_per_test"] = count / total_tests
+
+    return tool_stats
+
+
 def render_charts_section():
     """Render impact analysis charts."""
     st.subheader("📈 Impact Analysis")
@@ -367,6 +405,9 @@ def render_charts_section():
 
     with col2:
         render_token_savings_by_type(run)
+
+    # Row 3: Tool Usage Breakdown
+    render_tool_usage_breakdown(run)
 
 
 def render_optimization_waterfall(run: ComparisonRun):
@@ -616,6 +657,68 @@ def render_token_savings_by_type(run: ComparisonRun):
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e5e7eb"),
         height=250,
+        yaxis=dict(autorange="reversed")
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_tool_usage_breakdown(run: ComparisonRun):
+    """Horizontal grouped bar showing which tools are called and their frequency."""
+    # Get tool usage stats
+    tool_stats = compute_tool_usage(run)
+
+    if not tool_stats:
+        st.info("No tool usage data available")
+        return
+
+    # Only show baseline and all_context for clarity
+    configs = ["baseline", "all_context"]
+    configs = [c for c in configs if c in run.configs_compared and c in tool_stats]
+
+    if not configs:
+        st.info("Need baseline or all_context configs with tool data")
+        return
+
+    # Get all unique tools across selected configs
+    all_tools = set()
+    for config in configs:
+        all_tools.update(tool_stats[config].keys())
+
+    all_tools = sorted(all_tools)
+
+    if not all_tools:
+        st.info("No tools called in selected configs")
+        return
+
+    # Create grouped bar chart
+    fig = go.Figure()
+
+    colors = {"baseline": "#6b7280", "all_context": "#10b981"}
+
+    for config in configs:
+        counts = [
+            tool_stats[config].get(tool, {}).get("count", 0)
+            for tool in all_tools
+        ]
+
+        fig.add_trace(go.Bar(
+            name=EVAL_CONFIGS[config]["short"],
+            y=all_tools,
+            x=counts,
+            orientation='h',
+            marker_color=colors.get(config, "#6b7280")
+        ))
+
+    fig.update_layout(
+        title="🔧 Tool Usage by Config",
+        xaxis_title="Number of Calls",
+        barmode='group',
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e5e7eb"),
+        height=300,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
         yaxis=dict(autorange="reversed")
     )
 
