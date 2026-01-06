@@ -378,15 +378,7 @@ def render_matrix_section():
             header_cols[1].markdown("**Type**")
             header_cols[2].markdown("**Query**")
             for i, config in enumerate(configs):
-                if config == "baseline":
-                    header_cols[3 + i].markdown(f"**{EVAL_CONFIGS[config]['short']}**")
-                else:
-                    # Add asterisk for optimization columns with tooltip
-                    header_cols[3 + i].markdown(
-                        f"**{EVAL_CONFIGS[config]['short']}**<sup>*</sup>",
-                        unsafe_allow_html=True,
-                        help="LLM optimization - no effect on slash commands (direct DB queries)"
-                    )
+                header_cols[3 + i].markdown(f"**{EVAL_CONFIGS[config]['short']}**")
             header_cols[-1].markdown("**Best**")
 
             st.markdown("---")
@@ -416,10 +408,9 @@ def render_matrix_section():
     # Add explanatory footnote
     st.markdown("")  # Spacing
     st.caption(
-        "<sup>*</sup> **LLM Optimizations** (Compress, Streamlined, Caching, All Ctx): "
-        "These reduce LLM thinking time and token usage. They have no effect on slash commands, "
-        "which query MongoDB directly without LLM processing. *Italic values* in optimization columns "
-        "for slash commands show natural database variance, not optimization impact.",
+        "**LLM Optimizations** (Compress, Streamlined, Caching, All Ctx) reduce LLM thinking time and token usage. "
+        "They have no effect on slash commands, which query MongoDB directly without LLM processing. "
+        "Values marked with *asterisks* (gray italic) show natural database variance, not optimization impact.",
         unsafe_allow_html=True
     )
 
@@ -468,7 +459,7 @@ def render_matrix_row(test, configs: list, test_info: dict, selected_metric: str
         # Gray italic for slash commands in optimization columns (variation is just noise)
         if is_slash and is_optimization:
             cols[3 + i].markdown(
-                f"<span style='color: #6b7280; font-style: italic;'>{formatted}</span>",
+                f"<span style='color: #6b7280; font-style: italic;'>*{formatted}*</span>",
                 unsafe_allow_html=True
             )
         # Normal display for slash baseline values
