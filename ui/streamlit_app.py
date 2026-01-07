@@ -142,11 +142,20 @@ def render_context_engineering_toggles():
         help="Cache system prompt for faster subsequent calls"
     )
 
+    st.sidebar.subheader("🧠 Agent Memory")
+
+    long_term_memory = st.sidebar.toggle(
+        "Long-term Memory",
+        value=True,
+        help="Record and recall action history across sessions"
+    )
+
     # Store in session state
     st.session_state.optimizations = {
         "compress_results": compress_results,
         "streamlined_prompt": streamline_prompt,
-        "prompt_caching": cache_prompts
+        "prompt_caching": cache_prompts,
+        "long_term_memory": long_term_memory
     }
 
     # Show active status
@@ -157,6 +166,8 @@ def render_context_engineering_toggles():
         active.append("⚡")
     if cache_prompts:
         active.append("💾")
+    if long_term_memory:
+        active.append("🧠")
     st.sidebar.caption(f"Active: {' '.join(active) if active else 'None'}")
 
     st.sidebar.markdown("---")

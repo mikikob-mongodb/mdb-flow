@@ -412,6 +412,31 @@ COORDINATOR_TOOLS = [
             },
             "required": ["project_id"]
         }
+    },
+    {
+        "name": "get_action_history",
+        "description": "Get history of past actions from long-term memory. Use for questions like 'what did I do last week', 'what have I been working on', 'what tasks did I complete'. Only available when long-term memory is enabled.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "time_range": {
+                    "type": "string",
+                    "description": "Time range to query",
+                    "enum": ["today", "yesterday", "this_week", "last_week", "this_month"]
+                },
+                "action_type": {
+                    "type": "string",
+                    "description": "Filter by action type",
+                    "enum": ["completed", "started", "created", "noted", "all"]
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results to return",
+                    "default": 10
+                }
+            },
+            "required": ["time_range"]
+        }
     }
 ]
 
@@ -422,10 +447,11 @@ COORDINATOR_TOOLS = [
 class CoordinatorAgent:
     """Coordinator agent that routes user requests to specialized agents using tool use."""
 
-    def __init__(self):
+    def __init__(self, memory_manager=None):
         self.llm = llm_service
         self.worklog_agent = worklog_agent
         self.retrieval_agent = retrieval_agent
+        self.memory = memory_manager  # Memory manager for long-term action history
         self.last_debug_info = []  # Store debug info from last request (deprecated - use current_turn)
         self.current_turn = None  # Current conversation turn with all tool calls
 
@@ -458,6 +484,51 @@ class CoordinatorAgent:
             return f"{len(result)} items returned"
         else:
             return str(result)[:200]
+
+    def _record_to_long_term(
+        self,
+        action: str,
+        content: dict,
+        user_id: str = "default"
+    ):
+        """Record significant actions to long-term memory.
+
+        Args:
+            action: Action type (e.g., "completed", "started", "created", "noted")
+            content: Action content dict
+            user_id: User identifier
+        """
+        if not self.memory:
+            return
+
+        self.memory.write_long_term(
+            user_id=user_id,
+            memory_type="action",
+            content={
+                "action": action,
+                **content,
+                "timestamp": datetime.utcnow().isoformat()
+            },
+            tags=[f"action:{action}"]
+        )
+
+    def _get_available_tools(self) -> List[Dict]:
+        """Get tools available based on current settings.
+
+        Returns:
+            List of tool definitions
+        """
+        # Start with all base tools except get_action_history
+        tools = [t for t in COORDINATOR_TOOLS if t["name"] != "get_action_history"]
+
+        # Only include history tool if long-term memory is enabled
+        if self.optimizations.get("long_term_memory") and self.memory:
+            # Find the history tool definition
+            history_tool = next((t for t in COORDINATOR_TOOLS if t["name"] == "get_action_history"), None)
+            if history_tool:
+                tools.append(history_tool)
+
+        return tools
 
     def _execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
         """
@@ -730,9 +801,123 @@ class CoordinatorAgent:
                 project_id = tool_input["project_id"]
                 result = self.worklog_agent._get_project(project_id)
 
+            elif tool_name == "get_action_history":
+                # Query long-term memory for action history
+                from datetime import timedelta
+
+                time_range = tool_input["time_range"]
+                action_type = tool_input.get("action_type", "all")
+                limit = tool_input.get("limit", 10)
+
+                # Calculate date range
+                now = datetime.utcnow()
+                date_ranges = {
+                    "today": now - timedelta(days=1),
+                    "yesterday": now - timedelta(days=2),
+                    "this_week": now - timedelta(days=7),
+                    "last_week": now - timedelta(days=14),
+                    "this_month": now - timedelta(days=30)
+                }
+
+                start_date = date_ranges.get(time_range, now - timedelta(days=7))
+
+                # Query long-term memory
+                if not self.memory:
+                    result = {
+                        "success": False,
+                        "error": "Long-term memory not enabled"
+                    }
+                else:
+                    memories = self.memory.read_long_term(
+                        user_id="default",
+                        memory_type="action",
+                        limit=limit * 2  # Get more to filter
+                    )
+
+                    # Filter by date and action type
+                    actions = []
+                    for mem in memories:
+                        created_at = mem.get("created_at")
+                        if created_at and created_at >= start_date:
+                            content = mem.get("content", {})
+                            action = content.get("action")
+
+                            # Filter by action type
+                            if action_type == "all" or action == action_type:
+                                actions.append({
+                                    "action": action,
+                                    "task": content.get("task", {}).get("title", "Unknown"),
+                                    "project": content.get("project"),
+                                    "timestamp": content.get("timestamp"),
+                                    "note": content.get("note", "")[:100] if content.get("note") else None
+                                })
+
+                            if len(actions) >= limit:
+                                break
+
+                    result = {
+                        "success": True,
+                        "time_range": time_range,
+                        "count": len(actions),
+                        "actions": actions
+                    }
+
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
                 error_msg = f"Unknown tool: {tool_name}"
+
+            # Record significant actions to long-term memory if enabled
+            if self.optimizations.get("long_term_memory") and result and result.get("success"):
+                # Record task completions
+                if tool_name == "complete_task" and result.get("task"):
+                    self._record_to_long_term(
+                        action="completed",
+                        content={
+                            "task": {
+                                "id": result["task"].get("_id"),
+                                "title": result["task"].get("title")
+                            },
+                            "project": result.get("project_name")
+                        }
+                    )
+
+                # Record task starts
+                elif tool_name == "start_task" and result.get("task"):
+                    self._record_to_long_term(
+                        action="started",
+                        content={
+                            "task": {
+                                "id": result["task"].get("_id"),
+                                "title": result["task"].get("title")
+                            },
+                            "project": result.get("project_name")
+                        }
+                    )
+
+                # Record task creations
+                elif tool_name == "create_task" and result.get("task"):
+                    self._record_to_long_term(
+                        action="created",
+                        content={
+                            "task": {
+                                "id": result["task"].get("_id"),
+                                "title": result["task"].get("title")
+                            },
+                            "project": result.get("project_name")
+                        }
+                    )
+
+                # Record notes added
+                elif tool_name == "add_note_to_task":
+                    self._record_to_long_term(
+                        action="noted",
+                        content={
+                            "task": {
+                                "id": tool_input.get("task_id")
+                            },
+                            "note": tool_input.get("note", "")[:100]  # Truncate
+                        }
+                    )
 
         except Exception as e:
             logger.error(f"Tool execution error: {e}", exc_info=True)
@@ -850,13 +1035,16 @@ class CoordinatorAgent:
         messages = convert_objectids_to_str(conversation_history.copy()) if conversation_history else []
         messages.append({"role": "user", "content": user_message})
 
+        # Get available tools based on settings
+        available_tools = self._get_available_tools()
+
         # Use Claude's native tool use - TIME THIS CALL
         import time
         logger.info("=" * 80)
         logger.info("=== INITIAL LLM CALL (DECIDE ACTION) ===")
         logger.info(f"📊 Turn {turn_number}")
-        logger.info(f"📊 Sending {len(COORDINATOR_TOOLS)} tools to LLM")
-        logger.info(f"📊 Tool names: {', '.join([t['name'] for t in COORDINATOR_TOOLS])}")
+        logger.info(f"📊 Sending {len(available_tools)} tools to LLM")
+        logger.info(f"📊 Tool names: {', '.join([t['name'] for t in available_tools])}")
         logger.info(f"📊 Messages count: {len(messages)}")
         logger.info(f"📊 Last message roles: {[m.get('role') for m in messages[-5:]]}")
         logger.info(f"📊 Last message preview: {str(messages[-1].get('content', ''))[:150]}...")
@@ -866,7 +1054,7 @@ class CoordinatorAgent:
         llm_start = time.time()
         response = self.llm.generate_with_tools(
             messages=messages,
-            tools=COORDINATOR_TOOLS,
+            tools=available_tools,
             system=system_prompt,
             max_tokens=4096,
             temperature=0.3,
@@ -967,7 +1155,7 @@ class CoordinatorAgent:
             logger.info("=" * 80)
             logger.info(f"=== FOLLOW-UP LLM CALL (ITERATION {iteration}) ===")
             logger.info(f"📊 Sending tool results back to LLM")
-            logger.info(f"📊 Sending {len(COORDINATOR_TOOLS)} tools to LLM")
+            logger.info(f"📊 Sending {len(available_tools)} tools to LLM")
             logger.info(f"📊 Messages count: {len(messages)}")
             logger.info(f"📊 Last message roles: {[m.get('role') for m in messages[-5:]]}")
             logger.info(f"📊 Tool results count: {len(tool_results)}")
@@ -976,7 +1164,7 @@ class CoordinatorAgent:
             llm_start = time.time()
             response = self.llm.generate_with_tools(
                 messages=messages,
-                tools=COORDINATOR_TOOLS,
+                tools=available_tools,
                 system=system_prompt,
                 max_tokens=4096,
                 temperature=0.3,
@@ -1061,5 +1249,25 @@ class CoordinatorAgent:
             return final_text.strip()
 
 
-# Global coordinator instance
-coordinator = CoordinatorAgent()
+# Global coordinator instance with memory manager
+try:
+    from memory import MemoryManager
+    from shared.db import MongoDB
+    from shared.embeddings import embed_query
+
+    # Create memory manager with embedding function
+    mongodb = MongoDB()
+    db = mongodb.get_database()
+
+    # Use embed_query function for embeddings
+    memory_manager = MemoryManager(
+        db=db,
+        embedding_fn=embed_query
+    )
+
+    coordinator = CoordinatorAgent(memory_manager=memory_manager)
+    logger.info("✅ Coordinator initialized with memory manager")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to initialize memory manager: {e}")
+    logger.warning("Coordinator running without memory support")
+    coordinator = CoordinatorAgent(memory_manager=None)
