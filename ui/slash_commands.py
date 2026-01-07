@@ -6,6 +6,66 @@ import time
 import logging
 
 
+# Help text for commands
+HELP_TEXT = {
+    "main": """
+Available commands:
+  /tasks [flags]     - List tasks
+  /projects [name]   - List projects
+  /search [mode] [target] <query> - Search
+  /do <action> <task> - Perform action
+  /help [command]    - Show help
+
+Use /help <command> for details.
+""",
+    "tasks": """
+/tasks [flags]
+  status:todo|in_progress|done  - Filter by status
+  priority:high|medium|low      - Filter by priority
+  project:<name>                - Filter by project
+  limit:<n>                     - Limit results
+
+Examples:
+  /tasks
+  /tasks status:in_progress
+  /tasks priority:high project:AgentOps
+""",
+    "search": """
+/search [mode] [target] <query>
+  mode: vector | text | hybrid (default)
+  target: tasks (default) | projects
+
+Examples:
+  /search debugging           (hybrid search tasks)
+  /search vector debugging    (semantic search)
+  /search text debugging      (keyword search)
+  /search projects memory     (search projects)
+""",
+    "do": """
+/do <action> "<task>"
+  complete  - Mark task as done
+  start     - Mark task as in_progress
+  stop      - Mark task as todo
+  note      - Add note (requires second arg)
+
+Examples:
+  /do complete "debugging doc"
+  /do start "checkpointer"
+  /do note "voice agent" "WebSocket working"
+""",
+    "projects": """
+/projects [name]
+  [name] - Get specific project with tasks
+  (no args) - List all projects
+
+Examples:
+  /projects                 (list all)
+  /projects AgentOps        (specific project)
+  /projects search memory   (search projects)
+"""
+}
+
+
 def parse_slash_command(user_input: str) -> Optional[Dict[str, Any]]:
     """Parse slash commands, return None if not a command."""
     if not user_input.startswith("/"):
@@ -73,8 +133,10 @@ class SlashCommandExecutor:
                 result = self._handle_search(sub, args, kwargs)
             elif cmd == "do":
                 result = self._handle_do(sub, args, kwargs)
+            elif cmd == "help":
+                result = self._handle_help(sub, args, kwargs)
             else:
-                result = {"error": f"Unknown command: /{cmd}"}
+                result = {"error": f"Unknown command: /{cmd}. Use /help for available commands."}
 
             duration_ms = int((time.time() - start) * 1000)
             return {
@@ -167,8 +229,10 @@ class SlashCommandExecutor:
                     match_query["project_id"] = project_doc["_id"]
                     self.logger.info(f"Found project_id: {project_doc['_id']}")
                 else:
-                    self.logger.warning(f"Project '{project_name}' not found")
-                    return {"error": f"Project '{project_name}' not found"}
+                    # Project not found - use a non-existent ID to return empty results gracefully
+                    from bson import ObjectId
+                    match_query["project_id"] = ObjectId("000000000000000000000000")
+                    self.logger.warning(f"Project '{project_name}' not found, returning empty results")
 
             self.logger.info(f"MongoDB match query: {match_query}")
 
@@ -724,27 +788,40 @@ class SlashCommandExecutor:
             /search vector tasks <query>       → vector-only search tasks
             /search text projects <query>      → text-only search projects
         """
-        if not args:
-            return {"error": "Usage: /search [vector|text] [tasks|projects] <query>"}
+        if not sub and not args:
+            return {
+                "error": "Usage: /search [vector|text|hybrid] [tasks|projects] <query>",
+                "success": False
+            }
 
-        # Parse mode and target from args
-        args_list = list(args)
+        # Combine sub and args for easier parsing
+        all_parts = [sub] if sub else []
+        all_parts.extend(args)
+
         mode = "hybrid"  # Default mode
-        target = sub if sub else "tasks"  # Default target from sub or "tasks"
+        target = "tasks"  # Default target
+        query_parts = []
 
-        # Check if first arg is a mode
-        if args_list and args_list[0] in ["vector", "text", "hybrid"]:
-            mode = args_list.pop(0)
+        i = 0
+        # Check for mode (must be first if present)
+        if i < len(all_parts) and all_parts[i] in ["vector", "text", "hybrid"]:
+            mode = all_parts[i]
+            i += 1
 
-        # Check if next arg is a target
-        if args_list and args_list[0] in ["tasks", "projects"]:
-            target = args_list.pop(0)
+        # Check for target (only if it's exactly "tasks" or "projects")
+        if i < len(all_parts) and all_parts[i] in ["tasks", "projects"]:
+            target = all_parts[i]
+            i += 1
 
-        # Remaining args are the query
-        query = " ".join(args_list)
+        # Rest is the query
+        query_parts = all_parts[i:]
+        query = " ".join(query_parts)
 
         if not query:
-            return {"error": f"Missing search query. Usage: /search {mode} {target} <query>"}
+            return {
+                "error": f"Missing search query. Usage: /search [{mode}] [{target}] <query>",
+                "success": False
+            }
 
         limit = int(kwargs.get("limit", 5))
 
@@ -780,9 +857,20 @@ class SlashCommandExecutor:
         self.logger.info(f"sub: {sub}, args: {args}, kwargs: {kwargs}")
 
         if not sub:
-            return {"error": "Usage: /do <action> <task_reference> [options]"}
+            return {
+                "error": "Usage: /do <action> <task>\nActions: complete, start, stop, note, create",
+                "success": False
+            }
 
         action = sub.lower()
+
+        # Validate action
+        valid_actions = ["complete", "start", "stop", "note", "create"]
+        if action not in valid_actions:
+            return {
+                "error": f"Unknown action: {action}. Use: {', '.join(valid_actions)}",
+                "success": False
+            }
 
         # Handle create action (doesn't need task lookup)
         if action == "create":
@@ -896,7 +984,10 @@ class SlashCommandExecutor:
 
         # For other actions, we need to find the task first
         if not args:
-            return {"error": f"Usage: /do {action} <task_reference>"}
+            return {
+                "error": f"Usage: /do {action} <task_name>",
+                "success": False
+            }
 
         # Extract task reference and optional note (for 'note' action)
         task_reference = " ".join(args)
@@ -989,3 +1080,27 @@ class SlashCommandExecutor:
 
         else:
             return {"error": f"Unknown action: {action}. Valid actions: complete, start, stop, note, create"}
+
+    def _handle_help(self, sub, args, kwargs):
+        """Handle /help commands - show command documentation."""
+        # Get topic from sub or first arg
+        topic = sub if sub else ("main" if not args else args[0])
+        topic = topic.lower() if topic else "main"
+
+        self.logger.info(f"=== /help command ===")
+        self.logger.info(f"topic: {topic}")
+
+        # Get help text for topic, default to main if not found
+        help_text = HELP_TEXT.get(topic, HELP_TEXT["main"])
+
+        if topic not in HELP_TEXT and topic != "main":
+            # Unknown topic, show main help with a hint
+            return {
+                "help": f"Unknown help topic: '{topic}'\n{HELP_TEXT['main']}",
+                "success": True
+            }
+
+        return {
+            "help": help_text,
+            "success": True
+        }

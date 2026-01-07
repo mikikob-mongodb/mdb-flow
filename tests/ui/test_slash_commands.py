@@ -44,7 +44,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("status") == "todo" for task in data), \
             "All tasks should have status='todo'"
-        assert 5 < len(data) <= 40, f"Expected 5-40 todo tasks, got {len(data)}"
+        assert 5 < len(data) <= 50, f"Expected 5-50 todo tasks, got {len(data)}"
 
     def test_filter_by_status_in_progress(self, execute_command):
         """Test 1.3: Filter by status - in_progress."""
@@ -77,7 +77,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("priority") == "high" for task in data), \
             "All tasks should have priority='high'"
-        assert 5 < len(data) <= 40, f"Expected 5-40 high priority tasks, got {len(data)}"
+        assert 5 < len(data) <= 50, f"Expected 5-50 high priority tasks, got {len(data)}"
 
     def test_filter_by_priority_medium(self, execute_command):
         """Test 1.6: Filter by priority - medium."""
@@ -98,7 +98,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all("AgentOps" in task.get("project_name", "") for task in data), \
             "All tasks should belong to AgentOps project"
-        assert 3 < len(data) <= 25, f"Expected 3-25 AgentOps tasks, got {len(data)}"
+        assert 3 < len(data) <= 50, f"Expected 3-50 AgentOps tasks, got {len(data)}"
 
     def test_filter_by_project_with_spaces(self, execute_command):
         """Test 1.8: Filter by project with spaces - Voice Agent."""

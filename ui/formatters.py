@@ -193,7 +193,7 @@ def render_command_result(result: Dict[str, Any]):
 
     # Handle different result types
     if isinstance(data, dict) and "error" in data:
-        st.error(data["error"])
+        st.error(f"❌ {data['error']}")
     elif isinstance(data, dict) and data.get("type") == "project_detail":
         # Project detail view with tasks
         project = data.get("project", {})
@@ -215,9 +215,10 @@ def render_command_result(result: Dict[str, Any]):
                 st.json(tasks)
         else:
             st.info("No tasks in this project")
-    elif "help_text" in data:
-        # Help output - new format
-        st.markdown(data["help_text"])
+    elif "help_text" in data or "help" in data:
+        # Help output
+        help_text = data.get("help_text") or data.get("help")
+        st.code(help_text, language=None)
     elif "commands" in data:
         # Help output - legacy format
         st.markdown("**Available Commands:**")
