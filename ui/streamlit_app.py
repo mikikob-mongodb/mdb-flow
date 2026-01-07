@@ -52,6 +52,13 @@ def init_session_state():
     if "debug_history" not in st.session_state:
         st.session_state.debug_history = []
 
+    if "session_id" not in st.session_state:
+        import uuid
+        st.session_state.session_id = str(uuid.uuid4())
+
+    if "current_context" not in st.session_state:
+        st.session_state.current_context = {}
+
 
 def get_all_projects_with_tasks() -> List[Dict[str, Any]]:
     """
@@ -142,28 +149,93 @@ def render_context_engineering_toggles():
         help="Cache system prompt for faster subsequent calls"
     )
 
-    st.sidebar.subheader("🧠 Agent Memory")
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🧠 Memory Settings")
 
-    long_term_memory = st.sidebar.toggle(
-        "Long-term Memory",
+    # Memory master toggle
+    memory_enabled = st.sidebar.checkbox(
+        "Enable Memory",
         value=True,
-        help="Record and recall action history across sessions"
+        help="Master toggle for all memory features"
     )
 
-    shared_memory = st.sidebar.toggle(
-        "Shared Memory",
-        value=True,
-        help="Enable agent-to-agent handoffs via shared memory"
-    )
+    if memory_enabled:
+        col1, col2 = st.sidebar.columns(2)
+
+        with col1:
+            short_term = st.sidebar.checkbox(
+                "Short-term",
+                value=True,
+                help="Session context (2h TTL)"
+            )
+            long_term = st.sidebar.checkbox(
+                "Long-term",
+                value=True,
+                help="Action history (persistent)"
+            )
+
+        with col2:
+            shared = st.sidebar.checkbox(
+                "Shared",
+                value=True,
+                help="Agent handoffs (5m TTL)"
+            )
+            context_inject = st.sidebar.checkbox(
+                "Ctx Inject",
+                value=True,
+                help="Inject context into prompt"
+            )
+    else:
+        short_term = False
+        long_term = False
+        shared = False
+        context_inject = False
 
     # Store in session state
     st.session_state.optimizations = {
         "compress_results": compress_results,
         "streamlined_prompt": streamline_prompt,
         "prompt_caching": cache_prompts,
-        "long_term_memory": long_term_memory,
-        "shared_memory": shared_memory
+        "memory_enabled": memory_enabled,
+        "short_term_memory": short_term,
+        "long_term_memory": long_term,
+        "shared_memory": shared,
+        "context_injection": context_inject
     }
+
+    # Show current context if available
+    if short_term and st.session_state.get("current_context"):
+        with st.sidebar.expander("📍 Current Context"):
+            ctx = st.session_state.current_context
+            if ctx.get("current_project"):
+                st.write(f"**Project:** {ctx['current_project']}")
+            if ctx.get("current_task"):
+                st.write(f"**Task:** {ctx['current_task']}")
+            if ctx.get("last_action"):
+                st.write(f"**Last:** {ctx['last_action']}")
+
+    # Show memory stats
+    if memory_enabled and coordinator.memory:
+        with st.sidebar.expander("📊 Memory Stats"):
+            try:
+                stats = coordinator.memory.get_memory_stats()
+                st.write(f"**Short-term:** {stats['short_term']['total']} entries")
+                st.write(f"**Long-term:** {stats['long_term']['total']} total")
+                st.write(f"  - Actions: {stats['long_term']['by_type']['action']}")
+                st.write(f"  - Facts: {stats['long_term']['by_type']['fact']}")
+                st.write(f"**Shared:** {stats['shared']['active']} pending")
+            except Exception as e:
+                st.write(f"Error loading stats: {e}")
+
+    # Clear memory button
+    if memory_enabled and coordinator.memory:
+        if st.sidebar.button("🗑️ Clear Session Memory"):
+            try:
+                coordinator.memory.clear_session(st.session_state.session_id)
+                st.session_state.current_context = {}
+                st.sidebar.success("✅ Memory cleared!")
+            except Exception as e:
+                st.sidebar.error(f"Error: {e}")
 
     # Show active status
     active = []
@@ -173,13 +245,58 @@ def render_context_engineering_toggles():
         active.append("⚡")
     if cache_prompts:
         active.append("💾")
-    if long_term_memory:
+    if memory_enabled:
         active.append("🧠")
-    if shared_memory:
-        active.append("🤝")
     st.sidebar.caption(f"Active: {' '.join(active) if active else 'None'}")
 
     st.sidebar.markdown("---")
+
+
+def render_memory_debug(debug_info: dict):
+    """Render memory section of debug panel.
+
+    Args:
+        debug_info: Debug information dict with memory metrics
+    """
+    memory_read = debug_info.get("memory_read_ms", 0)
+    memory_write = debug_info.get("memory_write_ms", 0)
+    context_injected = debug_info.get("context_injected", False)
+    handoff_used = debug_info.get("shared_memory_used", False)
+
+    if not any([memory_read, memory_write, context_injected, handoff_used]):
+        return  # No memory activity
+
+    st.markdown("---")
+    st.markdown("**🧠 Memory**")
+
+    # Memory timing
+    cols = st.columns(3)
+
+    with cols[0]:
+        if memory_read:
+            st.metric("Read", f"{memory_read:.0f}ms")
+
+    with cols[1]:
+        if memory_write:
+            st.metric("Write", f"{memory_write:.0f}ms")
+
+    with cols[2]:
+        total = memory_read + memory_write
+        if total:
+            st.metric("Total", f"{total:.0f}ms")
+
+    # Context injection status
+    if context_injected:
+        st.success("✅ Context injected into prompt")
+
+    # Agent handoff visualization
+    if handoff_used:
+        st.markdown("**🤝 Agent Handoff**")
+        st.code("""
+    ┌──────────┐    ┌──────────────┐    ┌──────────┐
+    │Retrieval │───▶│Shared Memory │───▶│ Worklog  │
+    └──────────┘    └──────────────┘    └──────────┘
+        """, language=None)
 
 
 def render_task_list():
@@ -486,6 +603,9 @@ def render_debug_panel():
                 with col2:
                     st.caption(f"⏱️ {llm_time}ms")
                     st.caption(f"({num_calls} call{'s' if num_calls > 1 else ''})")
+
+            # Show memory operations if available
+            render_memory_debug(turn)
 
 
 def render_chat():
