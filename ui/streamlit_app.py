@@ -766,7 +766,7 @@ def render_chat():
                     # Process message through coordinator
                     response = st.session_state.coordinator.process(
                         prompt, history, input_type="text", turn_number=turn_number,
-                        optimizations=optimizations
+                        optimizations=optimizations, session_id=st.session_state.session_id
                     )
 
                     # Display response
@@ -836,7 +836,7 @@ def render_chat():
                     # Process message through coordinator with voice flag
                     response = st.session_state.coordinator.process(
                         transcript, history, input_type="voice", turn_number=turn_number,
-                        optimizations=optimizations
+                        optimizations=optimizations, session_id=st.session_state.session_id
                     )
 
                     # Display response

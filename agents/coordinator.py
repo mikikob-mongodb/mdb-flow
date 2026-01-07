@@ -975,7 +975,7 @@ class CoordinatorAgent:
 
             return result, debug_info
 
-    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1, optimizations: Optional[Dict[str, bool]] = None, return_debug: bool = False) -> Union[str, Dict[str, Any]]:
+    def process(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1, optimizations: Optional[Dict[str, bool]] = None, return_debug: bool = False, session_id: Optional[str] = None) -> Union[str, Dict[str, Any]]:
         """
         Process a user message using Claude's native tool use.
 
@@ -988,6 +988,7 @@ class CoordinatorAgent:
             turn_number: The turn number for this request (for debug tracking)
             optimizations: Optional dict of optimization toggles (compress_results, streamlined_prompt, prompt_caching)
             return_debug: If True, return dict with response and debug info instead of just response string
+            session_id: Optional session ID for memory isolation
 
         Returns:
             If return_debug=False: Agent's response string (default, backwards compatible)
@@ -995,6 +996,11 @@ class CoordinatorAgent:
         """
         # Store optimizations for use throughout the process
         self.optimizations = optimizations or {}
+
+        # Set session on agents if session_id provided and shared memory enabled
+        if session_id and self.optimizations.get("shared_memory"):
+            retrieval_agent.set_session(session_id)
+            worklog_agent.set_session(session_id)
 
         # Get system prompt based on streamlined toggle
         streamlined = self.optimizations.get("streamlined_prompt", True)
