@@ -1265,8 +1265,13 @@ try:
         embedding_fn=embed_query
     )
 
+    # Share memory manager with all agents
+    retrieval_agent.memory = memory_manager
+    worklog_agent.memory = memory_manager
+
     coordinator = CoordinatorAgent(memory_manager=memory_manager)
     logger.info("✅ Coordinator initialized with memory manager")
+    logger.info("✅ Retrieval and Worklog agents have shared memory access")
 except Exception as e:
     logger.warning(f"⚠️  Failed to initialize memory manager: {e}")
     logger.warning("Coordinator running without memory support")

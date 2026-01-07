@@ -22,10 +22,20 @@ logger = get_logger("retrieval")
 class RetrievalAgent:
     """Agent for handling search and retrieval operations using Claude."""
 
-    def __init__(self):
+    def __init__(self, memory_manager=None):
         self.llm = llm_service
         self.tools = self._define_tools()
         self.last_query_timings = {}  # Track latency breakdown for debug panel
+        self.memory = memory_manager  # Shared memory for agent handoffs
+        self.session_id = None  # Current session ID for handoffs
+
+    def set_session(self, session_id: str):
+        """Set the current session ID for shared memory operations.
+
+        Args:
+            session_id: Session identifier
+        """
+        self.session_id = session_id
 
     def _define_tools(self) -> List[Dict[str, Any]]:
         """Define all available tools for the agent."""
@@ -1516,5 +1526,5 @@ Provide clear, organized summaries of search results."""
         return "Maximum iterations reached. Please try again with a simpler request."
 
 
-# Global agent instance
-retrieval_agent = RetrievalAgent()
+# Global agent instance - memory manager will be set by coordinator
+retrieval_agent = RetrievalAgent(memory_manager=None)

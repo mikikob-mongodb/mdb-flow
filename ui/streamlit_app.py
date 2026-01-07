@@ -150,12 +150,19 @@ def render_context_engineering_toggles():
         help="Record and recall action history across sessions"
     )
 
+    shared_memory = st.sidebar.toggle(
+        "Shared Memory",
+        value=True,
+        help="Enable agent-to-agent handoffs via shared memory"
+    )
+
     # Store in session state
     st.session_state.optimizations = {
         "compress_results": compress_results,
         "streamlined_prompt": streamline_prompt,
         "prompt_caching": cache_prompts,
-        "long_term_memory": long_term_memory
+        "long_term_memory": long_term_memory,
+        "shared_memory": shared_memory
     }
 
     # Show active status
@@ -168,6 +175,8 @@ def render_context_engineering_toggles():
         active.append("💾")
     if long_term_memory:
         active.append("🧠")
+    if shared_memory:
+        active.append("🤝")
     st.sidebar.caption(f"Active: {' '.join(active) if active else 'None'}")
 
     st.sidebar.markdown("---")
