@@ -561,7 +561,215 @@ class TestDoCommands:
 
 
 # ============================================================================
-# SECTION 8: Column Validation Tests
+# SECTION 8: /help - Help Command
+# ============================================================================
+
+class TestHelpCommand:
+    """Test /help command documentation."""
+
+    def test_help_main(self, execute_command):
+        """Test 8.1: Main help without topic."""
+        result = execute_command("/help")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        help_text = data.get("help") or data.get("help_text")
+        assert help_text, "Should return help text"
+        assert "Available commands:" in help_text, "Should list available commands"
+        assert "/tasks" in help_text, "Should mention /tasks"
+        assert "/search" in help_text, "Should mention /search"
+        assert "/do" in help_text, "Should mention /do"
+
+    def test_help_tasks(self, execute_command):
+        """Test 8.2: Help for /tasks command."""
+        result = execute_command("/help tasks")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        help_text = data.get("help") or data.get("help_text")
+        assert help_text, "Should return help text"
+        assert "/tasks" in help_text, "Should document /tasks"
+        assert "status:" in help_text, "Should mention status filter"
+        assert "priority:" in help_text, "Should mention priority filter"
+
+    def test_help_search(self, execute_command):
+        """Test 8.3: Help for /search command."""
+        result = execute_command("/help search")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        help_text = data.get("help") or data.get("help_text")
+        assert help_text, "Should return help text"
+        assert "/search" in help_text, "Should document /search"
+        assert "vector" in help_text, "Should mention vector mode"
+        assert "hybrid" in help_text, "Should mention hybrid mode"
+
+    def test_help_do(self, execute_command):
+        """Test 8.4: Help for /do command."""
+        result = execute_command("/help do")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        help_text = data.get("help") or data.get("help_text")
+        assert help_text, "Should return help text"
+        assert "/do" in help_text, "Should document /do"
+        assert "complete" in help_text, "Should mention complete action"
+        assert "start" in help_text, "Should mention start action"
+
+    def test_help_projects(self, execute_command):
+        """Test 8.5: Help for /projects command."""
+        result = execute_command("/help projects")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        help_text = data.get("help") or data.get("help_text")
+        assert help_text, "Should return help text"
+        assert "/projects" in help_text, "Should document /projects"
+
+    def test_help_unknown_topic(self, execute_command):
+        """Test 8.6: Help with unknown topic."""
+        result = execute_command("/help unknown_topic")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        data = result.get("result", {})
+        help_text = data.get("help") or data.get("help_text")
+        assert help_text, "Should return help text"
+        assert "Unknown help topic" in help_text or "Available commands:" in help_text, \
+            "Should handle unknown topic gracefully"
+
+
+# ============================================================================
+# SECTION 9: Search Mode Variants
+# ============================================================================
+
+class TestSearchModes:
+    """Test search mode variants (hybrid, vector, text)."""
+
+    def test_search_hybrid_mode(self, execute_command):
+        """Test 9.1: Hybrid search (default)."""
+        result = execute_command("/search hybrid debugging")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        result_data = result.get("result", {})
+        assert isinstance(result_data, dict), "Should return dict with metadata"
+        assert result_data.get("mode") == "hybrid", "Should use hybrid mode"
+        assert "results" in result_data, "Should have results key"
+
+        results = result_data.get("results", [])
+        if len(results) > 0:
+            assert "score" in results[0], "Results should have scores"
+
+    def test_search_vector_mode(self, execute_command):
+        """Test 9.2: Vector-only semantic search."""
+        result = execute_command("/search vector debugging")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        result_data = result.get("result", {})
+        assert result_data.get("mode") == "vector", "Should use vector mode"
+        assert "results" in result_data, "Should have results key"
+
+    def test_search_text_mode(self, execute_command):
+        """Test 9.3: Text-only keyword search."""
+        result = execute_command("/search text debugging")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        result_data = result.get("result", {})
+        assert result_data.get("mode") == "text", "Should use text mode"
+        assert "results" in result_data, "Should have results key"
+
+    def test_search_mode_with_target(self, execute_command):
+        """Test 9.4: Search mode with explicit target."""
+        result = execute_command("/search vector tasks debugging")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        result_data = result.get("result", {})
+        assert result_data.get("mode") == "vector", "Should use vector mode"
+        assert result_data.get("target") == "tasks", "Should target tasks"
+
+    def test_search_metadata_structure(self, execute_command):
+        """Test 9.5: Search returns complete metadata."""
+        result = execute_command("/search hybrid projects memory")
+
+        assert result["success"], f"Command failed: {result.get('error')}"
+
+        result_data = result.get("result", {})
+        assert "mode" in result_data, "Should include mode"
+        assert "target" in result_data, "Should include target"
+        assert "query" in result_data, "Should include query"
+        assert "count" in result_data, "Should include count"
+        assert "results" in result_data, "Should include results"
+
+        assert result_data.get("mode") == "hybrid", "Should be hybrid mode"
+        assert result_data.get("target") == "projects", "Should be projects target"
+        assert result_data.get("query") == "memory", "Should preserve query"
+        assert result_data.get("count") == len(result_data.get("results", [])), \
+            "Count should match results length"
+
+
+# ============================================================================
+# SECTION 10: Error Handling Tests
+# ============================================================================
+
+class TestErrorHandling:
+    """Test error handling for invalid inputs."""
+
+    def test_search_no_query(self, execute_command):
+        """Test 10.1: /search with no query shows error."""
+        result = execute_command("/search")
+
+        # Should fail gracefully
+        data = result.get("result", {})
+        assert "error" in data, "Should have error for missing query"
+        assert "Usage:" in data.get("error", ""), "Error should show usage"
+
+    def test_search_mode_only_no_query(self, execute_command):
+        """Test 10.2: /search with mode but no query shows error."""
+        result = execute_command("/search vector")
+
+        data = result.get("result", {})
+        assert "error" in data, "Should have error for missing query"
+        assert "Missing search query" in data.get("error", ""), \
+            "Error should mention missing query"
+
+    def test_search_mode_target_no_query(self, execute_command):
+        """Test 10.3: /search with mode and target but no query shows error."""
+        result = execute_command("/search hybrid tasks")
+
+        data = result.get("result", {})
+        assert "error" in data, "Should have error for missing query"
+
+    def test_do_no_action(self, execute_command):
+        """Test 10.4: /do with no action shows error."""
+        result = execute_command("/do")
+
+        data = result.get("result", {})
+        assert "error" in data, "Should have error for missing action"
+        assert "Usage:" in data.get("error", ""), "Error should show usage"
+        assert "complete" in data.get("error", ""), "Should list available actions"
+
+    def test_tasks_nonexistent_project(self, execute_command):
+        """Test 10.5: /tasks with non-existent project returns empty gracefully."""
+        result = execute_command("/tasks project:NonExistentProject12345")
+
+        assert result["success"], f"Command should succeed: {result.get('error')}"
+
+        data = result.get("result", [])
+        assert isinstance(data, list), "Should return a list"
+        assert len(data) == 0, "Should return empty list for non-existent project"
+
+
+# ============================================================================
+# SECTION 11: Column Validation Tests
 # ============================================================================
 
 class TestColumnValidation:
@@ -579,14 +787,14 @@ class TestColumnValidation:
         for task in data:
             # Title should never be empty
             assert task.get("title"), "Title should not be empty"
-            
+
             # Status should always exist
             assert task.get("status") in ["todo", "in_progress", "done"], \
                 f"Status should be valid, got {task.get('status')}"
-            
+
             # Priority should show value or "-" but not be missing
             # (Note: None/null is acceptable, formatter should handle it)
-            
+
             # Project name should be resolved if project_id exists
             if task.get("project_id"):
                 assert task.get("project_name"), \
@@ -607,6 +815,6 @@ class TestColumnValidation:
             in_progress = project.get("in_progress_count", 0)
             done = project.get("done_count", 0)
             total = project.get("total_tasks", 0)
-            
+
             assert todo + in_progress + done == total, \
                 f"Task counts should sum to total for {project.get('name')}"
