@@ -8,7 +8,11 @@ This document outlines test scenarios for the three-tier memory system (short-te
 ## Prerequisites
 1. Ensure MongoDB is running with memory collections created:
    ```bash
-   python scripts/setup_memory_indexes.py
+   # Setup all indexes (including memory)
+   python scripts/setup_database.py
+
+   # Or setup memory indexes only
+   python scripts/setup_database.py --memory
    ```
 
 2. Start the Streamlit app:

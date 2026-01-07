@@ -76,8 +76,10 @@ mdb-flow/
 ├── utils/
 │   └── audio.py            # Audio recording and transcription
 ├── scripts/
-│   ├── setup_indexes.py    # Database index setup
-│   └── load_sample_data.py # Sample data loader
+│   ├── setup_database.py     # Database setup (indexes + memory)
+│   ├── cleanup_database.py   # Database cleanup utilities
+│   ├── test_memory_system.py # Memory system testing
+│   └── load_sample_data.py   # Sample data loader
 ├── docs/
 │   ├── ARCHITECTURE.md     # System architecture
 │   ├── TESTING.md          # Testing guide
@@ -144,14 +146,19 @@ cp .env.example .env
 
 #### Create Database Indexes
 
-Run the setup script to create standard and text search indexes:
+Run the setup script to create standard, text search, and memory indexes:
 
 ```bash
 # Make sure virtual environment is activated
 source venv/bin/activate
 
-# Run setup script
-python scripts/setup_indexes.py
+# Run setup script (creates all indexes)
+python scripts/setup_database.py
+
+# Or setup specific index types
+python scripts/setup_database.py --standard  # Standard indexes only
+python scripts/setup_database.py --memory    # Memory indexes only
+python scripts/setup_database.py --list      # List existing indexes
 ```
 
 #### Create Vector Search Indexes (Manual)

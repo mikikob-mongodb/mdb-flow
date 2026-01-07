@@ -373,12 +373,19 @@ To remove test data created during testing:
 
 ```bash
 # Mark test-like data and optionally delete
-python scripts/cleanup_test_data.py
+python scripts/cleanup_database.py --full
+
+# Or mark and delete separately
+python scripts/cleanup_database.py --mark    # Mark test data
+python scripts/cleanup_database.py --delete  # Delete marked data
+
+# Show database status
+python scripts/cleanup_database.py --status
 ```
 
 The script will:
 1. Mark test-like patterns, orphans, and invalid references with `is_test=True`
-2. Ask for confirmation before deleting
+2. Optionally delete marked data (with --full or --delete)
 3. Show counts of production vs test data
 
 Manual cleanup:
