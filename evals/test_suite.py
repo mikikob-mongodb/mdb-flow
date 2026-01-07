@@ -1,6 +1,6 @@
 """
 Test suite for Flow Companion evals.
-40 queries across 5 sections.
+46 queries across 6 sections (including search mode variants).
 """
 
 from dataclasses import dataclass
@@ -120,6 +120,23 @@ TEST_SUITE: List[TestQuery] = [
               "complete_task called", depends_on=38, is_confirmation=True),
     TestQuery(40, Section.VOICE, "Add a note to voice agent: audio input tested", InputType.VOICE,
               "Full action flow"),
+
+    # === Section 6: Search Mode Variants (6) ===
+    # Vector-only search tests (semantic/conceptual)
+    TestQuery(41, Section.SLASH_COMMANDS, "/tasks search vector debugging", InputType.SLASH,
+              "Vector-only semantic search"),
+    TestQuery(42, Section.SLASH_COMMANDS, "/tasks search vector memory", InputType.SLASH,
+              "Vector-only for conceptual match"),
+    TestQuery(43, Section.SLASH_COMMANDS, "/projects search vector agent", InputType.SLASH,
+              "Vector-only project search"),
+
+    # Text-only search tests (keyword/exact match)
+    TestQuery(44, Section.SLASH_COMMANDS, "/tasks search text debugging", InputType.SLASH,
+              "Text-only keyword search"),
+    TestQuery(45, Section.SLASH_COMMANDS, "/tasks search text checkpointer", InputType.SLASH,
+              "Text-only exact match"),
+    TestQuery(46, Section.SLASH_COMMANDS, "/projects search text AgentOps", InputType.SLASH,
+              "Text-only project search"),
 ]
 
 def get_tests_by_section(section: Section) -> List[TestQuery]:

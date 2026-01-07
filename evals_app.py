@@ -125,6 +125,24 @@ INTENT_GROUPS = [
         ]
     },
     {
+        "intent": "Search: Vector Only (Semantic)",
+        "icon": "🧠",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 41},  # /tasks search vector debugging
+            {"type": "slash", "icon": "⚡", "test_id": 42},  # /tasks search vector memory
+            {"type": "text", "icon": "💬", "test_id": None},  # N/A - LLM uses hybrid
+        ]
+    },
+    {
+        "intent": "Search: Text Only (Keyword)",
+        "icon": "📝",
+        "tests": [
+            {"type": "slash", "icon": "⚡", "test_id": 44},  # /tasks search text debugging
+            {"type": "slash", "icon": "⚡", "test_id": 45},  # /tasks search text checkpointer
+            {"type": "text", "icon": "💬", "test_id": None},  # N/A - LLM uses hybrid
+        ]
+    },
+    {
         "intent": "Complete Task",
         "icon": "✅",
         "tests": [
@@ -338,6 +356,15 @@ def render_matrix_section():
     st.subheader("🧪 Comparison Matrix")
     st.caption("Grouped by task intent, showing different input methods for the same goal")
 
+    # Add explanatory footnote
+    st.markdown("")  # Spacing
+    st.caption(
+        "**LLM Optimizations** (Compress, Streamlined, Caching, All Ctx) reduce LLM thinking time and token usage. "
+        "They have no effect on slash commands, which query MongoDB directly without LLM processing. "
+        "Values marked with *asterisks* (gray italic) show natural database variance, not optimization impact.",
+        unsafe_allow_html=True
+    )
+
     run: ComparisonRun = st.session_state.get("comparison_run")
     if not run or not run.tests:
         st.info("Matrix will appear here after running comparison.")
@@ -405,14 +432,7 @@ def render_matrix_section():
                 # Render test row with selected metric
                 render_matrix_row(test, configs, test_info, selected_metric)
 
-    # Add explanatory footnote
-    st.markdown("")  # Spacing
-    st.caption(
-        "**LLM Optimizations** (Compress, Streamlined, Caching, All Ctx) reduce LLM thinking time and token usage. "
-        "They have no effect on slash commands, which query MongoDB directly without LLM processing. "
-        "Values marked with *asterisks* (gray italic) show natural database variance, not optimization impact.",
-        unsafe_allow_html=True
-    )
+    
 
 
 def render_matrix_row(test, configs: list, test_info: dict, selected_metric: str):
@@ -662,6 +682,14 @@ def render_charts_section():
     # Row 3: Operation Time Breakdown
     st.markdown("**⏱️ Tool Time Breakdown**", help=CHART_EXPLANATIONS["operation_breakdown"])
     render_operation_breakdown(run)
+
+    # Row 4: Search Mode Comparison
+    st.markdown(
+        "**🔍 Search Mode Comparison**",
+        help="Compares latency across search modes. Hybrid (default) combines vector+text for best results. "
+             "Vector is semantic/conceptual. Text is keyword matching (fastest but less flexible)."
+    )
+    render_search_mode_comparison(run)
 
 
 def render_optimization_waterfall(run: ComparisonRun):
@@ -986,6 +1014,71 @@ def render_operation_breakdown(run: ComparisonRun):
                 text=f"💡 Tool time is consistent across configs (~{avg_total:.0f}ms) — optimizations reduce LLM time, not DB time",
                 xref="paper", yref="paper",
                 x=0.5, y=-0.12,
+                showarrow=False,
+                font=dict(size=11, color="#9ca3af"),
+                xanchor="center"
+            )
+        ]
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_search_mode_comparison(run: ComparisonRun):
+    """Bar chart comparing latency across search modes: Hybrid, Vector, Text."""
+    tests_by_id = {t.test_id: t for t in run.tests}
+
+    # Get search mode test examples (baseline config for fair comparison)
+    search_modes = {
+        "Hybrid (Default)": tests_by_id.get(6),   # /tasks search debugging
+        "Vector Only": tests_by_id.get(41),       # /tasks search vector debugging
+        "Text Only": tests_by_id.get(44),         # /tasks search text debugging
+    }
+
+    modes = []
+    latencies = []
+
+    for mode, test in search_modes.items():
+        if test:
+            result = test.results_by_config.get("baseline")
+            if result and result.latency_ms:
+                modes.append(mode)
+                latencies.append(result.latency_ms)
+
+    if not modes:
+        st.info("Run comparison with search mode tests to see this chart")
+        return
+
+    # Create bar chart
+    fig = go.Figure(go.Bar(
+        x=modes,
+        y=latencies,
+        text=[f"{l:.0f}ms" for l in latencies],
+        textposition='outside',
+        marker_color=['#8b5cf6', '#3b82f6', '#10b981']  # Purple (hybrid), Blue (vector), Green (text)
+    ))
+
+    # Calculate insights
+    if len(latencies) == 3:
+        hybrid, vector, text = latencies
+        text_speedup = ((hybrid - text) / hybrid * 100) if hybrid > 0 else 0
+        insight = f"💡 Text search is {text_speedup:.0f}% faster than hybrid, but hybrid provides best result quality"
+    else:
+        insight = "💡 Compare all three modes to see performance tradeoffs"
+
+    fig.update_layout(
+        xaxis_title="Search Mode",
+        yaxis_title="Latency (ms)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e5e7eb"),
+        height=300,
+        margin=dict(t=20),
+        annotations=[
+            dict(
+                text=insight,
+                xref="paper", yref="paper",
+                x=0.5, y=-0.18,
                 showarrow=False,
                 font=dict(size=11, color="#9ca3af"),
                 xanchor="center"
