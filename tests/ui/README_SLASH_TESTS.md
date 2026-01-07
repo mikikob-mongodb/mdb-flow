@@ -21,9 +21,11 @@ This test suite validates that all slash commands work correctly, return expecte
 4. **Section 4: /projects Queries** - List all, get specific project
 5. **Section 5: /projects search** - Project hybrid search
 6. **Section 6: /search** - Direct search commands
-7. **Section 7: /bench** - Benchmark commands
-8. **Section 8: Column Validation** - Verify table formatting
-9. **Section 9: Utility Commands** - Help and other utilities
+7. **Section 7: /do Commands** - Task actions (complete, start, stop, note, create)
+8. **Section 8: /help Command** - Help text for all command topics
+9. **Section 9: Search Mode Variants** - Hybrid, vector, and text search modes
+10. **Section 10: Error Handling** - Empty args, missing query, non-existent projects
+11. **Section 11: Column Validation** - Verify table formatting
 
 ## Running Tests
 
@@ -97,16 +99,19 @@ Examples:
 
 ## Test Coverage
 
-The test suite covers:
+The test suite covers **57 comprehensive tests** across all slash command functionality:
 
-- ✅ All /tasks filter combinations (status, priority, project)
-- ✅ Hybrid search for tasks and projects
-- ✅ Temporal queries (today, yesterday, week, completed, stale)
-- ✅ Project listing and detail views
-- ✅ Direct /search commands
-- ✅ Benchmark commands
-- ✅ Column validation for proper formatting
-- ✅ Help and utility commands
+- ✅ All /tasks filter combinations (status, priority, project) - 10 tests
+- ✅ Hybrid search for tasks and projects - 4 tests
+- ✅ Temporal queries (today, yesterday, week, completed, stale) - 6 tests
+- ✅ Project listing and detail views - 4 tests
+- ✅ Project search functionality - 3 tests
+- ✅ Direct /search commands - 3 tests
+- ✅ /do task actions (complete, start, stop, note, create) - 9 tests
+- ✅ /help command for all topics - 6 tests
+- ✅ Search mode variants (hybrid, vector, text) - 5 tests
+- ✅ Error handling (empty args, missing query, non-existent projects) - 5 tests
+- ✅ Column validation for proper formatting - 2 tests
 
 ## Expected Results
 
@@ -235,9 +240,20 @@ Update tests when:
 - Tests should be **fast** - use session-scoped fixtures
 - Tests should **validate behavior**, not implementation details
 
+## Recent Updates
+
+### January 7, 2026 - Test Suite Expansion
+Added 16 new tests bringing total from 41 to 57:
+- **Section 8: Help Command** (6 tests) - Tests for /help main, tasks, search, do, projects, and unknown topics
+- **Section 9: Search Mode Variants** (5 tests) - Tests for hybrid, vector, and text search modes with metadata validation
+- **Section 10: Error Handling** (5 tests) - Tests for empty args, missing query, and non-existent project graceful handling
+
+All 57 tests passing ✅
+
 ## References
 
 - Test Specification: `example-scripts/BACKSLASH_COMMANDS_TESTING_GUIDE.md`
 - Slash Commands Implementation: `ui/slash_commands.py`
 - Table Formatters: `ui/formatters.py`
+- Slash Commands Documentation: `docs/SLASH_COMMANDS.md`
 - pytest Documentation: https://docs.pytest.org/

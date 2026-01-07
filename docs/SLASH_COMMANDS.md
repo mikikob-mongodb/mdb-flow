@@ -33,11 +33,14 @@
 │   └── create <title> [opts]     → Create new task
 │
 ├── search
-│   ├── <query>                   → Hybrid search (default)
+│   ├── <query>                   → Hybrid search (default: tasks)
+│   ├── [mode] <query>            → Mode: hybrid|vector|text
+│   ├── [mode] [target] <query>   → Target: tasks|projects
 │   ├── tasks <query>             → Search tasks only
 │   ├── projects <query>          → Search projects only
 │   ├── vector <query>            → Vector search only
-│   └── text <query>              → Text search only
+│   ├── text <query>              → Text search only
+│   └── hybrid tasks <query>      → Example: mode + target
 │
 ├── bench
 │   ├── all                       → Run all benchmarks
@@ -155,11 +158,15 @@
 ### `/search` — Direct Search
 
 ```bash
-# Hybrid search (default)
+# Hybrid search (default) - Searches tasks by default
 /search debugging
 /search voice agent
 /search real-time streaming
 /search memory patterns
+
+# Explicit hybrid search
+/search hybrid debugging
+/search hybrid projects memory
 
 # Tasks only
 /search tasks checkpointer
@@ -172,10 +179,20 @@
 # Vector search only (semantic)
 /search vector observability tools
 /search vector how to debug agents
+/search vector tasks memory patterns
+/search vector projects webinar
 
 # Text search only (exact match)
 /search text checkpointer
 /search text "PR feedback"
+/search text tasks debugging
+/search text projects voice
+
+# Mode + Target combinations
+/search hybrid tasks debugging      # Hybrid search, tasks only
+/search vector tasks memory         # Vector search, tasks only
+/search text projects voice         # Text search, projects only
+/search hybrid projects webinar     # Hybrid search, projects only
 ```
 
 ### `/bench` — Benchmarking (Demo Commands!)
