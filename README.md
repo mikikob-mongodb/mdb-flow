@@ -31,9 +31,10 @@ A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and
 
 ### Evals Dashboard (Milestone 3)
 - **Multi-Config Comparison** - Test different optimization configurations side-by-side
-- **40-Test Suite** - Comprehensive test queries across slash commands, text queries, actions, multi-turn, and voice
+- **46-Test Suite** - Comprehensive test queries across slash commands, text queries, actions, multi-turn, voice, and search modes
 - **Performance Metrics** - Track latency, token usage, cache hits, and accuracy
-- **Visual Analytics** - 5 interactive Plotly charts showing impact analysis
+- **Visual Analytics** - Interactive Plotly charts showing impact analysis
+- **Search Mode Testing** - Compare hybrid, vector, and text search performance
 - **MongoDB Persistence** - Save and load comparison runs for historical analysis
 - **JSON Export** - Export results for slides and reports
 
@@ -67,7 +68,7 @@ mdb-flow/
 │   └── formatters.py       # Result formatting utilities
 ├── evals/                  # NEW: Evaluation system
 │   ├── configs.py          # Optimization configurations
-│   ├── test_suite.py       # 40 test queries
+│   ├── test_suite.py       # 46 test queries
 │   ├── result.py           # Data classes for results
 │   ├── runner.py           # Multi-config test execution
 │   └── storage.py          # MongoDB persistence
@@ -336,6 +337,56 @@ Bypass the LLM for instant results:
 /projects search memory          # Search projects
 ```
 
+### Search Modes
+
+Flow Companion supports three search modes, each with different performance vs quality tradeoffs:
+
+#### Hybrid Search (Default) - Best Quality
+- **Command:** `/search <query>` or `/tasks search <query>`
+- **Performance:** ~420ms
+- **Method:** Combines vector embeddings + MongoDB text search using $rankFusion
+- **Best for:** Most queries - provides best result quality with both semantic and keyword matching
+
+**Example:**
+```
+/search debugging
+/tasks search memory leaks
+/projects search agent
+```
+
+#### Vector Search - Semantic Understanding
+- **Command:** `/search vector <query>` or `/tasks search vector <query>`
+- **Performance:** ~280ms (33% faster than hybrid)
+- **Method:** Voyage embeddings + MongoDB $vectorSearch
+- **Best for:** Conceptual queries, finding semantically similar items, related topics
+
+**Example:**
+```
+/search vector debugging
+/tasks search vector memory issues
+/projects search vector agent architecture
+```
+
+#### Text Search - Fastest
+- **Command:** `/search text <query>` or `/tasks search text <query>`
+- **Performance:** ~180ms (57% faster than hybrid)
+- **Method:** MongoDB text index (keyword matching)
+- **Best for:** Exact keyword matches, known terms, when speed matters most
+
+**Example:**
+```
+/search text debugging
+/tasks search text authentication
+/projects search text AgentOps
+```
+
+**Performance Comparison:**
+- Text search: ~180ms (fastest)
+- Vector search: ~280ms (semantic)
+- Hybrid search: ~420ms (most comprehensive)
+
+All search modes support both tasks and projects. The debug panel shows which mode was used and the performance breakdown.
+
 ### Context Engineering Toggles
 
 Configure optimizations in the sidebar:
@@ -481,8 +532,8 @@ Compare optimization configurations:
 
 ### ✅ Milestone 3: Evals Dashboard (Complete - v3.1)
 - Separate evaluation dashboard app
-- 40-test comprehensive suite
-- Multi-config comparison
+- 46-test comprehensive suite
+- Multi-config comparison with search mode variants
 - Performance metrics tracking
 - Interactive Plotly charts
 - MongoDB persistence & history

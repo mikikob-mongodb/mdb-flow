@@ -5,6 +5,123 @@ All notable changes to Flow Companion will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.10] - 2026-01-06
+
+### Added
+- Search mode variants in main app (hybrid, vector, text)
+- Four new search methods in retrieval agent:
+  - `vector_search_tasks()` - Vector-only semantic search (~280ms)
+  - `text_search_tasks()` - Text-only keyword search (~180ms)
+  - `vector_search_projects()` - Vector search for projects
+  - `text_search_projects()` - Text search for projects
+- Debug panel now shows search mode metadata (mode, target, query, results)
+- Updated slash command handler to parse mode and target from args
+
+### Changed
+- Search commands now support mode specification:
+  - `/search <query>` - Hybrid (default)
+  - `/search vector <query>` - Vector-only
+  - `/search text <query>` - Text-only
+- Enhanced `mongodb_op_type_map` for search operation display in debug panel
+
+## [3.1.9] - 2026-01-06
+
+### Added
+- Search mode variant tests (IDs 41-46) to evals test suite
+  - Tests 41-43: Vector-only search variants
+  - Tests 44-46: Text-only search variants
+- Search Mode Comparison chart in Impact Analysis section
+- Two new intent groups in Comparison Matrix:
+  - "Search: Vector Only (Semantic)"
+  - "Search: Text Only (Keyword)"
+- `render_search_mode_comparison()` function for visualizing search performance
+
+### Changed
+- Test suite expanded from 40 to 46 queries
+- Added sixth section: Search Mode Variants
+
+## [3.1.8] - 2026-01-06
+
+### Changed
+- Moved optimization asterisks from column headers to slash command values
+- Slash command values in optimization columns now display as: `*90ms*`, `*86ms*`
+- Updated footnote to reference value asterisks instead of column asterisks
+- Cleaner column headers in Comparison Matrix (removed `<sup>*</sup>` tags)
+
+## [3.1.7] - 2026-01-06
+
+### Added
+- Visual indicators showing optimizations don't apply to slash commands
+- Gray italic formatting for slash command values in optimization columns
+- Asterisks around slash values to mark them as "not applicable"
+- Explanatory footnote in Comparison Matrix
+
+### Changed
+- Enhanced visual distinction between LLM queries and direct DB operations
+- Improved dashboard clarity for optimization impact analysis
+
+## [3.1.6] - 2026-01-05
+
+### Fixed
+- Removed misleading optimization "improvements" for slash commands
+- Slash commands now show "⚡ Direct DB" in Best column instead of fake optimization configs
+- Optimization Waterfall now excludes slash commands (shows only LLM query optimization)
+- Updated waterfall tooltip to clarify it excludes slash commands
+
+### Changed
+- Comparison Matrix no longer highlights slash command values (variation is MongoDB noise, not optimization)
+- Dashboard now accurately shows optimization impact only on LLM queries
+- True optimization gains visible: text queries improved 50-65% with context optimizations
+
+## [3.1.0] - 2025-12-XX
+
+### Milestone 3 - Evals Dashboard Complete
+
+Major release introducing comprehensive evaluation framework for measuring optimization impact.
+
+#### Added - Evaluation System
+- **Separate Evals Dashboard App** (`evals_app.py`) running on port 8502
+- **46-Query Test Suite** covering:
+  - Slash commands (10 tests)
+  - Text queries (8 tests)
+  - Text actions (10 tests)
+  - Multi-turn context (5 tests)
+  - Voice input (7 tests)
+  - Search mode variants (6 tests)
+- **Multi-Config Comparison** - Run same tests across different optimization configurations
+- **MongoDB Persistence** - Save/load comparison runs for historical analysis
+- **JSON Export** - Export results for presentations and reports
+
+#### Added - Visual Analytics
+- **Comparison Matrix** - Side-by-side test results with best config highlighting
+- **Optimization Waterfall** - Progressive impact of stacked optimizations
+- **LLM vs MongoDB Time Breakdown** - Pie chart showing where time is spent
+- **Search Mode Comparison** - Performance comparison of hybrid/vector/text search
+- **Impact Analysis Charts** - Interactive Plotly visualizations
+
+#### Added - Configuration System
+- **5 Optimization Configs**:
+  - Baseline: No optimizations
+  - Compress: Tool result compression only
+  - Streamlined: Streamlined prompt only
+  - Caching: Prompt caching only
+  - All Context: All optimizations combined
+- **Config Toggle System** - Dynamic optimization switching
+- **Performance Tracking** - Latency, tokens, cache hits, MongoDB time
+
+#### Technical Implementation
+- **New Module**: `evals/` with configs, test_suite, runner, storage, result classes
+- **Test Execution**: Parallel test running with progress tracking
+- **Result Storage**: MongoDB collection for historical comparison
+- **Data Models**: Pydantic models for type-safe result handling
+
+#### Key Insights Revealed
+- **Slash Commands**: ~100ms, bypass LLM (no optimization benefit)
+- **Text Queries**: 20-30s → 7-15s with optimizations (-50% to -65%)
+- **MongoDB Performance**: Only 4% of total time (already fast)
+- **LLM Bottleneck**: 96% of time spent in LLM thinking
+- **Search Mode Tradeoffs**: Text (180ms) < Vector (280ms) < Hybrid (420ms)
+
 ## [2.4.0] - 2026-01-05
 
 ### Milestone - Context Engineering Optimizations Complete
