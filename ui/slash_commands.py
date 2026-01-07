@@ -712,21 +712,63 @@ class SlashCommandExecutor:
         }
 
     def _handle_search(self, sub, args, kwargs):
-        """Handle /search commands."""
-        if not args:
-            return {"error": "Usage: /search <query>"}
+        """
+        Handle /search commands with optional mode and target.
 
-        query = " ".join(args)
+        Formats:
+            /search <query>                    → hybrid search tasks (default)
+            /search tasks <query>              → hybrid search tasks
+            /search projects <query>           → hybrid search projects
+            /search vector <query>             → vector-only search tasks
+            /search text <query>               → text-only search tasks
+            /search vector tasks <query>       → vector-only search tasks
+            /search text projects <query>      → text-only search projects
+        """
+        if not args:
+            return {"error": "Usage: /search [vector|text] [tasks|projects] <query>"}
+
+        # Parse mode and target from args
+        args_list = list(args)
+        mode = "hybrid"  # Default mode
+        target = sub if sub else "tasks"  # Default target from sub or "tasks"
+
+        # Check if first arg is a mode
+        if args_list and args_list[0] in ["vector", "text", "hybrid"]:
+            mode = args_list.pop(0)
+
+        # Check if next arg is a target
+        if args_list and args_list[0] in ["tasks", "projects"]:
+            target = args_list.pop(0)
+
+        # Remaining args are the query
+        query = " ".join(args_list)
+
+        if not query:
+            return {"error": f"Missing search query. Usage: /search {mode} {target} <query>"}
+
         limit = int(kwargs.get("limit", 5))
 
-        if sub == "tasks" or sub is None:
-            results = self.retrieval.hybrid_search_tasks(query, limit)
-            # Enrich with project names
-            return self._enrich_tasks_with_project_names(results)
-        elif sub == "projects":
-            return self.retrieval.hybrid_search_projects(query, limit)
-        else:
-            return {"error": f"Unknown search type: {sub}"}
+        # Build method name: {mode}_search_{target}
+        method_name = f"{mode}_search_{target}"
+        search_method = getattr(self.retrieval, method_name, None)
+
+        if not search_method:
+            return {"error": f"Search method not implemented: {mode} search for {target}"}
+
+        # Execute search
+        self.logger.info(f"Executing {method_name}('{query}', limit={limit})")
+        results = search_method(query, limit)
+
+        # Enrich tasks with project names if searching tasks
+        if target == "tasks" and results:
+            results = self._enrich_tasks_with_project_names(results)
+
+        # Store search metadata for debug panel
+        # The results list is returned directly for backwards compatibility
+        # Metadata is logged and can be accessed via last_query_timings
+        self.logger.info(f"Search completed: mode={mode}, target={target}, query='{query}', results={len(results)}")
+
+        return results
 
     def _handle_do(self, sub, args, kwargs):
         """Handle /do commands - task actions."""

@@ -1099,6 +1099,256 @@ class RetrievalAgent:
             self.last_query_timings = timings  # Store even on error
             return []
 
+    def vector_search_tasks(self, query: str, limit: int = 5) -> list:
+        """
+        Vector-only semantic search for tasks using Voyage embeddings.
+        Faster than hybrid but may miss exact keyword matches.
+
+        Args:
+            query: Search query text
+            limit: Maximum number of results
+
+        Returns:
+            List of task dicts with _id, title, context, status, project_id, score
+        """
+        import time
+
+        logger.info(f"vector_search_tasks: query='{query}', limit={limit}")
+
+        # Track timings
+        timings = {}
+
+        # Time embedding generation
+        start = time.time()
+        query_embedding = embedding_embed_query(query)
+        timings["embedding_generation"] = int((time.time() - start) * 1000)
+
+        # Build vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": limit * 10,
+                    "limit": limit
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "title": 1,
+                    "context": 1,
+                    "status": 1,
+                    "project_id": 1,
+                    "priority": 1,
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        # Execute search
+        try:
+            start = time.time()
+            tasks_collection = get_collection(TASKS_COLLECTION)
+            results = list(tasks_collection.aggregate(pipeline))
+            timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+            self.last_query_timings = timings
+
+            logger.info(f"Vector search returned {len(results)} task(s) (embed: {timings['embedding_generation']}ms, db: {timings['mongodb_query']}ms)")
+
+            return results
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}", exc_info=True)
+            self.last_query_timings = timings
+            return []
+
+    def text_search_tasks(self, query: str, limit: int = 5) -> list:
+        """
+        Text-only keyword search for tasks using MongoDB text index.
+        Fastest search method but purely keyword-based (no semantic understanding).
+
+        Args:
+            query: Search query text
+            limit: Maximum number of results
+
+        Returns:
+            List of task dicts with _id, title, context, status, project_id, score
+        """
+        import time
+
+        logger.info(f"text_search_tasks: query='{query}', limit={limit}")
+
+        # Track timings (no embedding for text search)
+        timings = {"embedding_generation": 0}
+
+        # Build text search pipeline
+        pipeline = [
+            {
+                "$search": {
+                    "index": "tasks_text_index",
+                    "text": {
+                        "query": query,
+                        "path": ["title", "context", "notes.content"],
+                        "fuzzy": {"maxEdits": 1}
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "title": 1,
+                    "context": 1,
+                    "status": 1,
+                    "project_id": 1,
+                    "priority": 1,
+                    "score": {"$meta": "searchScore"}
+                }
+            },
+            {"$limit": limit}
+        ]
+
+        # Execute search
+        try:
+            start = time.time()
+            tasks_collection = get_collection(TASKS_COLLECTION)
+            results = list(tasks_collection.aggregate(pipeline))
+            timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+            self.last_query_timings = timings
+
+            logger.info(f"Text search returned {len(results)} task(s) (db: {timings['mongodb_query']}ms)")
+
+            return results
+        except Exception as e:
+            logger.error(f"Text search failed: {e}", exc_info=True)
+            self.last_query_timings = timings
+            return []
+
+    def vector_search_projects(self, query: str, limit: int = 5) -> list:
+        """
+        Vector-only semantic search for projects using Voyage embeddings.
+
+        Args:
+            query: Search query text
+            limit: Maximum number of results
+
+        Returns:
+            List of project dicts with _id, name, description, context, status, score
+        """
+        import time
+
+        logger.info(f"vector_search_projects: query='{query}', limit={limit}")
+
+        # Track timings
+        timings = {}
+
+        # Time embedding generation
+        start = time.time()
+        query_embedding = embedding_embed_query(query)
+        timings["embedding_generation"] = int((time.time() - start) * 1000)
+
+        # Build vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": limit * 10,
+                    "limit": limit
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "name": 1,
+                    "description": 1,
+                    "context": 1,
+                    "status": 1,
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        # Execute search
+        try:
+            start = time.time()
+            projects_collection = get_collection(PROJECTS_COLLECTION)
+            results = list(projects_collection.aggregate(pipeline))
+            timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+            self.last_query_timings = timings
+
+            logger.info(f"Vector search returned {len(results)} project(s) (embed: {timings['embedding_generation']}ms, db: {timings['mongodb_query']}ms)")
+
+            return results
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}", exc_info=True)
+            self.last_query_timings = timings
+            return []
+
+    def text_search_projects(self, query: str, limit: int = 5) -> list:
+        """
+        Text-only keyword search for projects using MongoDB text index.
+
+        Args:
+            query: Search query text
+            limit: Maximum number of results
+
+        Returns:
+            List of project dicts with _id, name, description, context, status, score
+        """
+        import time
+
+        logger.info(f"text_search_projects: query='{query}', limit={limit}")
+
+        # Track timings (no embedding for text search)
+        timings = {"embedding_generation": 0}
+
+        # Build text search pipeline
+        pipeline = [
+            {
+                "$search": {
+                    "index": "projects_text_index",
+                    "text": {
+                        "query": query,
+                        "path": ["name", "description", "context"],
+                        "fuzzy": {"maxEdits": 1}
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "name": 1,
+                    "description": 1,
+                    "context": 1,
+                    "status": 1,
+                    "score": {"$meta": "searchScore"}
+                }
+            },
+            {"$limit": limit}
+        ]
+
+        # Execute search
+        try:
+            start = time.time()
+            projects_collection = get_collection(PROJECTS_COLLECTION)
+            results = list(projects_collection.aggregate(pipeline))
+            timings["mongodb_query"] = int((time.time() - start) * 1000)
+
+            self.last_query_timings = timings
+
+            logger.info(f"Text search returned {len(results)} project(s) (db: {timings['mongodb_query']}ms)")
+
+            return results
+        except Exception as e:
+            logger.error(f"Text search failed: {e}", exc_info=True)
+            self.last_query_timings = timings
+            return []
+
     def get_tasks_by_activity(
         self,
         since: Optional[datetime] = None,

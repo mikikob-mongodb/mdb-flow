@@ -328,6 +328,44 @@ def render_debug_panel():
                     # Output summary
                     st.caption(f"**Output:** {call['output']}")
 
+                    # Show search mode metadata if this is a search command
+                    if "search" in call["name"]:
+                        # Extract mode and target from tool name
+                        # e.g., "vector_search_tasks" → mode="vector", target="tasks"
+                        tool_name = call["name"]
+                        if "vector_search" in tool_name:
+                            mode = "vector"
+                        elif "text_search" in tool_name:
+                            mode = "text"
+                        elif "hybrid_search" in tool_name or "search" in tool_name:
+                            mode = "hybrid"
+                        else:
+                            mode = "hybrid"
+
+                        target = "tasks" if "tasks" in tool_name else "projects"
+
+                        # Get query from input
+                        query = call.get("input", {}).get("query", "")
+
+                        # Get result count
+                        result = call.get("result")
+                        if isinstance(result, list):
+                            count = len(result)
+                        elif isinstance(result, dict):
+                            count = result.get("count", len(result.get("results", [])))
+                        else:
+                            count = 0
+
+                        mode_labels = {
+                            "hybrid": "🔍 Hybrid (Vector + Text)",
+                            "vector": "🧠 Vector Only (Semantic)",
+                            "text": "📝 Text Only (Keyword)"
+                        }
+                        mode_label = mode_labels.get(mode, mode)
+
+                        st.caption(f"**Search Mode:** {mode_label}")
+                        st.caption(f"**Target:** {target.capitalize()} | **Query:** '{query}' | **Results:** {count}")
+
                     # Show latency breakdown if available
                     if call.get("breakdown"):
                         breakdown = call["breakdown"]
@@ -342,6 +380,12 @@ def render_debug_panel():
                             "get_projects": "find query",
                             "search_tasks": "$rankFusion hybrid",
                             "search_projects": "$rankFusion hybrid",
+                            "vector_search_tasks": "$vectorSearch (semantic)",
+                            "vector_search_projects": "$vectorSearch (semantic)",
+                            "text_search_tasks": "$search (keyword)",
+                            "text_search_projects": "$search (keyword)",
+                            "hybrid_search_tasks": "$rankFusion hybrid",
+                            "hybrid_search_projects": "$rankFusion hybrid",
                             "get_tasks_by_time": "temporal query ($elemMatch)",
                             "complete_task": "update",
                             "start_task": "update",
