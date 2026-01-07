@@ -788,15 +788,16 @@ class SlashCommandExecutor:
             /search vector tasks <query>       → vector-only search tasks
             /search text projects <query>      → text-only search projects
         """
-        if not sub and not args:
+        # Handle empty args FIRST before any parsing
+        if (not sub or not sub.strip()) and (not args or len(args) == 0):
             return {
-                "error": "Usage: /search [vector|text|hybrid] [tasks|projects] <query>",
+                "error": "Usage: /search [vector|text|hybrid] [tasks|projects] <query>\n\nExamples:\n  /search debugging\n  /search vector debugging\n  /search projects memory",
                 "success": False
             }
 
         # Combine sub and args for easier parsing
-        all_parts = [sub] if sub else []
-        all_parts.extend(args)
+        all_parts = [sub] if sub and sub.strip() else []
+        all_parts.extend(args if args else [])
 
         mode = "hybrid"  # Default mode
         target = "tasks"  # Default target
@@ -817,9 +818,9 @@ class SlashCommandExecutor:
         query_parts = all_parts[i:]
         query = " ".join(query_parts)
 
-        if not query:
+        if not query or not query.strip():
             return {
-                "error": f"Missing search query. Usage: /search [{mode}] [{target}] <query>",
+                "error": f"Missing search query. Usage: /search [{mode}] [{target}] <query>\n\nExample: /search {mode} {target} debugging",
                 "success": False
             }
 
@@ -840,12 +841,16 @@ class SlashCommandExecutor:
         if target == "tasks" and results:
             results = self._enrich_tasks_with_project_names(results)
 
-        # Store search metadata for debug panel
-        # The results list is returned directly for backwards compatibility
-        # Metadata is logged and can be accessed via last_query_timings
         self.logger.info(f"Search completed: mode={mode}, target={target}, query='{query}', results={len(results)}")
 
-        return results
+        # Return results with metadata for debug panel
+        return {
+            "results": results,
+            "count": len(results),
+            "mode": mode,
+            "target": target,
+            "query": query
+        }
 
     def _handle_do(self, sub, args, kwargs):
         """Handle /do commands - task actions."""
@@ -856,9 +861,10 @@ class SlashCommandExecutor:
         self.logger.info(f"=== /do command ===")
         self.logger.info(f"sub: {sub}, args: {args}, kwargs: {kwargs}")
 
-        if not sub:
+        # Handle empty args FIRST
+        if not sub or not sub.strip():
             return {
-                "error": "Usage: /do <action> <task>\nActions: complete, start, stop, note, create",
+                "error": "Usage: /do <action> <task>\n\nActions:\n  complete - Mark task done\n  start - Mark task in progress\n  stop - Mark task as todo\n  note - Add note to task\n\nExamples:\n  /do complete \"debugging doc\"\n  /do start \"checkpointer\"",
                 "success": False
             }
 
@@ -983,9 +989,9 @@ class SlashCommandExecutor:
             }
 
         # For other actions, we need to find the task first
-        if not args:
+        if not args or len(args) == 0:
             return {
-                "error": f"Usage: /do {action} <task_name>",
+                "error": f"Usage: /do {action} <task_name>\n\nExample: /do {action} \"task name\"",
                 "success": False
             }
 

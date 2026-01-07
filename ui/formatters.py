@@ -219,6 +219,52 @@ def render_command_result(result: Dict[str, Any]):
         # Help output
         help_text = data.get("help_text") or data.get("help")
         st.code(help_text, language=None)
+    elif isinstance(data, dict) and "results" in data:
+        # Search results with metadata
+        mode = data.get("mode", "hybrid")
+        target = data.get("target", "tasks")
+        query = data.get("query", "")
+        count = data.get("count", 0)
+        results = data.get("results", [])
+
+        # Display metadata
+        mode_labels = {
+            "hybrid": "🔍 Hybrid (Vector + Text)",
+            "vector": "🧠 Vector Only (Semantic)",
+            "text": "📝 Text Only (Keyword)"
+        }
+        mode_label = mode_labels.get(mode, mode.title())
+
+        st.caption(f"**Search Mode:** {mode_label} | **Target:** {target.title()} | **Query:** '{query}' | **Results:** {count}")
+        st.markdown("")
+
+        # Display results based on target type
+        if count == 0:
+            st.info("No results found")
+        elif target == "tasks":
+            # Check if it's a search result (has score) or regular task list
+            if results and isinstance(results[0], dict) and "score" in results[0]:
+                table = format_search_results_table(results, show_raw)
+            else:
+                table = format_tasks_table(results, show_raw)
+
+            if table:
+                st.markdown(table)
+            else:
+                st.json(results)
+        elif target == "projects":
+            # Check if it's a search result (has score) or regular project list
+            if results and isinstance(results[0], dict) and "score" in results[0]:
+                table = format_project_search_results_table(results, show_raw)
+            else:
+                table = format_projects_table(results, show_raw)
+
+            if table:
+                st.markdown(table)
+            else:
+                st.json(results)
+        else:
+            st.json(results)
     elif "commands" in data:
         # Help output - legacy format
         st.markdown("**Available Commands:**")

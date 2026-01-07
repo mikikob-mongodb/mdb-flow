@@ -415,7 +415,9 @@ class TestDirectSearch:
 
         assert result["success"], f"Command failed: {result.get('error')}"
 
-        data = result.get("result", [])
+        result_data = result.get("result", {})
+        # Extract results from the new dict structure
+        data = result_data.get("results", []) if isinstance(result_data, dict) else result_data
         # Results should be tasks (have "title" field)
         assert all("title" in item for item in data), \
             "Results should be tasks"
