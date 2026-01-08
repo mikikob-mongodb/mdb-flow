@@ -1,8 +1,8 @@
 # Flow Companion
 
-**Version 3.1 (Milestone 3 - Evals Dashboard)**
+**Version 4.0 (Milestone 5 - Semantic & Procedural Memory)**
 
-A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and Claude API. Features voice input, context engineering optimizations, and a comprehensive evaluation dashboard for measuring performance.
+A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and Claude API. Features a 5-tier memory system with persistent user personalization, voice input, context engineering optimizations, and comprehensive evaluation tools.
 
 ## Features
 
@@ -38,13 +38,21 @@ A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and
 - **MongoDB Persistence** - Save and load comparison runs for historical analysis
 - **JSON Export** - Export results for slides and reports
 
-### Agent Memory System (Milestone 4)
-- **Session Context** - Track current project, task, and user preferences across conversations
-- **Preferences Learning** - Automatically extract and apply user preferences ("I'm focusing on Project X")
-- **Disambiguation Resolution** - Store numbered options and resolve "the first one" references
-- **Rule Learning** - User-defined shortcuts that trigger automatically ("when I say done, complete the task")
-- **Action History** - Persistent record of all task operations with temporal queries
-- **Cross-Agent Handoffs** - Share state between coordinator and specialized agents
+### Agent Memory System (Milestone 4 & 5)
+**5-Tier Memory Architecture:**
+- **Working Memory** (2hr TTL) - Current project, task, and session context
+- **Episodic Memory** (Persistent) - Action history with vector embeddings for semantic search
+- **Semantic Memory** (Persistent) - Learned user preferences with confidence scoring
+- **Procedural Memory** (Persistent) - Learned behavioral rules with usage tracking
+- **Shared Memory** (5min TTL) - Agent handoffs and disambiguation state
+
+**Key Features:**
+- **Automatic Learning** - Extracts preferences and rules from natural language
+- **Persistent Personalization** - Preferences and rules survive beyond session lifetime
+- **Context Injection** - Relevant memory injected into every agent interaction
+- **Vector Search** - Semantic search over action history using Atlas Vector Search
+- **Confidence Scoring** - Track reliability of inferred preferences (0.0-1.0)
+- **Usage Tracking** - Rules auto-increment times_used on each trigger
 
 ## Tech Stack
 
@@ -74,24 +82,29 @@ mdb-flow/
 │   ├── streamlit_app.py    # Main chat interface (port 8501)
 │   ├── slash_commands.py   # Direct DB query commands
 │   └── formatters.py       # Result formatting utilities
-├── evals/                  # NEW: Evaluation system
+├── memory/
+│   └── manager.py          # Memory system (5 types)
+├── evals/
 │   ├── configs.py          # Optimization configurations
 │   ├── test_suite.py       # 46 test queries
 │   ├── result.py           # Data classes for results
 │   ├── runner.py           # Multi-config test execution
 │   └── storage.py          # MongoDB persistence
-├── evals_app.py            # NEW: Evals dashboard (port 8502)
+├── evals_app.py            # Evals dashboard (port 8502)
+├── tests/
+│   ├── test_memory_types.py           # Unit tests (13 tests)
+│   └── integration/memory/            # Integration tests (14 tests)
 ├── utils/
 │   └── audio.py            # Audio recording and transcription
 ├── scripts/
-│   ├── setup_database.py     # Database setup (indexes + memory)
-│   ├── cleanup_database.py   # Database cleanup utilities
-│   ├── test_memory_system.py # Memory system testing
-│   └── load_sample_data.py   # Sample data loader
+│   ├── setup_database.py              # Database setup (indexes + memory)
+│   ├── cleanup_database.py            # Database cleanup utilities
+│   └── seed_memory_demo_data.py       # Memory system demo data
 ├── docs/
-│   ├── ARCHITECTURE.md     # System architecture
-│   ├── TESTING.md          # Testing guide
-│   └── SLASH_COMMANDS.md   # Slash command reference
+│   ├── ARCHITECTURE.md                # System architecture
+│   ├── MEMORY.md                      # Memory system guide
+│   ├── TESTING.md                     # Testing guide
+│   └── SLASH_COMMANDS.md              # Slash command reference
 ├── requirements.txt
 └── .env.example            # Environment variables template
 ```

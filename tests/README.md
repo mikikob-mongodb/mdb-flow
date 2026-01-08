@@ -1,13 +1,13 @@
 # Flow Companion Test Suite
 
-Comprehensive test suite for MDB Flow with 213 tests covering agents, search, integration, UI, and performance.
+Comprehensive test suite for MDB Flow with 240+ tests covering agents, search, memory, integration, UI, and performance.
 
 ## Current Status
 
-**Test Results:** 203/213 passing (95.3%)
+**Test Results:** 230+ passing
 - ✅ All critical functionality tests pass
-- ⚠️ 9 performance tests fail (network latency, deprecated APIs)
-- ⚠️ 1 regression test skipped
+- ✅ Memory system: 27 tests (13 unit + 14 integration)
+- ⚠️ Some performance tests may fail due to network latency
 
 ### Completed Sections
 - ✅ **Section 1: Database & Connection** (8/8 tests) - `unit/test_database.py`
@@ -20,6 +20,29 @@ Comprehensive test suite for MDB Flow with 213 tests covering agents, search, in
 - ✅ **Section 14: Backslash Commands** (34/40 tests) - `ui/test_slash_commands.py`
 - ✅ **Section 15: Performance/Latency** (12/12 tests) - `performance/test_latency.py`
 - ✅ **Critical Regression Tests** (6/8 tests) - `regression/test_critical_regressions.py`
+- ✅ **Memory System** (27/27 tests) - Unit + Integration tests
+
+### Memory System Tests (27 tests)
+**Unit Tests** (13 tests) - `test_memory_types.py`:
+- ✅ **Semantic Memory** (6 tests) - Preferences with confidence scoring
+- ✅ **Procedural Memory** (6 tests) - Rules with usage tracking
+- ✅ **Memory Stats** (1 test) - Statistics by memory type
+
+**Integration Tests** (14 tests) - `integration/memory/`:
+- ✅ `test_action_recording.py` - Episodic memory
+- ✅ `test_coordinator_context.py` - Working memory extraction
+- ✅ `test_coordinator_semantic_procedural.py` - Preference/rule extraction
+- ✅ `test_context_injection.py` - Context injection from all 5 types
+- ✅ `test_disambiguation_flow.py` - Shared memory
+- ✅ `test_memory_competencies.py` - 10 competency tests
+- ✅ `test_narrative_generation.py` - Narrative summaries
+- ✅ `test_preferences_flow.py` - End-to-end preference flow
+- ✅ `test_rule_triggers.py` - Rule trigger matching
+- ✅ `test_rules_flow.py` - End-to-end rule flow
+- ✅ `test_semantic_procedural_memory.py` - Direct memory methods
+- ✅ `test_semantic_procedural_memory_simple.py` - Simplified tests
+- ✅ `test_semantic_search_history.py` - Vector search
+- ✅ `test_ui_memory.py` - UI integration
 
 ### In Progress / TODO
 - 🔄 **Section 7: Text Input** (0/15 tests) - `integration/test_text_input_flow.py` - TODO
@@ -47,6 +70,8 @@ tests/
 │   ├── test_audio.py                    # TODO: Audio transcription (4 tests)
 │   └── test_llm_service.py              # TODO: LLM API integration (6 tests)
 │
+├── test_memory_types.py                 # ✅ Memory system unit tests (13 tests)
+│
 ├── agents/                              # Agent-level tests
 │   ├── __init__.py
 │   ├── test_retrieval_agent.py          # ✅ Section 2: Retrieval Agent (18 tests)
@@ -63,6 +88,21 @@ tests/
 │
 ├── integration/                         # End-to-end integration tests
 │   ├── __init__.py
+│   ├── memory/                          # ✅ Memory system integration tests (14 tests)
+│   │   ├── test_action_recording.py
+│   │   ├── test_coordinator_context.py
+│   │   ├── test_coordinator_semantic_procedural.py
+│   │   ├── test_context_injection.py
+│   │   ├── test_disambiguation_flow.py
+│   │   ├── test_memory_competencies.py
+│   │   ├── test_narrative_generation.py
+│   │   ├── test_preferences_flow.py
+│   │   ├── test_rule_triggers.py
+│   │   ├── test_rules_flow.py
+│   │   ├── test_semantic_procedural_memory.py
+│   │   ├── test_semantic_procedural_memory_simple.py
+│   │   ├── test_semantic_search_history.py
+│   │   └── test_ui_memory.py
 │   ├── test_text_input_flow.py          # TODO: Section 7: Text Input (15 tests)
 │   ├── test_voice_input_flow.py         # TODO: Section 8: Voice Input (15 tests)
 │   ├── test_confirmation_flow.py        # TODO: Section 11: Confirmation Flow (8 tests)

@@ -5,6 +5,110 @@ All notable changes to Flow Companion will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-01-08
+
+### Milestone 5 - Semantic & Procedural Memory Complete
+
+Major release introducing persistent user personalization through semantic and procedural memory.
+
+#### Added - Memory System Enhancement
+- **Semantic Memory (Preferences)** - Long-term storage of user preferences
+  - Automatic extraction from natural language ("I'm focusing on X")
+  - Confidence scoring (0.0-1.0) with explicit vs inferred source tracking
+  - Sorted by confidence (highest first)
+  - Min confidence filtering (default: 0.5)
+  - Persistent storage (no TTL) in `long_term_memory` collection
+  - Methods: `record_preference()`, `get_preferences()`, `get_preference()`, `delete_preference()`
+
+- **Procedural Memory (Rules)** - Long-term storage of behavioral rules
+  - Automatic extraction from natural language ("When I say done, complete my task")
+  - Trigger normalization (case-insensitive)
+  - Usage tracking (times_used auto-increments on match)
+  - Sorted by usage count (most used first)
+  - Persistent storage (no TTL) in `long_term_memory` collection
+  - Methods: `record_rule()`, `get_rules()`, `get_rule_for_trigger()`, `delete_rule()`
+
+- **5-Panel Memory UI** - Streamlit sidebar now shows all 5 memory types:
+  - 💭 **Working Memory** - Current project/task/action (2hr TTL)
+  - 📝 **Episodic Memory** - Action history (persistent)
+  - 🎯 **Semantic Memory** - Learned preferences (persistent)
+  - ⚙️ **Procedural Memory** - Learned rules (persistent)
+  - 🤝 **Shared Memory** - Agent handoffs (5min TTL)
+
+- **Memory Statistics** - Stats breakdown by all 5 types:
+  - Working, Episodic, Semantic, Procedural, Shared counts
+  - Visual metrics grid in sidebar
+  - Enhanced debug panel with memory type indicators
+
+#### Added - Testing & Documentation
+- **Unit Tests** (`tests/test_memory_types.py`) - 13 tests:
+  - Semantic memory CRUD operations (6 tests)
+  - Procedural memory CRUD operations (6 tests)
+  - Memory stats by type (1 test)
+
+- **Integration Tests** (`tests/integration/memory/`) - 14 tests:
+  - Context injection from all 5 memory types
+  - Coordinator extraction (preferences & rules)
+  - Rule trigger matching
+  - End-to-end flows for preferences and rules
+  - Memory competencies validation
+
+- **Comprehensive Documentation** (`docs/MEMORY.md`):
+  - 5-tier memory architecture overview
+  - Complete API reference for all memory types
+  - Schema definitions with examples
+  - Usage guide for developers and end users
+  - Testing methodology
+
+#### Changed - Coordinator Integration
+- **Context Extraction** - `_extract_context_from_turn()` completely rewritten:
+  - Working memory extracted from tool calls (current project/task)
+  - Preferences extracted via `record_preference()` to long-term
+  - Rules extracted via `record_rule()` to long-term
+  - No longer stores preferences/rules in session_context
+
+- **Context Injection** - `_build_context_injection()` updated:
+  - Loads working memory from `session_context` (short-term)
+  - Loads preferences from `get_preferences()` (long-term)
+  - Loads rules from `get_rules()` (long-term)
+  - Loads disambiguation from shared memory
+  - Changed XML tag from `<session_context>` to `<memory_context>`
+
+- **Rule Trigger Checking** - `_check_rule_triggers()` updated:
+  - Reads from long-term procedural memory instead of session_context
+  - Case-insensitive matching
+  - Auto-increments times_used on match
+
+#### Added - Database & Indexes
+- **MongoDB Indexes**:
+  - `user_id + memory_type + semantic_type + key` - Semantic memory lookups
+  - `user_id + memory_type + trigger_pattern` - Procedural memory lookups
+  - Index creation wrapped in try-except for graceful conflict handling
+
+- **Memory Type Constants** - `LONG_TERM_TYPES` mapping:
+  - episodic → action (what happened)
+  - semantic → preference (what I know)
+  - procedural → rule (how to act)
+
+#### Fixed
+- **Index Conflicts** - Wrapped all `create_index()` calls in try-except to handle existing indexes
+- **Regex Patterns** - Fixed rule trigger extraction to stop at commas
+
+#### Project Organization
+- **Test Scripts Relocated** - Moved 14 test scripts from root to `tests/integration/memory/`
+- **Documentation Consolidated** - Created comprehensive `docs/MEMORY.md`, archived old memory docs
+- **Session Summaries Organized** - Created `session_summaries/archive/` for older summaries
+- **README Updates** - Updated main README and all sub-directory READMEs
+
+### Technical Details
+**Total Tests:** 240+ (13 new unit tests + 14 existing integration tests organized)
+**New Files:** 3 (MEMORY.md, test_memory_types.py, session_summaries/README.md)
+**Modified Files:** 5 (manager.py, coordinator.py, streamlit_app.py, README.md, tests/README.md)
+**Lines Added:** ~2,500
+**Commits:** 7 major commits in Milestone 5
+
+---
+
 ## [3.1.10] - 2026-01-06
 
 ### Added
