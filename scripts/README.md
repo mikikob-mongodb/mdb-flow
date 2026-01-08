@@ -8,7 +8,8 @@ This directory contains consolidated scripts for common operations:
 - **setup_database.py** - Database setup (indexes + memory collections)
 - **cleanup_database.py** - Database cleanup and maintenance
 - **test_memory_system.py** - Memory system testing
-- **load_sample_data.py** - Sample data loading
+- **load_sample_data.py** - Sample projects and tasks loading
+- **seed_memory_demo_data.py** - Memory collections seeding (action history, session context)
 - **debug/** - Debug and diagnostic scripts
 
 ## Database Setup
@@ -175,15 +176,71 @@ Loads sample tasks and projects into the database for testing and demos.
 
 **Usage:**
 ```bash
-# Load sample data
+# Load with embeddings (recommended)
 python scripts/load_sample_data.py
+
+# Skip embeddings for faster loading
+python scripts/load_sample_data.py --skip-embeddings
 ```
 
-Creates:
+**Creates:**
 - 10 sample projects (AgentOps, Voice Agent, LangGraph, etc.)
-- ~50 sample tasks across multiple statuses and priorities
+- ~44 sample tasks across multiple statuses and priorities
 - Realistic activity logs and timestamps
-- Embeddings for vector search
+- Embeddings for vector search (1024-dim Voyage AI)
+
+### seed_memory_demo_data.py
+
+Seeds the memory collections with realistic demo data, making the UI demo-ready on first load.
+
+**Usage:**
+```bash
+# Seed memory only (assumes projects/tasks already loaded)
+python scripts/seed_memory_demo_data.py
+
+# Load sample data first, then seed memory
+python scripts/seed_memory_demo_data.py --with-sample-data
+
+# Skip embeddings for faster seeding
+python scripts/seed_memory_demo_data.py --skip-embeddings
+
+# Seed specific memory types only
+python scripts/seed_memory_demo_data.py --short-term-only
+python scripts/seed_memory_demo_data.py --long-term-only
+
+# Include handoff examples (future multi-agent support)
+python scripts/seed_memory_demo_data.py --include-handoffs
+```
+
+**Creates:**
+
+1. **Short-term Memory:**
+   - Session context for demo user (current_project, current_task, last_action)
+   - User preferences (focus_project, default_priority, auto_timestamp)
+   - User-defined rules (always add notes, update context, tag tasks)
+   - Sample disambiguation (multiple search results)
+   - Agent working memory for retrieval and worklog agents
+
+2. **Long-term Memory:**
+   - 40-60 realistic actions over past 7 days
+   - Action types: complete, start, create, update, search
+   - Realistic timestamps during working hours (9am-6pm weekdays)
+   - Embeddings for semantic search
+   - Attributed to demo_user
+
+3. **Shared Memory (optional):**
+   - Sample handoff chain (coordinator → retrieval → worklog)
+   - Demonstrates multi-agent workflow patterns
+
+**Recommended Setup:**
+```bash
+# Full demo setup
+python scripts/load_sample_data.py
+python scripts/seed_memory_demo_data.py
+
+# Or combined
+python scripts/seed_memory_demo_data.py --with-sample-data
+```
 
 ## Debug Scripts
 
@@ -252,11 +309,17 @@ This directory has been reorganized and consolidated:
 # 1. Setup database indexes
 python scripts/setup_database.py
 
-# 2. Load sample data
+# 2. Load sample data (projects and tasks)
 python scripts/load_sample_data.py
 
-# 3. Verify everything works
+# 3. Seed memory with demo data (action history, session context)
+python scripts/seed_memory_demo_data.py
+
+# 4. Verify everything works
 python scripts/test_memory_system.py
+
+# Or combined (steps 2-3)
+python scripts/seed_memory_demo_data.py --with-sample-data
 ```
 
 ### Regular Maintenance
