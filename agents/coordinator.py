@@ -533,72 +533,110 @@ class CoordinatorAgent:
             self.user_id = user_id
 
     def _build_context_injection(self) -> str:
-        """Build context injection section for system prompt.
-
-        Returns:
-            Context injection string to append to system prompt
         """
+        Build context injection section for system prompt.
+
+        Combines:
+        - Working Memory (short-term): current project/task/action
+        - Semantic Memory (long-term): preferences
+        - Procedural Memory (long-term): rules
+        - Disambiguation (short-term): pending selections
+        """
+
         if not self.memory_config.get("context_injection"):
             return ""
 
-        if not self.session_id or not self.memory:
+        if not self.session_id:
             return ""
 
         parts = []
 
-        # Session context
-        context = self.memory.read_session_context(self.session_id)
-        if context:
-            if context.get("current_project"):
-                parts.append(f"Current project: {context['current_project']}")
+        # ═══════════════════════════════════════════════════════════════
+        # WORKING MEMORY (Short-term session context)
+        # ═══════════════════════════════════════════════════════════════
 
-            if context.get("current_task"):
-                parts.append(f"Current task: {context['current_task']}")
+        session_context = self.memory.read_session_context(self.session_id)
+        if session_context:
+            if session_context.get("current_project"):
+                parts.append(f"Current project: {session_context['current_project']}")
 
-            if context.get("last_action"):
-                parts.append(f"Last action: {context['last_action']}")
+            if session_context.get("current_task"):
+                parts.append(f"Current task: {session_context['current_task']}")
 
-            # Preferences (TTL-C)
-            prefs = context.get("preferences", {})
-            if prefs.get("focus_project"):
-                parts.append(f"User preference: Focus on {prefs['focus_project']}")
-            if prefs.get("priority_filter"):
-                parts.append(f"User preference: Show {prefs['priority_filter']} priority")
+            if session_context.get("last_action"):
+                parts.append(f"Last action: {session_context['last_action']}")
 
-            # Rules (TTL-R)
-            for rule in context.get("rules", []):
-                parts.append(f"User rule: When '{rule['trigger']}', {rule['action']}")
+        # ═══════════════════════════════════════════════════════════════
+        # SEMANTIC MEMORY (Long-term preferences)
+        # ═══════════════════════════════════════════════════════════════
 
-        # Pending disambiguation (CR-MH)
+        preferences = self.memory.get_preferences(self.user_id, min_confidence=0.5)
+        if preferences:
+            parts.append("")  # Blank line separator
+            parts.append("User preferences (Semantic Memory):")
+            for pref in preferences[:5]:  # Limit to top 5
+                parts.append(f"  • {pref['key']}: {pref['value']}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # PROCEDURAL MEMORY (Long-term rules)
+        # ═══════════════════════════════════════════════════════════════
+
+        rules = self.memory.get_rules(self.user_id, min_confidence=0.5)
+        if rules:
+            parts.append("")  # Blank line separator
+            parts.append("User rules (Procedural Memory):")
+            for rule in rules[:5]:  # Limit to top 5
+                action_descriptions = {
+                    "complete_current_task": "complete the current task",
+                    "start_next_task": "start the next task",
+                    "stop_current_task": "stop/pause the current task",
+                    "skip_current_task": "skip the current task"
+                }
+                action_desc = action_descriptions.get(rule['action_type'], rule['action_type'])
+                parts.append(f"  • When user says \"{rule['trigger_pattern']}\" → {action_desc}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # DISAMBIGUATION (Short-term pending selections)
+        # ═══════════════════════════════════════════════════════════════
+
         disambiguation = self.memory.get_pending_disambiguation(self.session_id)
         if disambiguation:
-            parts.append(f"\nPending selection from search '{disambiguation['query']}':")
+            parts.append("")  # Blank line separator
+            parts.append(f"Pending selection from search \"{disambiguation.get('query', '')}\":")
             for r in disambiguation.get("results", []):
-                parts.append(f"  {r['index'] + 1}. {r['title']} ({r.get('project', 'unknown')})")
-            parts.append("User may refer to these by number (e.g., 'the first one').")
+                idx = r.get('index', 0) + 1
+                title = r.get('title', 'Unknown')
+                project = r.get('project', 'Unknown')
+                parts.append(f"  {idx}. {title} ({project})")
+            parts.append("User may refer to these by number (e.g., 'the first one', 'number 2').")
 
         if not parts:
             return ""
 
         self.memory_ops["context_injected"] = True
-        self.memory_ops["injected_context"] = context
+
+        # Build the injection string
+        context_str = "\n".join(parts)
 
         return f"""
 
-<session_context>
-{chr(10).join(parts)}
-</session_context>
+<memory_context>
+{context_str}
+</memory_context>
 
-Use this context to:
+Use this memory context to:
 - Filter queries to the current project when relevant
-- Apply user preferences to tool calls:
-  * If "Focus on [Project]" shown, add project_name="[Project]" to get_tasks()
-  * If "Show [priority] priority" shown, add priority="[priority]" to get_tasks()
+- Apply user preferences (e.g., focus_project filters task queries)
+- Execute user rules when trigger words are detected
 - Resolve references like "it", "that task", "the first one", "number 2"
+- Do NOT mention the memory system to the user unless asked
 """
 
     def _check_rule_triggers(self, user_message: str) -> dict:
-        """Check if user message matches any stored rule triggers.
+        """
+        Check if user message matches any stored rule triggers.
+
+        Checks long-term procedural memory for matching rules.
 
         Args:
             user_message: User's message to check
@@ -606,20 +644,19 @@ Use this context to:
         Returns:
             Dict with matched_rule if found, None otherwise
         """
-        if not self.memory:
+        if not self.memory or not self.user_id:
             return None
 
-        # Get session context with rules
-        context = self.memory.read_session_context(self.session_id)
-        if not context or "rules" not in context:
-            return None
-
-        rules = context.get("rules", [])
         msg_lower = user_message.lower()
+
+        # Get rules from long-term procedural memory
+        rules = self.memory.get_rules(self.user_id, min_confidence=0.5)
+        if not rules:
+            return None
 
         # Check each rule's trigger
         for rule in rules:
-            trigger = rule.get("trigger", "").lower()
+            trigger = rule.get("trigger_pattern", "").lower()
             if not trigger:
                 continue
 
@@ -629,7 +666,7 @@ Use this context to:
                 return {
                     "matched": True,
                     "trigger": trigger,
-                    "action": rule.get("action"),
+                    "action": rule.get("action_type"),
                     "original_rule": rule
                 }
 
