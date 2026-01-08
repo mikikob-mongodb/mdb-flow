@@ -38,6 +38,14 @@ A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and
 - **MongoDB Persistence** - Save and load comparison runs for historical analysis
 - **JSON Export** - Export results for slides and reports
 
+### Agent Memory System (Milestone 4)
+- **Session Context** - Track current project, task, and user preferences across conversations
+- **Preferences Learning** - Automatically extract and apply user preferences ("I'm focusing on Project X")
+- **Disambiguation Resolution** - Store numbered options and resolve "the first one" references
+- **Rule Learning** - User-defined shortcuts that trigger automatically ("when I say done, complete the task")
+- **Action History** - Persistent record of all task operations with temporal queries
+- **Cross-Agent Handoffs** - Share state between coordinator and specialized agents
+
 ## Tech Stack
 
 - **UI**: Streamlit (main app + evals dashboard)
@@ -546,8 +554,17 @@ Compare optimization configurations:
 - MongoDB persistence & history
 - JSON export for reporting
 
-### 🔮 Future Enhancements (Milestone 4+)
-- **Agent Memory** - Long-term memory and context retention
+### ✅ Milestone 4: Agent Memory System (Complete - v4.0)
+- **Three-tier Memory**: Short-term (2hr TTL), Long-term (persistent), Shared (5min TTL)
+- **Context Injection**: Automatic preference and state injection into prompts
+- **Preferences System**: Extract and apply user preferences ("focusing on Project X")
+- **Disambiguation**: Store and resolve "the first one" references with numbered options
+- **Rule Learning**: User-defined shortcuts ("when I say done, complete the current task")
+- **Action History**: Track all task operations with entity/metadata separation
+- **Demo Data Seeding**: Realistic memory data for testing and demonstrations
+- **Integration Tests**: Comprehensive test coverage for all memory features
+
+### 🔮 Future Enhancements (Milestone 5+)
 - **Real-time Collaboration** - Multi-user support
 - **File Attachments** - Link documents to tasks
 - **Calendar Integration** - Sync with Google Calendar
