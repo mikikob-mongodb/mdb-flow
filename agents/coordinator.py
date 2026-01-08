@@ -34,7 +34,7 @@ def convert_objectids_to_str(obj):
 COORDINATOR_TOOLS = [
     {
         "name": "get_tasks",
-        "description": "Get all tasks, optionally filtered by status or project. Use this when user asks 'what are my tasks' or 'show me all tasks'.",
+        "description": "Get all tasks, optionally filtered by status or project. Use this when user asks 'what are my tasks' or 'show me all tasks'. If user preferences show 'Focus on [Project]', include project_name parameter.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -46,6 +46,11 @@ COORDINATOR_TOOLS = [
                 "project_name": {
                     "type": "string",
                     "description": "Filter by project name"
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "Filter by task priority"
                 }
             }
         }
@@ -575,7 +580,9 @@ class CoordinatorAgent:
 
 Use this context to:
 - Filter queries to the current project when relevant
-- Apply user preferences
+- Apply user preferences to tool calls:
+  * If "Focus on [Project]" shown, add project_name="[Project]" to get_tasks()
+  * If "Show [priority] priority" shown, add priority="[priority]" to get_tasks()
 - Resolve references like "it", "that task", "the first one", "number 2"
 """
 
@@ -654,10 +661,19 @@ Use this context to:
                 words_after = msg_lower.split(pattern)[1].strip().split()[:3]
                 phrase = " ".join(words_after)
 
-                # Match known projects
-                for project in ["agentops", "voice agent", "mongodb demo"]:
-                    if project.replace(" ", "") in phrase.replace(" ", ""):
-                        updates.setdefault("preferences", {})["focus_project"] = project.title()
+                # Match against actual projects in database
+                from shared.db import get_collection, PROJECTS_COLLECTION
+                projects_collection = get_collection(PROJECTS_COLLECTION)
+                active_projects = projects_collection.find(
+                    {"status": "active"},
+                    {"name": 1}
+                )
+
+                for project_doc in active_projects:
+                    project_name = project_doc["name"]
+                    # Fuzzy match: check if project name appears in phrase
+                    if project_name.lower().replace(" ", "") in phrase.replace(" ", ""):
+                        updates.setdefault("preferences", {})["focus_project"] = project_name
                         break
 
         # Priority preference
@@ -792,10 +808,24 @@ Use this context to:
                 # Get all tasks with optional filtering - DIRECT DATABASE CALL
                 status = tool_input.get("status")
                 project_name = tool_input.get("project_name")
+                priority = tool_input.get("priority")
+
+                # Convert project_name to project_id if provided
+                project_id = None
+                if project_name:
+                    from shared.db import get_collection, PROJECTS_COLLECTION
+                    projects_collection = get_collection(PROJECTS_COLLECTION)
+                    project_doc = projects_collection.find_one(
+                        {"name": {"$regex": f"^{project_name}$", "$options": "i"}}
+                    )
+                    if project_doc:
+                        project_id = str(project_doc["_id"])
 
                 # Call worklog agent's direct method (bypasses LLM)
                 result = self.worklog_agent._list_tasks(
+                    project_id=project_id,
                     status=status,
+                    priority=priority,
                     limit=50
                 )
 

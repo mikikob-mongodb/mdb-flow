@@ -695,6 +695,7 @@ class WorklogAgent:
         self,
         project_id: Optional[str] = None,
         status: Optional[Literal["todo", "in_progress", "done"]] = None,
+        priority: Optional[Literal["low", "medium", "high"]] = None,
         limit: int = 20
     ) -> Dict[str, Any]:
         """List tasks with optional filters."""
@@ -711,6 +712,8 @@ class WorklogAgent:
             query["project_id"] = ObjectId(project_id)
         if status:
             query["status"] = status
+        if priority:
+            query["priority"] = priority
 
         # Time MongoDB query execution
         start = time.time()
