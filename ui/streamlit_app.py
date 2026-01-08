@@ -56,8 +56,18 @@ def init_session_state():
         import uuid
         st.session_state.session_id = str(uuid.uuid4())
 
+    if "user_id" not in st.session_state:
+        st.session_state.user_id = "demo_user"
+
     if "current_context" not in st.session_state:
         st.session_state.current_context = {}
+
+    # Set coordinator session for memory isolation
+    if coordinator and hasattr(coordinator, 'set_session'):
+        coordinator.set_session(
+            st.session_state.session_id,
+            user_id=st.session_state.user_id
+        )
 
 
 def get_all_projects_with_tasks() -> List[Dict[str, Any]]:
@@ -203,39 +213,148 @@ def render_context_engineering_toggles():
         "context_injection": context_inject
     }
 
+    # Update coordinator memory config
+    if coordinator:
+        coordinator.memory_config = {
+            "short_term": short_term,
+            "long_term": long_term,
+            "shared": shared,
+            "context_injection": context_inject
+        }
+
     # Show current context if available
-    if short_term and st.session_state.get("current_context"):
-        with st.sidebar.expander("📍 Current Context"):
-            ctx = st.session_state.current_context
-            if ctx.get("current_project"):
-                st.write(f"**Project:** {ctx['current_project']}")
-            if ctx.get("current_task"):
-                st.write(f"**Task:** {ctx['current_task']}")
-            if ctx.get("last_action"):
-                st.write(f"**Last:** {ctx['last_action']}")
+    if short_term and coordinator.memory:
+        with st.sidebar.expander("📍 Session Context", expanded=False):
+            try:
+                context = coordinator.memory.read_session_context(st.session_state.session_id)
+
+                if context:
+                    # Current project/task/action
+                    if context.get("current_project"):
+                        st.write(f"**Project:** {context['current_project']}")
+                    if context.get("current_task"):
+                        st.write(f"**Task:** {context['current_task']}")
+                    if context.get("last_action"):
+                        st.write(f"**Last Action:** {context['last_action']}")
+
+                    # Preferences
+                    if context.get("preferences"):
+                        st.markdown("**Preferences:**")
+                        for key, value in context["preferences"].items():
+                            st.caption(f"• {key}: {value}")
+
+                    # Rules
+                    if context.get("rules"):
+                        st.markdown("**Rules:**")
+                        for rule in context["rules"]:
+                            st.caption(f"• {rule}")
+                else:
+                    st.caption("_No context yet_")
+
+                # Pending disambiguation
+                disambiguation = coordinator.memory.get_pending_disambiguation(st.session_state.session_id)
+                if disambiguation:
+                    st.markdown("---")
+                    st.markdown(f"**🔍 Pending Selection:** '{disambiguation['query']}'")
+                    for r in disambiguation.get("results", []):
+                        st.caption(f"{r['index'] + 1}. {r['title']}")
+            except Exception as e:
+                st.caption(f"_Error loading context: {e}_")
+
+    # Agent Working Memory (future multi-agent support)
+    if shared and coordinator.memory:
+        with st.sidebar.expander("🔧 Agent State", expanded=False):
+            try:
+                has_working = False
+                for agent_id in ["coordinator", "retrieval", "worklog"]:
+                    working = coordinator.memory.read_agent_working(st.session_state.session_id, agent_id)
+                    if working:
+                        has_working = True
+                        st.markdown(f"**{agent_id.capitalize()}:**")
+                        for key, value in working.items():
+                            if not key.startswith("_"):  # Skip internal fields
+                                st.caption(f"• {key}: {value}")
+                        st.markdown("")
+
+                if not has_working:
+                    st.caption("_No agent state_")
+            except Exception as e:
+                st.caption(f"_Error: {e}_")
+
+    # Pending Handoffs (future multi-agent support)
+    if shared and coordinator.memory:
+        with st.sidebar.expander("🤝 Handoffs", expanded=False):
+            try:
+                has_handoffs = False
+                for agent_id in ["coordinator", "retrieval", "worklog"]:
+                    pending_count = coordinator.memory.check_pending(st.session_state.session_id, agent_id)
+                    if pending_count:
+                        has_handoffs = True
+                        st.write(f"**{agent_id.capitalize()}:** {pending_count} pending")
+
+                if not has_handoffs:
+                    st.caption("_No pending handoffs_")
+            except Exception as e:
+                st.caption(f"_Error: {e}_")
 
     # Show memory stats
     if memory_enabled and coordinator.memory:
-        with st.sidebar.expander("📊 Memory Stats"):
+        with st.sidebar.expander("📊 Memory Stats", expanded=False):
             try:
-                stats = coordinator.memory.get_memory_stats()
-                st.write(f"**Short-term:** {stats['short_term']['total']} entries")
-                st.write(f"**Long-term:** {stats['long_term']['total']} total")
-                st.write(f"  - Actions: {stats['long_term']['by_type']['action']}")
-                st.write(f"  - Facts: {stats['long_term']['by_type']['fact']}")
-                st.write(f"**Shared:** {stats['shared']['active']} pending")
+                stats = coordinator.memory.get_memory_stats(
+                    st.session_state.session_id,
+                    st.session_state.user_id
+                )
+                st.write(f"**Short-term:** {stats['short_term_count']} entries")
+                st.write(f"**Long-term:** {stats['long_term_count']} actions")
+
+                # Show action breakdown if available
+                if stats.get('action_counts'):
+                    st.caption("  Action types:")
+                    for action_type, count in stats['action_counts'].items():
+                        st.caption(f"  • {action_type}: {count}")
+
+                st.write(f"**Shared:** {stats['shared_pending']} pending")
             except Exception as e:
                 st.write(f"Error loading stats: {e}")
 
-    # Clear memory button
+    # Session controls
     if memory_enabled and coordinator.memory:
-        if st.sidebar.button("🗑️ Clear Session Memory"):
-            try:
-                coordinator.memory.clear_session(st.session_state.session_id)
-                st.session_state.current_context = {}
-                st.sidebar.success("✅ Memory cleared!")
-            except Exception as e:
-                st.sidebar.error(f"Error: {e}")
+        col1, col2 = st.sidebar.columns(2)
+
+        with col1:
+            if st.button("🗑️ Clear", use_container_width=True, help="Clear current session memory"):
+                try:
+                    coordinator.memory.clear_session(st.session_state.session_id)
+                    st.session_state.current_context = {}
+                    st.sidebar.success("✅ Cleared!")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Error: {e}")
+
+        with col2:
+            if st.button("🆕 New", use_container_width=True, help="Start a new session"):
+                try:
+                    import uuid
+                    # Clear old session
+                    coordinator.memory.clear_session(st.session_state.session_id)
+
+                    # Create new session
+                    st.session_state.session_id = str(uuid.uuid4())
+                    st.session_state.messages = []
+                    st.session_state.debug_history = []
+                    st.session_state.current_context = {}
+
+                    # Update coordinator
+                    coordinator.set_session(
+                        st.session_state.session_id,
+                        user_id=st.session_state.user_id
+                    )
+
+                    st.sidebar.success("✅ New session!")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Error: {e}")
 
     # Show active status
     active = []
@@ -253,50 +372,62 @@ def render_context_engineering_toggles():
 
 
 def render_memory_debug(debug_info: dict):
-    """Render memory section of debug panel.
+    """Render memory section of debug panel with competency indicators.
 
     Args:
-        debug_info: Debug information dict with memory metrics
+        debug_info: Debug information dict with memory_ops
     """
-    memory_read = debug_info.get("memory_read_ms", 0)
-    memory_write = debug_info.get("memory_write_ms", 0)
-    context_injected = debug_info.get("context_injected", False)
-    handoff_used = debug_info.get("shared_memory_used", False)
+    # Get memory_ops from debug info
+    memory_ops = debug_info.get("memory_ops", {})
 
-    if not any([memory_read, memory_write, context_injected, handoff_used]):
+    if not memory_ops:
         return  # No memory activity
 
     st.markdown("---")
-    st.markdown("**🧠 Memory**")
+    st.markdown("**🧠 Memory Operations**")
+
+    # Build competency indicators
+    indicators = []
+
+    # Context operations
+    if memory_ops.get("context_injected"):
+        indicators.append("CR-SH")  # Context Read from Short-term
+    if memory_ops.get("context_updated"):
+        indicators.append("CW-SH")  # Context Write to Short-term
+
+    # Action recording
+    if memory_ops.get("action_recorded"):
+        action_type = memory_ops.get("recorded_action_type", "")
+        indicators.append(f"AR-T:{action_type}")  # Action Recorded to long-Term
+
+    # Show indicators
+    if indicators:
+        st.markdown(f"**Competency:** `{' | '.join(indicators)}`")
+        st.caption("CR-SH=Context Read, CW-SH=Context Write, AR-T=Action Recorded")
 
     # Memory timing
-    cols = st.columns(3)
+    memory_read = memory_ops.get("memory_read_ms", 0)
+    memory_write = memory_ops.get("memory_write_ms", 0)
 
-    with cols[0]:
-        if memory_read:
-            st.metric("Read", f"{memory_read:.0f}ms")
+    if memory_read or memory_write:
+        cols = st.columns(3)
 
-    with cols[1]:
-        if memory_write:
-            st.metric("Write", f"{memory_write:.0f}ms")
+        with cols[0]:
+            if memory_read:
+                st.metric("Read", f"{memory_read:.0f}ms")
 
-    with cols[2]:
-        total = memory_read + memory_write
-        if total:
-            st.metric("Total", f"{total:.0f}ms")
+        with cols[1]:
+            if memory_write:
+                st.metric("Write", f"{memory_write:.0f}ms")
 
-    # Context injection status
-    if context_injected:
-        st.success("✅ Context injected into prompt")
+        with cols[2]:
+            total = memory_read + memory_write
+            if total:
+                st.metric("Total", f"{total:.0f}ms")
 
-    # Agent handoff visualization
-    if handoff_used:
-        st.markdown("**🤝 Agent Handoff**")
-        st.code("""
-    ┌──────────┐    ┌──────────────┐    ┌──────────┐
-    │Retrieval │───▶│Shared Memory │───▶│ Worklog  │
-    └──────────┘    └──────────────┘    └──────────┘
-        """, language=None)
+    # Show full memory_ops dict in expander
+    with st.expander("Memory Ops Detail", expanded=False):
+        st.json(memory_ops)
 
 
 def render_task_list():
@@ -630,7 +761,7 @@ def render_chat():
         st.caption("Your AI-powered task and project management assistant")
 
         # Display chat messages
-        for message in st.session_state.messages:
+        for i, message in enumerate(st.session_state.messages):
             with st.chat_message(message["role"]):
                 # Handle different message types
                 if message.get("is_command_result"):
@@ -646,6 +777,22 @@ def render_chat():
                 else:
                     # Normal text message
                     st.markdown(message["content"])
+
+                    # Add memory indicators for assistant messages
+                    if message["role"] == "assistant" and message.get("memory_ops"):
+                        ops = message["memory_ops"]
+                        badges = []
+
+                        if ops.get("context_injected"):
+                            badges.append("🧠 CR-SH")
+                        if ops.get("context_updated"):
+                            badges.append("🧠 CW-SH")
+                        if ops.get("action_recorded"):
+                            action_type = ops.get("recorded_action_type", "")
+                            badges.append(f"🧠 AR-T:{action_type}")
+
+                        if badges:
+                            st.caption(" • ".join(badges))
 
         # Chat input
         prompt = st.chat_input("Ask me anything about your tasks or projects...")
@@ -779,11 +926,19 @@ def render_chat():
                     if st.session_state.coordinator.current_turn:
                         st.session_state.debug_history.append(st.session_state.coordinator.current_turn)
 
-            # Add assistant response to history
-            st.session_state.messages.append({
+            # Add assistant response to history with memory_ops
+            message_data = {
                 "role": "assistant",
                 "content": response
-            })
+            }
+
+            # Include memory_ops if available
+            if st.session_state.coordinator.current_turn:
+                memory_ops = st.session_state.coordinator.current_turn.get("memory_ops")
+                if memory_ops:
+                    message_data["memory_ops"] = memory_ops
+
+            st.session_state.messages.append(message_data)
 
             # Rerun to update the display (including task list)
             st.rerun()
@@ -849,11 +1004,19 @@ def render_chat():
                     if st.session_state.coordinator.current_turn:
                         st.session_state.debug_history.append(st.session_state.coordinator.current_turn)
 
-            # Add assistant response to history
-            st.session_state.messages.append({
+            # Add assistant response to history with memory_ops
+            message_data = {
                 "role": "assistant",
                 "content": response
-            })
+            }
+
+            # Include memory_ops if available
+            if st.session_state.coordinator.current_turn:
+                memory_ops = st.session_state.coordinator.current_turn.get("memory_ops")
+                if memory_ops:
+                    message_data["memory_ops"] = memory_ops
+
+            st.session_state.messages.append(message_data)
 
             # Rerun to update the display (including task list)
             st.rerun()
