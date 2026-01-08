@@ -20,6 +20,13 @@ from pymongo.collection import Collection
 from bson import ObjectId
 import uuid
 
+# Memory type constants
+LONG_TERM_TYPES = {
+    "episodic": "action",      # What happened (existing action_history)
+    "semantic": "preference",   # What I know (user preferences, facts)
+    "procedural": "rule"        # How to act (learned rules/workflows)
+}
+
 
 class MemoryManager:
     def __init__(self, db, embedding_fn: Callable = None):
@@ -36,16 +43,26 @@ class MemoryManager:
 
     def _setup_collections(self):
         """Create collections and indexes."""
+        from pymongo.errors import OperationFailure
 
         # ═══════════════════════════════════════════════════════════════
         # SHORT-TERM MEMORY (TTL: 2 hours)
         # ═══════════════════════════════════════════════════════════════
         self.short_term = self.db.short_term_memory
 
-        # Indexes
-        self.short_term.create_index("expires_at", expireAfterSeconds=0)
-        self.short_term.create_index([("session_id", ASCENDING), ("memory_type", ASCENDING)])
-        self.short_term.create_index([("session_id", ASCENDING), ("agent_id", ASCENDING)])
+        # Indexes (silently ignore if already exist with different options)
+        try:
+            self.short_term.create_index("expires_at", expireAfterSeconds=0)
+        except OperationFailure:
+            pass  # Index exists with different options
+        try:
+            self.short_term.create_index([("session_id", ASCENDING), ("memory_type", ASCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.short_term.create_index([("session_id", ASCENDING), ("agent_id", ASCENDING)])
+        except OperationFailure:
+            pass
 
         # ═══════════════════════════════════════════════════════════════
         # LONG-TERM MEMORY (persistent)
@@ -53,10 +70,43 @@ class MemoryManager:
         self.long_term = self.db.long_term_memory
 
         # Indexes
-        self.long_term.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
-        self.long_term.create_index([("user_id", ASCENDING), ("action_type", ASCENDING)])
-        self.long_term.create_index([("user_id", ASCENDING), ("source_agent", ASCENDING)])
-        self.long_term.create_index([("user_id", ASCENDING), ("entity.project_name", ASCENDING)])
+        try:
+            self.long_term.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.long_term.create_index([("user_id", ASCENDING), ("action_type", ASCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.long_term.create_index([("user_id", ASCENDING), ("source_agent", ASCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.long_term.create_index([("user_id", ASCENDING), ("entity.project_name", ASCENDING)])
+        except OperationFailure:
+            pass
+
+        # Index for semantic memory (preferences)
+        try:
+            self.long_term.create_index([
+                ("user_id", ASCENDING),
+                ("memory_type", ASCENDING),
+                ("semantic_type", ASCENDING),
+                ("key", ASCENDING)
+            ])
+        except OperationFailure:
+            pass
+
+        # Index for procedural memory (rules)
+        try:
+            self.long_term.create_index([
+                ("user_id", ASCENDING),
+                ("memory_type", ASCENDING),
+                ("trigger_pattern", ASCENDING)
+            ])
+        except OperationFailure:
+            pass
 
         # ═══════════════════════════════════════════════════════════════
         # SHARED MEMORY (TTL: 5 minutes)
@@ -64,14 +114,26 @@ class MemoryManager:
         self.shared = self.db.shared_memory
 
         # Indexes
-        self.shared.create_index("expires_at", expireAfterSeconds=0)
-        self.shared.create_index("handoff_id", unique=True)
-        self.shared.create_index([
-            ("session_id", ASCENDING),
-            ("target_agent", ASCENDING),
-            ("status", ASCENDING)
-        ])
-        self.shared.create_index("chain_id")
+        try:
+            self.shared.create_index("expires_at", expireAfterSeconds=0)
+        except OperationFailure:
+            pass
+        try:
+            self.shared.create_index("handoff_id", unique=True)
+        except OperationFailure:
+            pass
+        try:
+            self.shared.create_index([
+                ("session_id", ASCENDING),
+                ("target_agent", ASCENDING),
+                ("status", ASCENDING)
+            ])
+        except OperationFailure:
+            pass
+        try:
+            self.shared.create_index("chain_id")
+        except OperationFailure:
+            pass
 
     # ═══════════════════════════════════════════════════════════════════
     # SHORT-TERM: SESSION CONTEXT
@@ -799,33 +861,327 @@ class MemoryManager:
         )
 
     # ═══════════════════════════════════════════════════════════════════
+    # LONG-TERM: SEMANTIC MEMORY (Preferences)
+    # ═══════════════════════════════════════════════════════════════════
+
+    def record_preference(self, user_id: str, key: str, value: any,
+                          source: str = "inferred", confidence: float = 0.8) -> str:
+        """
+        Store or update a preference in Semantic Memory (long-term).
+
+        Args:
+            user_id: User identifier
+            key: Preference key (e.g., "focus_project", "priority_filter")
+            value: Preference value
+            source: "explicit" (user stated) or "inferred" (detected from behavior)
+            confidence: 0.0-1.0, higher = more certain
+
+        Returns:
+            Document ID
+        """
+        existing = self.long_term.find_one({
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "preference",
+            "key": key
+        })
+
+        now = datetime.utcnow()
+
+        if existing:
+            # Update existing preference
+            new_confidence = max(existing.get("confidence", 0), confidence)
+            if source == "explicit":
+                new_confidence = max(new_confidence, 0.9)
+
+            self.long_term.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {
+                    "value": value,
+                    "source": source,
+                    "confidence": new_confidence,
+                    "updated_at": now
+                },
+                "$inc": {"times_used": 1}}
+            )
+            return str(existing["_id"])
+
+        # Create new preference
+        doc = {
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "preference",
+            "key": key,
+            "value": value,
+            "source": source,
+            "confidence": confidence if source != "explicit" else 0.9,
+            "times_used": 1,
+            "created_at": now,
+            "updated_at": now
+        }
+        result = self.long_term.insert_one(doc)
+        return str(result.inserted_id)
+
+    def get_preferences(self, user_id: str, min_confidence: float = 0.0) -> list:
+        """
+        Get all preferences (Semantic Memory) for a user.
+
+        Args:
+            user_id: User identifier
+            min_confidence: Minimum confidence threshold
+
+        Returns:
+            List of preference documents, sorted by confidence (highest first)
+        """
+        query = {
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "preference"
+        }
+
+        if min_confidence > 0:
+            query["confidence"] = {"$gte": min_confidence}
+
+        results = list(self.long_term.find(query).sort("confidence", -1))
+
+        # Convert ObjectId to string
+        for r in results:
+            r["_id"] = str(r["_id"])
+
+        return results
+
+    def get_preference(self, user_id: str, key: str) -> Optional[dict]:
+        """Get a specific preference by key."""
+        doc = self.long_term.find_one({
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "preference",
+            "key": key
+        })
+
+        if doc:
+            doc["_id"] = str(doc["_id"])
+
+        return doc
+
+    def delete_preference(self, user_id: str, key: str) -> bool:
+        """Delete a preference."""
+        result = self.long_term.delete_one({
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "preference",
+            "key": key
+        })
+        return result.deleted_count > 0
+
+    # ═══════════════════════════════════════════════════════════════════
+    # LONG-TERM: PROCEDURAL MEMORY (Rules)
+    # ═══════════════════════════════════════════════════════════════════
+
+    def record_rule(self, user_id: str, trigger: str, action: str,
+                    parameters: dict = None, source: str = "explicit",
+                    confidence: float = 0.8) -> str:
+        """
+        Store or update a rule in Procedural Memory (long-term).
+
+        Args:
+            user_id: User identifier
+            trigger: Trigger pattern (e.g., "done", "next", "skip")
+            action: Action to perform (e.g., "complete_current_task")
+            parameters: Optional parameters for the action
+            source: "explicit" (user stated) or "inferred"
+            confidence: 0.0-1.0
+
+        Returns:
+            Document ID
+        """
+        # Normalize trigger
+        trigger_normalized = trigger.lower().strip()
+
+        existing = self.long_term.find_one({
+            "user_id": user_id,
+            "memory_type": "procedural",
+            "trigger_pattern": trigger_normalized
+        })
+
+        now = datetime.utcnow()
+
+        if existing:
+            # Update existing rule
+            new_confidence = max(existing.get("confidence", 0), confidence)
+
+            self.long_term.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {
+                    "action_type": action,
+                    "parameters": parameters or {},
+                    "confidence": new_confidence,
+                    "updated_at": now
+                },
+                "$inc": {"times_used": 1}}
+            )
+            return str(existing["_id"])
+
+        # Create new rule
+        doc = {
+            "user_id": user_id,
+            "memory_type": "procedural",
+            "trigger_pattern": trigger_normalized,
+            "action_type": action,
+            "parameters": parameters or {},
+            "source": source,
+            "confidence": confidence,
+            "times_used": 1,
+            "created_at": now,
+            "updated_at": now
+        }
+        result = self.long_term.insert_one(doc)
+        return str(result.inserted_id)
+
+    def get_rules(self, user_id: str, min_confidence: float = 0.0) -> list:
+        """
+        Get all rules (Procedural Memory) for a user.
+
+        Args:
+            user_id: User identifier
+            min_confidence: Minimum confidence threshold
+
+        Returns:
+            List of rule documents, sorted by times_used (most used first)
+        """
+        query = {
+            "user_id": user_id,
+            "memory_type": "procedural"
+        }
+
+        if min_confidence > 0:
+            query["confidence"] = {"$gte": min_confidence}
+
+        results = list(self.long_term.find(query).sort("times_used", -1))
+
+        for r in results:
+            r["_id"] = str(r["_id"])
+
+        return results
+
+    def get_rule_for_trigger(self, user_id: str, trigger: str) -> Optional[dict]:
+        """
+        Get the rule matching a trigger pattern.
+
+        Args:
+            user_id: User identifier
+            trigger: Trigger text to match
+
+        Returns:
+            Matching rule or None
+        """
+        trigger_normalized = trigger.lower().strip()
+
+        doc = self.long_term.find_one({
+            "user_id": user_id,
+            "memory_type": "procedural",
+            "trigger_pattern": trigger_normalized
+        })
+
+        if doc:
+            doc["_id"] = str(doc["_id"])
+
+            # Increment usage
+            self.long_term.update_one(
+                {"_id": ObjectId(doc["_id"])},
+                {"$inc": {"times_used": 1}, "$set": {"updated_at": datetime.utcnow()}}
+            )
+
+        return doc
+
+    def delete_rule(self, user_id: str, trigger: str) -> bool:
+        """Delete a rule by trigger pattern."""
+        result = self.long_term.delete_one({
+            "user_id": user_id,
+            "memory_type": "procedural",
+            "trigger_pattern": trigger.lower().strip()
+        })
+        return result.deleted_count > 0
+
+    # ═══════════════════════════════════════════════════════════════════
+    # LONG-TERM: COMBINED QUERIES
+    # ═══════════════════════════════════════════════════════════════════
+
+    def get_user_memory_profile(self, user_id: str) -> dict:
+        """
+        Get complete memory profile for a user.
+
+        Returns:
+            {
+                "preferences": [...],
+                "rules": [...],
+                "action_summary": {...}
+            }
+        """
+        return {
+            "preferences": self.get_preferences(user_id),
+            "rules": self.get_rules(user_id),
+            "action_summary": self.get_activity_summary(user_id, time_range="this_week")
+        }
+
+    # ═══════════════════════════════════════════════════════════════════
     # UTILITIES
     # ═══════════════════════════════════════════════════════════════════
 
     def get_memory_stats(self, session_id: str, user_id: str) -> Dict:
-        """Get memory statistics."""
+        """Get memory statistics including all memory types."""
+
+        # Short-term and shared counts
+        short_term_count = self.short_term.count_documents({"session_id": session_id})
+        shared_pending = self.shared.count_documents({
+            "session_id": session_id,
+            "status": "pending"
+        })
+
+        # Long-term breakdown by memory_type
+        episodic_count = self.long_term.count_documents({
+            "user_id": user_id,
+            "memory_type": {"$nin": ["semantic", "procedural"]}  # Actions (episodic)
+        })
+
+        semantic_count = self.long_term.count_documents({
+            "user_id": user_id,
+            "memory_type": "semantic"
+        })
+
+        procedural_count = self.long_term.count_documents({
+            "user_id": user_id,
+            "memory_type": "procedural"
+        })
+
+        # Action counts (episodic only)
+        action_counts = self._get_action_counts(user_id)
+
         return {
-            "short_term_count": self.short_term.count_documents({
-                "session_id": session_id
-            }),
-            "long_term_count": self.long_term.count_documents({
-                "user_id": user_id
-            }),
-            "shared_pending": self.shared.count_documents({
-                "session_id": session_id,
-                "status": "pending"
-            }),
-            "action_counts": self._get_action_counts(user_id)
+            "short_term_count": short_term_count,
+            "long_term_count": episodic_count + semantic_count + procedural_count,
+            "shared_pending": shared_pending,
+            "by_type": {
+                "working_memory": short_term_count,
+                "episodic_memory": episodic_count,
+                "semantic_memory": semantic_count,
+                "procedural_memory": procedural_count,
+                "shared_memory": shared_pending
+            },
+            "action_counts": action_counts
         }
 
     def _get_action_counts(self, user_id: str) -> Dict[str, int]:
-        """Get counts by action type."""
+        """Get counts by action type (episodic memory only)."""
         pipeline = [
-            {"$match": {"user_id": user_id}},
+            {"$match": {
+                "user_id": user_id,
+                "memory_type": {"$nin": ["semantic", "procedural"]}  # Only episodic
+            }},
             {"$group": {"_id": "$action_type", "count": {"$sum": 1}}}
         ]
         results = list(self.long_term.aggregate(pipeline))
-        return {r["_id"]: r["count"] for r in results}
+        return {r["_id"]: r["count"] for r in results if r["_id"]}
 
     def clear_session(self, session_id: str) -> Dict[str, int]:
         """Clear all memory for a session (for testing/demo reset)."""
