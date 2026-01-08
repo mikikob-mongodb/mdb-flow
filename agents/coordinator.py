@@ -1,6 +1,7 @@
 """Coordinator Agent that routes requests to appropriate sub-agents."""
 
 import json
+import uuid
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from bson import ObjectId
@@ -11,6 +12,7 @@ from agents.worklog import worklog_agent
 from agents.retrieval import retrieval_agent
 from utils.context_engineering import compress_tool_result
 from config.prompts import get_system_prompt, get_prompt_stats
+from memory import MemoryManager
 
 logger = get_logger("coordinator")
 
@@ -454,6 +456,192 @@ class CoordinatorAgent:
         self.memory = memory_manager  # Memory manager for long-term action history
         self.last_debug_info = []  # Store debug info from last request (deprecated - use current_turn)
         self.current_turn = None  # Current conversation turn with all tool calls
+
+        # Memory configuration
+        self.memory_config = {
+            "short_term": True,
+            "long_term": True,
+            "shared": True,
+            "context_injection": True
+        }
+
+        # Session tracking
+        self.session_id = None
+        self.user_id = "default_user"
+        self.current_chain_id = None
+        self.memory_ops = {}  # Track memory operations for debug panel
+
+    def set_session(self, session_id: str, user_id: str = None):
+        """Set session context for memory isolation.
+
+        Args:
+            session_id: Session identifier
+            user_id: User identifier (optional)
+        """
+        self.session_id = session_id
+        if user_id:
+            self.user_id = user_id
+
+    def _build_context_injection(self) -> str:
+        """Build context injection section for system prompt.
+
+        Returns:
+            Context injection string to append to system prompt
+        """
+        if not self.memory_config.get("context_injection"):
+            return ""
+
+        if not self.session_id or not self.memory:
+            return ""
+
+        parts = []
+
+        # Session context
+        context = self.memory.read_session_context(self.session_id)
+        if context:
+            if context.get("current_project"):
+                parts.append(f"Current project: {context['current_project']}")
+
+            if context.get("current_task"):
+                parts.append(f"Current task: {context['current_task']}")
+
+            if context.get("last_action"):
+                parts.append(f"Last action: {context['last_action']}")
+
+            # Preferences (TTL-C)
+            prefs = context.get("preferences", {})
+            if prefs.get("focus_project"):
+                parts.append(f"User preference: Focus on {prefs['focus_project']}")
+            if prefs.get("priority_filter"):
+                parts.append(f"User preference: Show {prefs['priority_filter']} priority")
+
+            # Rules (TTL-R)
+            for rule in context.get("rules", []):
+                parts.append(f"User rule: When '{rule['trigger']}', {rule['action']}")
+
+        # Pending disambiguation (CR-MH)
+        disambiguation = self.memory.get_pending_disambiguation(self.session_id)
+        if disambiguation:
+            parts.append(f"\nPending selection from search '{disambiguation['query']}':")
+            for r in disambiguation.get("results", []):
+                parts.append(f"  {r['index'] + 1}. {r['title']} ({r.get('project', 'unknown')})")
+            parts.append("User may refer to these by number (e.g., 'the first one').")
+
+        if not parts:
+            return ""
+
+        self.memory_ops["context_injected"] = True
+        self.memory_ops["injected_context"] = context
+
+        return f"""
+
+<session_context>
+{chr(10).join(parts)}
+</session_context>
+
+Use this context to:
+- Filter queries to the current project when relevant
+- Apply user preferences
+- Resolve references like "it", "that task", "the first one", "number 2"
+"""
+
+    def _extract_context_from_turn(self, user_message: str,
+                                    tool_calls: list,
+                                    tool_results: list) -> dict:
+        """Extract context updates from completed turn.
+
+        Args:
+            user_message: User's message
+            tool_calls: List of tool calls made
+            tool_results: List of tool results
+
+        Returns:
+            Dict of context updates to apply
+        """
+        updates = {}
+
+        # Extract from tool calls
+        for i, call in enumerate(tool_calls or []):
+            tool_name = call.get("name", "")
+            tool_input = call.get("input", {})
+            result = tool_results[i] if i < len(tool_results or []) else {}
+
+            # Project context
+            if tool_name in ["get_tasks", "get_project", "search_tasks", "search_projects"]:
+                if tool_input.get("project_name"):
+                    updates["current_project"] = tool_input["project_name"]
+                elif result.get("project_name"):
+                    updates["current_project"] = result["project_name"]
+
+            # Task context from operations
+            if tool_name in ["start_task", "complete_task", "stop_task", "get_task"]:
+                if result.get("task_title"):
+                    updates["current_task"] = result["task_title"]
+                    updates["current_task_id"] = result.get("task_id")
+                if result.get("project_name"):
+                    updates["current_project"] = result["project_name"]
+
+                # Track action
+                action_map = {
+                    "start_task": "start",
+                    "complete_task": "complete",
+                    "stop_task": "stop"
+                }
+                if tool_name in action_map:
+                    updates["last_action"] = action_map[tool_name]
+
+            # Store search results for disambiguation (CR-MH)
+            if tool_name in ["search_tasks", "search_projects"]:
+                results_list = result.get("results", [])
+                if len(results_list) > 1:
+                    # Store for "the first one" type references
+                    self.memory.store_disambiguation(
+                        session_id=self.session_id,
+                        query=tool_input.get("query", ""),
+                        results=[
+                            {
+                                "task_id": str(r.get("_id", r.get("task_id"))),
+                                "title": r.get("title"),
+                                "project": r.get("project_name")
+                            }
+                            for r in results_list[:5]
+                        ],
+                        source_agent="coordinator"
+                    )
+
+        # Extract preferences from user message (TTL-C)
+        msg_lower = user_message.lower()
+
+        # Focus project
+        focus_patterns = ["focusing on", "focus on", "working on", "let's work on"]
+        for pattern in focus_patterns:
+            if pattern in msg_lower:
+                # Extract project name
+                words_after = msg_lower.split(pattern)[1].strip().split()[:3]
+                phrase = " ".join(words_after)
+
+                # Match known projects
+                for project in ["agentops", "voice agent", "mongodb demo"]:
+                    if project.replace(" ", "") in phrase.replace(" ", ""):
+                        updates.setdefault("preferences", {})["focus_project"] = project.title()
+                        break
+
+        # Priority preference
+        if "high priority" in msg_lower or "important" in msg_lower:
+            updates.setdefault("preferences", {})["priority_filter"] = "high"
+
+        # Context switch detection (CR-SH)
+        switch_patterns = ["switch to", "actually,", "no wait", "change to", "never mind"]
+        for pattern in switch_patterns:
+            if pattern in msg_lower:
+                # Clear task-level context on project switch
+                if updates.get("current_project"):
+                    updates["current_task"] = None
+                    updates["current_task_id"] = None
+                    updates["last_action"] = None
+                break
+
+        return updates
 
     def _summarize_output(self, result: Any) -> str:
         """
@@ -997,6 +1185,25 @@ class CoordinatorAgent:
         # Store optimizations for use throughout the process
         self.optimizations = optimizations or {}
 
+        # Initialize memory operations tracking
+        self.memory_ops = {
+            "context_injected": False,
+            "context_updated": False,
+            "action_recorded": False,
+            "handoffs_created": 0,
+            "handoffs_consumed": 0,
+            "recorded_action_type": None,
+            "memory_read_ms": 0,
+            "memory_write_ms": 0
+        }
+
+        # Set session if provided
+        if session_id:
+            self.session_id = session_id
+
+        # Start new chain for this request
+        self.current_chain_id = str(uuid.uuid4())
+
         # Set session on agents if session_id provided and shared memory enabled
         if session_id and self.optimizations.get("shared_memory"):
             retrieval_agent.set_session(session_id)
@@ -1006,6 +1213,18 @@ class CoordinatorAgent:
         streamlined = self.optimizations.get("streamlined_prompt", True)
         system_prompt = get_system_prompt(streamlined)
         prompt_stats = get_prompt_stats(streamlined)
+
+        # BUILD CONTEXT-ENHANCED PROMPT
+        import time
+        read_start = time.time()
+
+        if self.memory_config.get("context_injection") and self.memory:
+            context_injection = self._build_context_injection()
+            if context_injection:
+                system_prompt += context_injection
+                logger.info(f"📊 Context injected into system prompt")
+
+        self.memory_ops["memory_read_ms"] = (time.time() - read_start) * 1000
 
         # Get prompt caching setting
         cache_prompts = self.optimizations.get("prompt_caching", True)
@@ -1220,6 +1439,28 @@ class CoordinatorAgent:
 
             logger.info(f"Turn complete: LLM={llm_time}ms, Tools={tool_time}ms, Total={self.current_turn['total_duration_ms']}ms")
 
+        # UPDATE SESSION CONTEXT FROM TURN
+        write_start = time.time()
+
+        if self.memory_config.get("short_term") and self.session_id and self.memory:
+            # Extract context updates from this turn
+            context_updates = self._extract_context_from_turn(
+                user_message,
+                self.current_turn.get("tool_calls", []),
+                [tc.get("result") for tc in self.current_turn.get("tool_calls", [])]
+            )
+
+            if context_updates:
+                self.memory.update_session_context(
+                    self.session_id,
+                    context_updates,
+                    self.user_id
+                )
+                self.memory_ops["context_updated"] = True
+                logger.info(f"📊 Session context updated with {len(context_updates)} fields")
+
+        self.memory_ops["memory_write_ms"] = (time.time() - write_start) * 1000
+
         logger.info("Request processing complete")
         logger.info("=" * 80)
 
@@ -1248,7 +1489,8 @@ class CoordinatorAgent:
                     "tools_called": [tc["name"] for tc in self.current_turn.get("tool_calls", [])],
                     "embedding_time_ms": embedding_time,
                     "mongodb_time_ms": mongodb_time,
-                    "processing_time_ms": processing_time
+                    "processing_time_ms": processing_time,
+                    "memory_ops": self.memory_ops
                 }
             }
         else:
