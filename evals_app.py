@@ -1327,11 +1327,11 @@ def render_memory_competencies_tab():
     # Action buttons
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
-        if st.button("🚀 Run Memory Evaluation", type="primary"):
+        if st.button("🚀 Run Memory Evaluation", type="primary", key="run_memory_eval"):
             run_memory_evaluation()
     with col2:
         has_memory_results = st.session_state.get("memory_evaluation_results") is not None
-        if st.button("🗑️ Clear Results", disabled=not has_memory_results):
+        if st.button("🗑️ Clear Results", disabled=not has_memory_results, key="clear_memory_results"):
             st.session_state.memory_evaluation_results = None
             st.rerun()
 
@@ -1646,12 +1646,13 @@ def render_memory_results(results: dict):
     st.caption("🟢 Green = meets target | 🟡 Amber = below target | 🔷 Diamond = research target")
 
     # Export option
-    if st.button("📥 Export Report"):
+    if st.button("📥 Export Report", key="export_memory_report"):
         report = format_competency_report(competency_scores, overall_metrics)
         st.download_button(
             label="Download Markdown Report",
             data=report,
             file_name=f"memory_competency_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+            key="download_memory_report",
             mime="text/markdown"
         )
 

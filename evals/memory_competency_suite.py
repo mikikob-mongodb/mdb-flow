@@ -642,6 +642,9 @@ COMPETENCY_TARGETS = {
     Competency.CR_MH: {"accuracy": 0.30, "baseline": 0.07},  # Multi-hop conflict (HARD!)
 }
 
+# Alias for compatibility
+MEMORY_COMPETENCY_TESTS = MEMORY_COMPETENCY_SUITE
+
 if __name__ == "__main__":
     print("Memory Competency Test Suite")
     print("=" * 60)
