@@ -1,448 +1,614 @@
-"""Agent Memory Manager for Flow Companion.
+"""
+Memory Manager for Flow Companion
 
-Manages three types of memory:
-- Short-term: Session context, working memory (TTL: 2 hours)
-- Long-term: Episodic memory, learned facts (persistent)
-- Shared: Agent-to-agent handoffs (TTL: 5 minutes)
+Future-ready architecture supporting:
+- Multiple agent LLMs (Coordinator, Retrieval, Worklog)
+- MCP server integration (Tavily, MongoDB)
+- Agent-to-agent handoffs via shared memory
+- Cross-agent action attribution
+
+Memory Types:
+- Short-term: Session context, agent working memory, disambiguation (TTL: 2hr)
+- Long-term: Action history with embeddings (persistent)
+- Shared: Agent handoffs with chain tracking (TTL: 5min)
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List, Any, Callable
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo.collection import Collection
 from bson import ObjectId
-import time
+import uuid
 
 
 class MemoryManager:
-    """
-    Manages agent memory across three types:
-    - Short-term: Session context, working memory (TTL: 2 hours)
-    - Long-term: Episodic memory, learned facts (persistent)
-    - Shared: Agent-to-agent handoffs (TTL: 5 minutes)
-    """
-
-    def __init__(self, db, embedding_fn=None):
-        """Initialize memory manager.
+    def __init__(self, db, embedding_fn: Callable = None):
+        """
+        Initialize memory manager.
 
         Args:
             db: MongoDB database instance
-            embedding_fn: Optional embedding function (Voyage AI)
+            embedding_fn: Function to generate embeddings (optional)
         """
         self.db = db
-        self.short_term = db.short_term_memory
-        self.long_term = db.long_term_memory
-        self.shared = db.shared_memory
-        self.embed = embedding_fn  # Voyage embedding function
+        self.embed = embedding_fn
+        self._setup_collections()
 
-        # Timing tracking for debug panel
-        self.last_read_ms = 0
-        self.last_write_ms = 0
+    def _setup_collections(self):
+        """Create collections and indexes."""
 
-    # ==================== SHORT-TERM MEMORY ====================
+        # ═══════════════════════════════════════════════════════════════
+        # SHORT-TERM MEMORY (TTL: 2 hours)
+        # ═══════════════════════════════════════════════════════════════
+        self.short_term = self.db.short_term_memory
 
-    def write_short_term(
-        self,
-        session_id: str,
-        agent: str,
-        content: Dict[str, Any],
-        ttl_hours: int = 2
-    ) -> ObjectId:
-        """Write to short-term memory (session context).
+        # Indexes
+        self.short_term.create_index("expires_at", expireAfterSeconds=0)
+        self.short_term.create_index([("session_id", ASCENDING), ("memory_type", ASCENDING)])
+        self.short_term.create_index([("session_id", ASCENDING), ("agent_id", ASCENDING)])
 
-        Args:
-            session_id: Session identifier
-            agent: Agent name (e.g., "coordinator", "worklog", "retrieval")
-            content: Memory content dict
-            ttl_hours: Time-to-live in hours (default: 2)
+        # ═══════════════════════════════════════════════════════════════
+        # LONG-TERM MEMORY (persistent)
+        # ═══════════════════════════════════════════════════════════════
+        self.long_term = self.db.long_term_memory
 
-        Returns:
-            Inserted document ID
-        """
-        start = time.time()
+        # Indexes
+        self.long_term.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
+        self.long_term.create_index([("user_id", ASCENDING), ("action_type", ASCENDING)])
+        self.long_term.create_index([("user_id", ASCENDING), ("source_agent", ASCENDING)])
+        self.long_term.create_index([("user_id", ASCENDING), ("entity.project_name", ASCENDING)])
 
-        doc = {
+        # ═══════════════════════════════════════════════════════════════
+        # SHARED MEMORY (TTL: 5 minutes)
+        # ═══════════════════════════════════════════════════════════════
+        self.shared = self.db.shared_memory
+
+        # Indexes
+        self.shared.create_index("expires_at", expireAfterSeconds=0)
+        self.shared.create_index("handoff_id", unique=True)
+        self.shared.create_index([
+            ("session_id", ASCENDING),
+            ("target_agent", ASCENDING),
+            ("status", ASCENDING)
+        ])
+        self.shared.create_index("chain_id")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SHORT-TERM: SESSION CONTEXT
+    # ═══════════════════════════════════════════════════════════════════
+
+    def read_session_context(self, session_id: str) -> Optional[Dict]:
+        """Read session-level context."""
+        doc = self.short_term.find_one({
             "session_id": session_id,
-            "agent": agent,
-            "content": content,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(hours=ttl_hours)
-        }
+            "memory_type": "session_context"
+        })
+        return doc.get("context") if doc else None
 
-        result = self.short_term.insert_one(doc)
-        self.last_write_ms = (time.time() - start) * 1000
+    def update_session_context(self, session_id: str, updates: Dict,
+                               user_id: str = None) -> None:
+        """Merge updates into session context."""
+        now = datetime.utcnow()
+        expires = now + timedelta(hours=2)
 
-        return result.inserted_id
+        # Get existing context
+        existing = self.read_session_context(session_id) or {}
 
-    def read_short_term(
-        self,
-        session_id: str,
-        agent: Optional[str] = None
-    ) -> List[Dict]:
-        """Read short-term memory for a session.
+        # Deep merge
+        for key, value in updates.items():
+            if value is None:
+                existing.pop(key, None)
+            elif isinstance(value, dict) and isinstance(existing.get(key), dict):
+                existing[key].update(value)
+            else:
+                existing[key] = value
 
-        Args:
-            session_id: Session identifier
-            agent: Optional agent filter
-
-        Returns:
-            List of memory documents (most recent first)
-        """
-        start = time.time()
-
-        query = {"session_id": session_id}
-        if agent:
-            query["agent"] = agent
-
-        results = list(self.short_term.find(query).sort("created_at", -1))
-        self.last_read_ms = (time.time() - start) * 1000
-
-        return results
-
-    def update_short_term(
-        self,
-        session_id: str,
-        agent: str,
-        content: Dict[str, Any]
-    ) -> bool:
-        """Update or insert short-term memory (upsert).
-
-        Args:
-            session_id: Session identifier
-            agent: Agent name
-            content: Memory content dict
-
-        Returns:
-            True if updated/inserted
-        """
-        start = time.time()
-
-        result = self.short_term.update_one(
-            {"session_id": session_id, "agent": agent},
+        self.short_term.update_one(
+            {"session_id": session_id, "memory_type": "session_context"},
             {
                 "$set": {
-                    "content": content,
-                    "updated_at": datetime.utcnow(),
-                    "expires_at": datetime.utcnow() + timedelta(hours=2)
+                    "context": existing,
+                    "updated_at": now,
+                    "expires_at": expires
                 },
                 "$setOnInsert": {
-                    "created_at": datetime.utcnow()
+                    "created_at": now,
+                    "user_id": user_id,
+                    "agent_id": None
                 }
             },
             upsert=True
         )
 
-        self.last_write_ms = (time.time() - start) * 1000
-        return result.modified_count > 0 or result.upserted_id is not None
+    def clear_session_context(self, session_id: str) -> None:
+        """Clear session context."""
+        self.short_term.delete_one({
+            "session_id": session_id,
+            "memory_type": "session_context"
+        })
 
-    def get_session_context(self, session_id: str) -> Dict[str, Any]:
-        """Get aggregated context from short-term memory.
+    # ═══════════════════════════════════════════════════════════════════
+    # SHORT-TERM: AGENT WORKING MEMORY
+    # ═══════════════════════════════════════════════════════════════════
 
-        Extracts common context keys:
-        - current_project
-        - current_task
-        - last_action
-        - last_search_results
-        - conversation_goal
+    def read_agent_working(self, session_id: str, agent_id: str) -> Optional[Dict]:
+        """Read agent's working memory."""
+        doc = self.short_term.find_one({
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "memory_type": "agent_working"
+        })
+        return doc.get("working") if doc else None
 
-        Args:
-            session_id: Session identifier
+    def update_agent_working(self, session_id: str, agent_id: str,
+                            updates: Dict) -> None:
+        """Update agent's working memory."""
+        now = datetime.utcnow()
+        expires = now + timedelta(hours=2)
 
-        Returns:
-            Aggregated context dict
-        """
-        memories = self.read_short_term(session_id)
+        self.short_term.update_one(
+            {
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "memory_type": "agent_working"
+            },
+            {
+                "$set": {
+                    **{f"working.{k}": v for k, v in updates.items()},
+                    "updated_at": now,
+                    "expires_at": expires
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                    "memory_type": "agent_working"
+                }
+            },
+            upsert=True
+        )
 
-        context = {
-            "current_project": None,
-            "current_task": None,
-            "last_action": None,
-            "last_search_results": [],
-            "conversation_goal": None
-        }
+    def clear_agent_working(self, session_id: str, agent_id: str) -> None:
+        """Clear agent's working memory."""
+        self.short_term.delete_one({
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "memory_type": "agent_working"
+        })
 
-        for mem in memories:
-            content = mem.get("content", {})
-            for key in context:
-                if content.get(key):
-                    context[key] = content[key]
+    # ═══════════════════════════════════════════════════════════════════
+    # SHORT-TERM: DISAMBIGUATION
+    # ═══════════════════════════════════════════════════════════════════
 
-        return context
+    def store_disambiguation(self, session_id: str, query: str,
+                            results: List[Dict], source_agent: str) -> None:
+        """Store search results for disambiguation."""
+        now = datetime.utcnow()
+        expires = now + timedelta(hours=2)
 
-    # ==================== LONG-TERM MEMORY ====================
+        # Add index to each result
+        indexed_results = [
+            {"index": i, **r} for i, r in enumerate(results[:5])
+        ]
 
-    def write_long_term(
-        self,
-        user_id: str,
-        memory_type: str,  # "action", "fact", "preference"
-        content: Dict[str, Any],
-        tags: List[str] = None
-    ) -> ObjectId:
-        """Write to long-term memory (persistent).
+        self.short_term.update_one(
+            {"session_id": session_id, "memory_type": "disambiguation"},
+            {
+                "$set": {
+                    "disambiguation": {
+                        "query": query,
+                        "results": indexed_results,
+                        "awaiting_selection": True,
+                        "source_agent": source_agent,
+                        "created_at": now
+                    },
+                    "updated_at": now,
+                    "expires_at": expires
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                    "agent_id": None
+                }
+            },
+            upsert=True
+        )
 
-        Args:
-            user_id: User identifier
-            memory_type: Type ("action", "fact", "preference")
-            content: Memory content dict
-            tags: Optional tags for categorization
+    def resolve_disambiguation(self, session_id: str, index: int) -> Optional[Dict]:
+        """Resolve disambiguation by index."""
+        doc = self.short_term.find_one({
+            "session_id": session_id,
+            "memory_type": "disambiguation"
+        })
 
-        Returns:
-            Inserted document ID
-        """
-        start = time.time()
+        if not doc:
+            return None
 
-        # Generate embedding for semantic retrieval
-        text_for_embedding = self._content_to_text(content)
-        embedding = self.embed(text_for_embedding) if self.embed else None
+        results = doc.get("disambiguation", {}).get("results", [])
+        if index < 0 or index >= len(results):
+            return None
+
+        selected = results[index]
+
+        # Mark as resolved
+        self.short_term.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {
+                "disambiguation.awaiting_selection": False,
+                "disambiguation.selected_index": index
+            }}
+        )
+
+        return selected
+
+    def get_pending_disambiguation(self, session_id: str) -> Optional[Dict]:
+        """Get pending disambiguation if any."""
+        doc = self.short_term.find_one({
+            "session_id": session_id,
+            "memory_type": "disambiguation",
+            "disambiguation.awaiting_selection": True
+        })
+        return doc.get("disambiguation") if doc else None
+
+    # ═══════════════════════════════════════════════════════════════════
+    # LONG-TERM: RECORDING ACTIONS
+    # ═══════════════════════════════════════════════════════════════════
+
+    def record_action(self, user_id: str, session_id: str, action_type: str,
+                      entity_type: str, entity: Dict, metadata: Dict = None,
+                      source_agent: str = "coordinator",
+                      triggered_by: str = "user",
+                      handoff_id: str = None,
+                      generate_embedding: bool = True) -> str:
+        """Record an action to long-term memory."""
+
+        # Build embedding text
+        embedding_text = self._build_embedding_text(
+            action_type, entity_type, entity, metadata
+        )
+
+        # Generate embedding if function provided
+        embedding = None
+        if generate_embedding and self.embed:
+            try:
+                embedding = self.embed(embedding_text)
+            except Exception as e:
+                print(f"Embedding generation failed: {e}")
 
         doc = {
             "user_id": user_id,
-            "type": memory_type,
-            "content": content,
-            "tags": tags or [],
+            "session_id": session_id,
+            "action_type": action_type,
+            "entity_type": entity_type,
+            "entity": entity,
+            "metadata": metadata or {},
+            "source_agent": source_agent,
+            "triggered_by": triggered_by,
+            "handoff_id": handoff_id,
             "embedding": embedding,
-            "created_at": datetime.utcnow(),
-            "last_accessed": datetime.utcnow(),
-            "access_count": 0,
-            "strength": 1.0  # For memory decay algorithms
+            "embedding_text": embedding_text,
+            "timestamp": datetime.utcnow(),
+            "created_at": datetime.utcnow()
         }
 
         result = self.long_term.insert_one(doc)
-        self.last_write_ms = (time.time() - start) * 1000
+        return str(result.inserted_id)
 
-        return result.inserted_id
+    def _build_embedding_text(self, action_type: str, entity_type: str,
+                              entity: Dict, metadata: Dict) -> str:
+        """Build text for embedding generation."""
+        parts = []
 
-    def read_long_term(
-        self,
-        user_id: str,
-        memory_type: Optional[str] = None,
-        limit: int = 10
-    ) -> List[Dict]:
-        """Read long-term memories by type.
-
-        Automatically updates access metadata (last_accessed, access_count).
-
-        Args:
-            user_id: User identifier
-            memory_type: Optional filter by type
-            limit: Maximum number of results
-
-        Returns:
-            List of memory documents (most recently accessed first)
-        """
-        start = time.time()
-
-        query = {"user_id": user_id}
-        if memory_type:
-            query["type"] = memory_type
-
-        results = list(
-            self.long_term.find(query)
-            .sort("last_accessed", -1)
-            .limit(limit)
-        )
-
-        # Update access metadata
-        ids = [r["_id"] for r in results]
-        if ids:
-            self.long_term.update_many(
-                {"_id": {"$in": ids}},
-                {
-                    "$set": {"last_accessed": datetime.utcnow()},
-                    "$inc": {"access_count": 1}
-                }
-            )
-
-        self.last_read_ms = (time.time() - start) * 1000
-        return results
-
-    def search_long_term(
-        self,
-        user_id: str,
-        query: str,
-        limit: int = 5
-    ) -> List[Dict]:
-        """Semantic search over long-term memories using vector embeddings.
-
-        Args:
-            user_id: User identifier
-            query: Search query text
-            limit: Maximum number of results
-
-        Returns:
-            List of memory documents with similarity scores
-        """
-        if not self.embed:
-            return []
-
-        start = time.time()
-        query_embedding = self.embed(query)
-
-        pipeline = [
-            {
-                "$vectorSearch": {
-                    "index": "memory_embeddings",
-                    "path": "embedding",
-                    "queryVector": query_embedding,
-                    "numCandidates": limit * 10,
-                    "limit": limit,
-                    "filter": {"user_id": user_id}
-                }
-            },
-            {
-                "$project": {
-                    "_id": 1,
-                    "type": 1,
-                    "content": 1,
-                    "created_at": 1,
-                    "score": {"$meta": "vectorSearchScore"}
-                }
-            }
-        ]
-
-        results = list(self.long_term.aggregate(pipeline))
-        self.last_read_ms = (time.time() - start) * 1000
-
-        return results
-
-    # ==================== SHARED MEMORY ====================
-
-    def write_shared(
-        self,
-        session_id: str,
-        from_agent: str,
-        to_agent: str,
-        content: Dict[str, Any],
-        ttl_minutes: int = 5
-    ) -> ObjectId:
-        """Write to shared memory for agent handoff.
-
-        Args:
-            session_id: Session identifier
-            from_agent: Source agent name
-            to_agent: Target agent name
-            content: Handoff content dict
-            ttl_minutes: Time-to-live in minutes (default: 5)
-
-        Returns:
-            Inserted document ID
-        """
-        start = time.time()
-
-        doc = {
-            "session_id": session_id,
-            "from_agent": from_agent,
-            "to_agent": to_agent,
-            "content": content,
-            "status": "pending",
-            "created_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(minutes=ttl_minutes)
+        action_verbs = {
+            "complete": "Completed",
+            "start": "Started",
+            "stop": "Stopped",
+            "create": "Created",
+            "update": "Updated",
+            "add_note": "Added note to",
+            "search": "Searched for",
+            "research": "Researched"
         }
 
-        result = self.shared.insert_one(doc)
-        self.last_write_ms = (time.time() - start) * 1000
+        verb = action_verbs.get(action_type, action_type.title())
 
-        return result.inserted_id
+        if entity_type == "task":
+            parts.append(f"{verb} task: {entity.get('task_title', 'unknown')}")
+            if entity.get("project_name"):
+                parts.append(f"in project {entity['project_name']}")
+        elif entity_type == "project":
+            parts.append(f"{verb} project: {entity.get('project_name', 'unknown')}")
+        elif entity_type in ["search", "research"]:
+            query = (metadata or {}).get("query") or entity.get("query", "unknown")
+            parts.append(f"{'Researched' if entity_type == 'research' else 'Searched for'}: {query}")
 
-    def read_shared(
-        self,
-        session_id: str,
-        to_agent: str,
-        consume: bool = True
-    ) -> Optional[Dict]:
-        """Read shared memory addressed to an agent.
+        if metadata and metadata.get("completion_note"):
+            parts.append(f"Note: {metadata['completion_note'][:100]}")
 
-        Uses atomic find_one_and_update to prevent race conditions.
+        return " ".join(parts)
 
-        Args:
-            session_id: Session identifier
-            to_agent: Target agent name
-            consume: Whether to mark as consumed (default: True)
+    # ═══════════════════════════════════════════════════════════════════
+    # LONG-TERM: QUERYING HISTORY
+    # ═══════════════════════════════════════════════════════════════════
 
-        Returns:
-            Handoff document or None
-        """
-        start = time.time()
+    def get_action_history(self, user_id: str, time_range: str = None,
+                          action_type: str = None, entity_type: str = None,
+                          source_agent: str = None, project_name: str = None,
+                          limit: int = 20) -> List[Dict]:
+        """Query action history with filters."""
+
+        query = {"user_id": user_id}
+
+        # Time range filter
+        if time_range and time_range != "all":
+            now = datetime.utcnow()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            time_filters = {
+                "today": {"$gte": today_start},
+                "yesterday": {
+                    "$gte": today_start - timedelta(days=1),
+                    "$lt": today_start
+                },
+                "this_week": {
+                    "$gte": (now - timedelta(days=now.weekday())).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                },
+                "last_week": {
+                    "$gte": (now - timedelta(days=now.weekday() + 7)).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ),
+                    "$lt": (now - timedelta(days=now.weekday())).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                },
+                "this_month": {
+                    "$gte": now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                }
+            }
+
+            if time_range in time_filters:
+                query["timestamp"] = time_filters[time_range]
+
+        # Other filters
+        if action_type and action_type != "all":
+            query["action_type"] = action_type
+
+        if entity_type:
+            query["entity_type"] = entity_type
+
+        if source_agent and source_agent != "all":
+            query["source_agent"] = source_agent
+
+        if project_name:
+            query["entity.project_name"] = project_name
+
+        # Execute query
+        cursor = self.long_term.find(query).sort("timestamp", DESCENDING).limit(limit)
+
+        results = []
+        for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            results.append(doc)
+
+        return results
+
+    def get_activity_summary(self, user_id: str,
+                            time_range: str = "this_week") -> Dict:
+        """Generate activity summary."""
+
+        actions = self.get_action_history(user_id, time_range=time_range, limit=100)
+
+        if not actions:
+            return {
+                "total": 0,
+                "time_range": time_range,
+                "by_type": {},
+                "by_project": {},
+                "by_agent": {},
+                "timeline": []
+            }
+
+        summary = {
+            "total": len(actions),
+            "time_range": time_range,
+            "by_type": {},
+            "by_project": {},
+            "by_agent": {},
+            "timeline": []
+        }
+
+        for action in actions:
+            # By type
+            t = action["action_type"]
+            summary["by_type"][t] = summary["by_type"].get(t, 0) + 1
+
+            # By project
+            project = action.get("entity", {}).get("project_name", "Unknown")
+            if project not in summary["by_project"]:
+                summary["by_project"][project] = {"total": 0, "by_type": {}}
+            summary["by_project"][project]["total"] += 1
+            summary["by_project"][project]["by_type"][t] = \
+                summary["by_project"][project]["by_type"].get(t, 0) + 1
+
+            # By agent
+            agent = action.get("source_agent", "unknown")
+            summary["by_agent"][agent] = summary["by_agent"].get(agent, 0) + 1
+
+        # Timeline (most recent first)
+        for action in actions[:10]:
+            summary["timeline"].append({
+                "action": action["action_type"],
+                "entity": action.get("entity", {}).get("task_title") or
+                         action.get("entity", {}).get("project_name"),
+                "project": action.get("entity", {}).get("project_name"),
+                "timestamp": action["timestamp"].isoformat() if action.get("timestamp") else None,
+                "agent": action.get("source_agent")
+            })
+
+        return summary
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SHARED: WRITING HANDOFFS
+    # ═══════════════════════════════════════════════════════════════════
+
+    def write_handoff(self, session_id: str, user_id: str,
+                      source_agent: str, target_agent: str,
+                      handoff_type: str, payload: Dict,
+                      chain_id: str = None, parent_handoff_id: str = None,
+                      priority: str = "normal") -> str:
+        """Write a handoff for another agent."""
+
+        handoff_id = str(uuid.uuid4())
+        chain_id = chain_id or str(uuid.uuid4())
+        now = datetime.utcnow()
+
+        # Calculate sequence in chain
+        sequence = 1
+        if parent_handoff_id:
+            parent = self.shared.find_one({"handoff_id": parent_handoff_id})
+            if parent:
+                sequence = parent.get("sequence", 0) + 1
+
+        doc = {
+            "handoff_id": handoff_id,
+            "session_id": session_id,
+            "user_id": user_id,
+            "source_agent": source_agent,
+            "target_agent": target_agent,
+            "handoff_type": handoff_type,
+            "payload": payload,
+            "status": "pending",
+            "priority": priority,
+            "error": None,
+            "chain_id": chain_id,
+            "parent_handoff_id": parent_handoff_id,
+            "sequence": sequence,
+            "created_at": now,
+            "consumed_at": None,
+            "expires_at": now + timedelta(minutes=5)
+        }
+
+        self.shared.insert_one(doc)
+        return handoff_id
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SHARED: READING HANDOFFS
+    # ═══════════════════════════════════════════════════════════════════
+
+    def read_handoff(self, session_id: str, target_agent: str,
+                     handoff_type: str = None, consume: bool = True) -> Optional[Dict]:
+        """Read a handoff (optionally consuming it)."""
 
         query = {
             "session_id": session_id,
-            "to_agent": to_agent,
+            "target_agent": target_agent,
             "status": "pending"
         }
 
+        if handoff_type:
+            query["handoff_type"] = handoff_type
+
+        sort = [("priority", DESCENDING), ("created_at", ASCENDING)]
+
         if consume:
-            # Atomically read and mark as consumed
-            result = self.shared.find_one_and_update(
+            doc = self.shared.find_one_and_update(
                 query,
-                {"$set": {"status": "consumed", "consumed_at": datetime.utcnow()}},
-                sort=[("created_at", -1)]
+                {"$set": {
+                    "status": "consumed",
+                    "consumed_at": datetime.utcnow()
+                }},
+                sort=sort
             )
         else:
-            result = self.shared.find_one(query, sort=[("created_at", -1)])
+            doc = self.shared.find_one(query, sort=sort)
 
-        self.last_read_ms = (time.time() - start) * 1000
-        return result
+        return doc
 
-    # ==================== HELPERS ====================
+    def read_all_pending(self, session_id: str, target_agent: str) -> List[Dict]:
+        """Read all pending handoffs for an agent (without consuming)."""
 
-    def _content_to_text(self, content: Dict) -> str:
-        """Convert content dict to text for embedding.
+        cursor = self.shared.find({
+            "session_id": session_id,
+            "target_agent": target_agent,
+            "status": "pending"
+        }).sort([("priority", DESCENDING), ("created_at", ASCENDING)])
 
-        Args:
-            content: Content dictionary
+        return list(cursor)
 
-        Returns:
-            Text representation for embedding
-        """
-        parts = []
-        for key, value in content.items():
-            if isinstance(value, str):
-                parts.append(f"{key}: {value}")
-            elif isinstance(value, dict):
-                parts.append(f"{key}: {value.get('title', value.get('name', str(value)))}")
-        return " | ".join(parts)
+    def check_pending(self, session_id: str, target_agent: str) -> bool:
+        """Check if there are pending handoffs."""
+        return self.shared.count_documents({
+            "session_id": session_id,
+            "target_agent": target_agent,
+            "status": "pending"
+        }) > 0
 
-    def get_timing(self) -> Dict[str, float]:
-        """Get last operation timings for debug panel.
+    # ═══════════════════════════════════════════════════════════════════
+    # SHARED: CHAIN OPERATIONS
+    # ═══════════════════════════════════════════════════════════════════
 
-        Returns:
-            Dict with read_ms and write_ms
-        """
+    def get_chain(self, chain_id: str) -> List[Dict]:
+        """Get all handoffs in a chain."""
+        cursor = self.shared.find({"chain_id": chain_id}).sort("sequence", ASCENDING)
+        return list(cursor)
+
+    def get_chain_status(self, chain_id: str) -> Dict:
+        """Get status summary for a chain."""
+        handoffs = self.get_chain(chain_id)
+
         return {
-            "read_ms": self.last_read_ms,
-            "write_ms": self.last_write_ms
+            "chain_id": chain_id,
+            "total": len(handoffs),
+            "pending": sum(1 for h in handoffs if h["status"] == "pending"),
+            "consumed": sum(1 for h in handoffs if h["status"] == "consumed"),
+            "error": sum(1 for h in handoffs if h["status"] == "error"),
+            "agents_involved": list(set(
+                [h["source_agent"] for h in handoffs] +
+                [h["target_agent"] for h in handoffs]
+            )),
+            "latest": handoffs[-1] if handoffs else None
         }
 
-    def clear_session(self, session_id: str):
-        """Clear all memory for a session.
+    def mark_error(self, handoff_id: str, error: str) -> None:
+        """Mark a handoff as errored."""
+        self.shared.update_one(
+            {"handoff_id": handoff_id},
+            {"$set": {"status": "error", "error": error}}
+        )
 
-        Args:
-            session_id: Session identifier to clear
-        """
-        self.short_term.delete_many({"session_id": session_id})
-        self.shared.delete_many({"session_id": session_id})
+    # ═══════════════════════════════════════════════════════════════════
+    # UTILITIES
+    # ═══════════════════════════════════════════════════════════════════
 
-    def get_memory_stats(self) -> Dict[str, Any]:
-        """Get statistics about memory usage.
-
-        Returns:
-            Dictionary with memory statistics
-        """
+    def get_memory_stats(self, session_id: str, user_id: str) -> Dict:
+        """Get memory statistics."""
         return {
-            "short_term": {
-                "total": self.short_term.count_documents({}),
-                "by_session": {}  # Could be expanded
-            },
-            "long_term": {
-                "total": self.long_term.count_documents({}),
-                "by_type": {
-                    "action": self.long_term.count_documents({"type": "action"}),
-                    "fact": self.long_term.count_documents({"type": "fact"}),
-                    "preference": self.long_term.count_documents({"type": "preference"})
-                }
-            },
-            "shared": {
-                "total": self.shared.count_documents({}),
-                "pending": self.shared.count_documents({"status": "pending"}),
-                "consumed": self.shared.count_documents({"status": "consumed"})
-            }
+            "short_term_count": self.short_term.count_documents({
+                "session_id": session_id
+            }),
+            "long_term_count": self.long_term.count_documents({
+                "user_id": user_id
+            }),
+            "shared_pending": self.shared.count_documents({
+                "session_id": session_id,
+                "status": "pending"
+            }),
+            "action_counts": self._get_action_counts(user_id)
+        }
+
+    def _get_action_counts(self, user_id: str) -> Dict[str, int]:
+        """Get counts by action type."""
+        pipeline = [
+            {"$match": {"user_id": user_id}},
+            {"$group": {"_id": "$action_type", "count": {"$sum": 1}}}
+        ]
+        results = list(self.long_term.aggregate(pipeline))
+        return {r["_id"]: r["count"] for r in results}
+
+    def clear_session(self, session_id: str) -> Dict[str, int]:
+        """Clear all memory for a session (for testing/demo reset)."""
+        short = self.short_term.delete_many({"session_id": session_id})
+        shared = self.shared.delete_many({"session_id": session_id})
+        return {
+            "short_term_deleted": short.deleted_count,
+            "shared_deleted": shared.deleted_count
         }
