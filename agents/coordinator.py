@@ -638,7 +638,12 @@ Use this context to:
     def _extract_context_from_turn(self, user_message: str,
                                     tool_calls: list,
                                     tool_results: list) -> dict:
-        """Extract context updates from completed turn.
+        """
+        Extract context updates from completed turn.
+
+        Working Memory (short-term): current project/task/action
+        Semantic Memory (long-term): preferences
+        Procedural Memory (long-term): rules
 
         Args:
             user_message: User's message
@@ -646,11 +651,14 @@ Use this context to:
             tool_results: List of tool results
 
         Returns:
-            Dict of context updates to apply
+            Dict of context updates to apply (working memory only)
         """
-        updates = {}
+        updates = {}  # For short-term working memory only
 
-        # Extract from tool calls
+        # ═══════════════════════════════════════════════════════════════
+        # WORKING MEMORY: Extract from tool calls (short-term)
+        # ═══════════════════════════════════════════════════════════════
+
         for i, call in enumerate(tool_calls or []):
             tool_name = call.get("name", "")
             tool_input = call.get("input", {})
@@ -660,16 +668,17 @@ Use this context to:
             if tool_name in ["get_tasks", "get_project", "search_tasks", "search_projects"]:
                 if tool_input.get("project_name"):
                     updates["current_project"] = tool_input["project_name"]
-                elif result.get("project_name"):
+                elif isinstance(result, dict) and result.get("project_name"):
                     updates["current_project"] = result["project_name"]
 
             # Task context from operations
             if tool_name in ["start_task", "complete_task", "stop_task", "get_task"]:
-                if result.get("task_title"):
-                    updates["current_task"] = result["task_title"]
-                    updates["current_task_id"] = result.get("task_id")
-                if result.get("project_name"):
-                    updates["current_project"] = result["project_name"]
+                if isinstance(result, dict):
+                    if result.get("task_title"):
+                        updates["current_task"] = result["task_title"]
+                        updates["current_task_id"] = result.get("task_id")
+                    if result.get("project_name"):
+                        updates["current_project"] = result["project_name"]
 
                 # Track action
                 action_map = {
@@ -682,59 +691,88 @@ Use this context to:
 
             # Store search results for disambiguation (CR-MH)
             if tool_name in ["search_tasks", "search_projects"]:
-                results_list = result.get("results", [])
-                if len(results_list) > 1:
-                    # Store for "the first one" type references
-                    self.memory.store_disambiguation(
-                        session_id=self.session_id,
-                        query=tool_input.get("query", ""),
-                        results=[
-                            {
-                                "task_id": str(r.get("_id", r.get("task_id"))),
-                                "title": r.get("title"),
-                                "project": r.get("project_name")
-                            }
-                            for r in results_list[:5]
-                        ],
-                        source_agent="coordinator"
-                    )
+                if isinstance(result, dict):
+                    results_list = result.get("results", [])
+                    if len(results_list) > 1:
+                        # Store for "the first one" type references
+                        self.memory.store_disambiguation(
+                            session_id=self.session_id,
+                            query=tool_input.get("query", ""),
+                            results=[
+                                {
+                                    "task_id": str(r.get("_id", r.get("task_id", ""))),
+                                    "title": r.get("title", ""),
+                                    "project": r.get("project_name", "")
+                                }
+                                for r in results_list[:5]
+                            ],
+                            source_agent="coordinator"
+                        )
 
-        # Extract preferences from user message (TTL-C)
+        # ═══════════════════════════════════════════════════════════════
+        # SEMANTIC MEMORY: Extract preferences (long-term)
+        # ═══════════════════════════════════════════════════════════════
+
         msg_lower = user_message.lower()
 
-        # Focus project
-        focus_patterns = ["focusing on", "focus on", "working on", "let's work on"]
-        for pattern in focus_patterns:
+        # Focus project preference
+        focus_patterns = [
+            ("focusing on", "explicit"),
+            ("focus on", "explicit"),
+            ("working on", "inferred"),
+            ("let's work on", "explicit"),
+            ("i want to work on", "explicit"),
+            ("switch to", "explicit")
+        ]
+
+        for pattern, source in focus_patterns:
             if pattern in msg_lower:
-                # Extract project name
+                # Extract project name (simple extraction)
                 words_after = msg_lower.split(pattern)[1].strip().split()[:3]
-                phrase = " ".join(words_after)
+                project_name = " ".join(words_after).strip(".,!?")
 
-                # Match against actual projects in database
-                from shared.db import get_collection, PROJECTS_COLLECTION
-                projects_collection = get_collection(PROJECTS_COLLECTION)
-                active_projects = projects_collection.find(
-                    {"status": "active"},
-                    {"name": 1}
-                )
-
-                for project_doc in active_projects:
-                    project_name = project_doc["name"]
-                    # Fuzzy match: check if project name appears in phrase
-                    if project_name.lower().replace(" ", "") in phrase.replace(" ", ""):
-                        updates.setdefault("preferences", {})["focus_project"] = project_name
-                        break
+                # Save to long-term semantic memory
+                if self.memory and self.user_id and project_name:
+                    self.memory.record_preference(
+                        user_id=self.user_id,
+                        key="focus_project",
+                        value=project_name,
+                        source=source,
+                        confidence=0.9 if source == "explicit" else 0.7
+                    )
+                    self.memory_ops["preference_recorded"] = True
+                break
 
         # Priority preference
-        if "high priority" in msg_lower or "important" in msg_lower:
-            updates.setdefault("preferences", {})["priority_filter"] = "high"
+        if "high priority" in msg_lower or "only important" in msg_lower:
+            if self.memory and self.user_id:
+                self.memory.record_preference(
+                    user_id=self.user_id,
+                    key="priority_filter",
+                    value="high",
+                    source="explicit",
+                    confidence=0.85
+                )
+                self.memory_ops["preference_recorded"] = True
+        elif "all priorities" in msg_lower or "any priority" in msg_lower:
+            if self.memory and self.user_id:
+                self.memory.record_preference(
+                    user_id=self.user_id,
+                    key="priority_filter",
+                    value="all",
+                    source="explicit",
+                    confidence=0.85
+                )
+                self.memory_ops["preference_recorded"] = True
 
-        # Rule extraction (TTL-R)
-        # Pattern: "when I say X, do Y" or "whenever X, Y"
+        # ═══════════════════════════════════════════════════════════════
+        # PROCEDURAL MEMORY: Extract rules (long-term)
+        # ═══════════════════════════════════════════════════════════════
+
         rule_patterns = [
-            (r"when (?:i say |i type |i write )?['\"]?([^'\"]+)['\"]?,?\s+(?:do |then )?(.+)", "when"),
-            (r"whenever (?:i say |i type )?['\"]?([^'\"]+)['\"]?,?\s+(?:do |then )?(.+)", "whenever"),
-            (r"if i say ['\"]?([^'\"]+)['\"]?,?\s+(?:do |then )?(.+)", "if"),
+            (r"when (?:i say |i type |i write )?['\"]?([^'\",]+)['\"]?,?\s+(?:do |then )?(.+)", "when"),
+            (r"whenever (?:i say |i type )?['\"]?([^'\",]+)['\"]?,?\s+(?:do |then )?(.+)", "whenever"),
+            (r"if i say ['\"]?([^'\",]+)['\"]?,?\s+(?:do |then )?(.+)", "if"),
             (r"always (.+) when (.+)", "always")
         ]
 
@@ -744,26 +782,51 @@ Use this context to:
             if match:
                 if pattern_type == "always":
                     # Reversed order: "always ACTION when TRIGGER"
-                    action = match.group(1).strip()
+                    action_text = match.group(1).strip()
                     trigger = match.group(2).strip()
                 else:
                     # Normal order: "when TRIGGER, do ACTION"
                     trigger = match.group(1).strip()
-                    action = match.group(2).strip()
+                    action_text = match.group(2).strip()
 
                 # Clean up action text (remove trailing punctuation)
-                action = action.rstrip(".,;")
+                action_text = action_text.rstrip(".,;")
                 trigger = trigger.rstrip(".,;")
 
-                # Add rule to updates
-                updates.setdefault("rules", [])
-                updates["rules"].append({
-                    "trigger": trigger,
-                    "action": action
-                })
+                # Map action text to action type
+                action_map = {
+                    "complete": "complete_current_task",
+                    "finish": "complete_current_task",
+                    "done": "complete_current_task",
+                    "start": "start_next_task",
+                    "next": "start_next_task",
+                    "skip": "skip_current_task",
+                    "stop": "stop_current_task",
+                    "pause": "stop_current_task"
+                }
+
+                action_type = action_text  # Default to full text
+                for key, mapped_action in action_map.items():
+                    if key in action_text:
+                        action_type = mapped_action
+                        break
+
+                # Save to long-term procedural memory
+                if self.memory and self.user_id:
+                    self.memory.record_rule(
+                        user_id=self.user_id,
+                        trigger=trigger,
+                        action=action_type,
+                        source="explicit",
+                        confidence=0.85
+                    )
+                    self.memory_ops["rule_recorded"] = True
                 break  # Only extract first rule per message
 
-        # Context switch detection (CR-SH)
+        # ═══════════════════════════════════════════════════════════════
+        # CONTEXT SWITCH DETECTION (clears working memory)
+        # ═══════════════════════════════════════════════════════════════
+
         switch_patterns = ["switch to", "actually,", "no wait", "change to", "never mind"]
         for pattern in switch_patterns:
             if pattern in msg_lower:
@@ -1506,6 +1569,8 @@ Use this context to:
             "context_injected": False,
             "context_updated": False,
             "action_recorded": False,
+            "preference_recorded": False,
+            "rule_recorded": False,
             "handoffs_created": 0,
             "handoffs_consumed": 0,
             "recorded_action_type": None,
