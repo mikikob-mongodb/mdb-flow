@@ -417,24 +417,36 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "get_action_history",
-        "description": "Get history of past actions from long-term memory. Use for questions like 'what did I do last week', 'what have I been working on', 'what tasks did I complete'. Only available when long-term memory is enabled.",
+        "description": """Get history of past actions from long-term memory. Use for questions like:
+- "What did I do today/yesterday/this week?"
+- "What have I completed?"
+- "What tasks did I start?"
+- "Summarize my activity"
+- "What have I been working on?"
+- "Show me my history"
+Only available when long-term memory is enabled.""",
         "input_schema": {
             "type": "object",
             "properties": {
                 "time_range": {
                     "type": "string",
                     "description": "Time range to query",
-                    "enum": ["today", "yesterday", "this_week", "last_week", "this_month"]
+                    "enum": ["today", "yesterday", "this_week", "last_week", "this_month", "all"]
                 },
                 "action_type": {
                     "type": "string",
                     "description": "Filter by action type",
-                    "enum": ["completed", "started", "created", "noted", "all"]
+                    "enum": ["complete", "start", "stop", "create", "update", "add_note", "search", "all"]
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum results to return",
+                    "description": "Maximum results to return (for history mode)",
                     "default": 10
+                },
+                "summarize": {
+                    "type": "boolean",
+                    "description": "Return activity summary instead of detailed list. Use for 'summarize my activity' type queries.",
+                    "default": False
                 }
             },
             "required": ["time_range"]
@@ -673,32 +685,48 @@ Use this context to:
         else:
             return str(result)[:200]
 
-    def _record_to_long_term(
+    def _record_action(
         self,
-        action: str,
-        content: dict,
-        user_id: str = "default"
+        action_type: str,
+        entity_type: str,
+        entity: dict,
+        metadata: dict = None,
+        handoff_id: str = None
     ):
-        """Record significant actions to long-term memory.
+        """Record action to long-term memory using new API.
 
         Args:
-            action: Action type (e.g., "completed", "started", "created", "noted")
-            content: Action content dict
-            user_id: User identifier
+            action_type: Action type (e.g., "complete", "start", "create", "add_note")
+            entity_type: Entity type ("task", "project", "search")
+            entity: Entity data dict
+            metadata: Additional metadata
+            handoff_id: Optional handoff ID for agent chains
         """
-        if not self.memory:
+        if not self.memory or not self.memory_config.get("long_term"):
             return
 
-        self.memory.write_long_term(
-            user_id=user_id,
-            memory_type="action",
-            content={
-                "action": action,
-                **content,
-                "timestamp": datetime.utcnow().isoformat()
-            },
-            tags=[f"action:{action}"]
+        if not self.session_id:
+            return
+
+        # Record using new Memory Manager API
+        action_id = self.memory.record_action(
+            user_id=self.user_id,
+            session_id=self.session_id,
+            action_type=action_type,
+            entity_type=entity_type,
+            entity=entity,
+            metadata=metadata or {},
+            source_agent="coordinator",  # Future: will vary by agent
+            triggered_by="agent_handoff" if handoff_id else "user",
+            handoff_id=handoff_id,
+            generate_embedding=True
         )
+
+        # Track for debug
+        self.memory_ops["action_recorded"] = True
+        self.memory_ops["recorded_action_type"] = action_type
+
+        logger.debug(f"Recorded action: {action_type} on {entity_type} (id={action_id})")
 
     def _get_available_tools(self) -> List[Dict]:
         """Get tools available based on current settings.
@@ -990,120 +1018,194 @@ Use this context to:
                 result = self.worklog_agent._get_project(project_id)
 
             elif tool_name == "get_action_history":
-                # Query long-term memory for action history
-                from datetime import timedelta
-
-                time_range = tool_input["time_range"]
-                action_type = tool_input.get("action_type", "all")
-                limit = tool_input.get("limit", 10)
-
-                # Calculate date range
-                now = datetime.utcnow()
-                date_ranges = {
-                    "today": now - timedelta(days=1),
-                    "yesterday": now - timedelta(days=2),
-                    "this_week": now - timedelta(days=7),
-                    "last_week": now - timedelta(days=14),
-                    "this_month": now - timedelta(days=30)
-                }
-
-                start_date = date_ranges.get(time_range, now - timedelta(days=7))
-
-                # Query long-term memory
+                # Query long-term memory for action history using new API
                 if not self.memory:
                     result = {
                         "success": False,
                         "error": "Long-term memory not enabled"
                     }
                 else:
-                    memories = self.memory.read_long_term(
-                        user_id="default",
-                        memory_type="action",
-                        limit=limit * 2  # Get more to filter
-                    )
+                    time_range = tool_input["time_range"]
+                    action_type = tool_input.get("action_type", "all")
+                    limit = tool_input.get("limit", 10)
+                    summarize = tool_input.get("summarize", False)
 
-                    # Filter by date and action type
-                    actions = []
-                    for mem in memories:
-                        created_at = mem.get("created_at")
-                        if created_at and created_at >= start_date:
-                            content = mem.get("content", {})
-                            action = content.get("action")
+                    if summarize:
+                        # Return activity summary
+                        summary = self.memory.get_activity_summary(
+                            user_id=self.user_id,
+                            time_range=time_range if time_range != "all" else "this_week"
+                        )
 
-                            # Filter by action type
-                            if action_type == "all" or action == action_type:
-                                actions.append({
-                                    "action": action,
-                                    "task": content.get("task", {}).get("title", "Unknown"),
-                                    "project": content.get("project"),
-                                    "timestamp": content.get("timestamp"),
-                                    "note": content.get("note", "")[:100] if content.get("note") else None
-                                })
+                        result = {
+                            "success": True,
+                            "type": "summary",
+                            "time_range": summary["time_range"],
+                            "total": summary["total"],
+                            "by_type": summary["by_type"],
+                            "by_project": summary["by_project"],
+                            "by_agent": summary["by_agent"],
+                            "timeline": summary["timeline"]
+                        }
+                    else:
+                        # Return detailed history
+                        history = self.memory.get_action_history(
+                            user_id=self.user_id,
+                            time_range=time_range if time_range != "all" else None,
+                            action_type=action_type if action_type != "all" else None,
+                            limit=limit
+                        )
 
-                            if len(actions) >= limit:
-                                break
+                        # Format for LLM
+                        formatted_actions = []
+                        for action in history:
+                            formatted_actions.append({
+                                "action": action["action_type"],
+                                "task": action.get("entity", {}).get("task_title"),
+                                "project": action.get("entity", {}).get("project_name"),
+                                "timestamp": action["timestamp"].strftime("%Y-%m-%d %H:%M") if action.get("timestamp") else None,
+                                "agent": action.get("source_agent", "coordinator"),
+                                "note": action.get("metadata", {}).get("note", "")[:100] if action.get("metadata", {}).get("note") else None
+                            })
 
-                    result = {
-                        "success": True,
-                        "time_range": time_range,
-                        "count": len(actions),
-                        "actions": actions
-                    }
+                        result = {
+                            "success": True,
+                            "type": "history",
+                            "time_range": time_range,
+                            "count": len(formatted_actions),
+                            "actions": formatted_actions
+                        }
 
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
                 error_msg = f"Unknown tool: {tool_name}"
 
-            # Record significant actions to long-term memory if enabled
-            if self.optimizations.get("long_term_memory") and result and result.get("success"):
+            # Record significant actions to long-term memory using new API
+            if self.memory_config.get("long_term") and result and result.get("success"):
                 # Record task completions
                 if tool_name == "complete_task" and result.get("task"):
-                    self._record_to_long_term(
-                        action="completed",
-                        content={
-                            "task": {
-                                "id": result["task"].get("_id"),
-                                "title": result["task"].get("title")
-                            },
-                            "project": result.get("project_name")
+                    self._record_action(
+                        action_type="complete",
+                        entity_type="task",
+                        entity={
+                            "task_id": str(result["task"].get("_id")),
+                            "task_title": result["task"].get("title"),
+                            "project_id": str(result.get("project_id")) if result.get("project_id") else None,
+                            "project_name": result.get("project_name")
+                        },
+                        metadata={
+                            "previous_status": result.get("previous_status", "in_progress"),
+                            "new_status": "done"
                         }
                     )
 
                 # Record task starts
                 elif tool_name == "start_task" and result.get("task"):
-                    self._record_to_long_term(
-                        action="started",
-                        content={
-                            "task": {
-                                "id": result["task"].get("_id"),
-                                "title": result["task"].get("title")
-                            },
-                            "project": result.get("project_name")
+                    self._record_action(
+                        action_type="start",
+                        entity_type="task",
+                        entity={
+                            "task_id": str(result["task"].get("_id")),
+                            "task_title": result["task"].get("title"),
+                            "project_id": str(result.get("project_id")) if result.get("project_id") else None,
+                            "project_name": result.get("project_name")
+                        },
+                        metadata={
+                            "previous_status": result.get("previous_status", "todo"),
+                            "new_status": "in_progress"
+                        }
+                    )
+
+                # Record task stops
+                elif tool_name == "stop_task" and result.get("task"):
+                    self._record_action(
+                        action_type="stop",
+                        entity_type="task",
+                        entity={
+                            "task_id": str(result["task"].get("_id")),
+                            "task_title": result["task"].get("title"),
+                            "project_id": str(result.get("project_id")) if result.get("project_id") else None,
+                            "project_name": result.get("project_name")
+                        },
+                        metadata={
+                            "previous_status": result.get("previous_status", "in_progress"),
+                            "new_status": "todo"
                         }
                     )
 
                 # Record task creations
                 elif tool_name == "create_task" and result.get("task"):
-                    self._record_to_long_term(
-                        action="created",
-                        content={
-                            "task": {
-                                "id": result["task"].get("_id"),
-                                "title": result["task"].get("title")
-                            },
-                            "project": result.get("project_name")
+                    self._record_action(
+                        action_type="create",
+                        entity_type="task",
+                        entity={
+                            "task_id": str(result["task"].get("_id")),
+                            "task_title": result["task"].get("title"),
+                            "project_id": str(result.get("project_id")) if result.get("project_id") else None,
+                            "project_name": result.get("project_name")
+                        },
+                        metadata={
+                            "priority": result["task"].get("priority"),
+                            "context": result["task"].get("context", "")[:200]
+                        }
+                    )
+
+                # Record task updates
+                elif tool_name == "update_task" and result.get("task"):
+                    self._record_action(
+                        action_type="update",
+                        entity_type="task",
+                        entity={
+                            "task_id": str(result["task"].get("_id")),
+                            "task_title": result["task"].get("title"),
+                            "project_id": str(result.get("project_id")) if result.get("project_id") else None,
+                            "project_name": result.get("project_name")
+                        },
+                        metadata={
+                            "updates": tool_input
                         }
                     )
 
                 # Record notes added
                 elif tool_name == "add_note_to_task":
-                    self._record_to_long_term(
-                        action="noted",
-                        content={
-                            "task": {
-                                "id": tool_input.get("task_id")
-                            },
-                            "note": tool_input.get("note", "")[:100]  # Truncate
+                    self._record_action(
+                        action_type="add_note",
+                        entity_type="task",
+                        entity={
+                            "task_id": tool_input.get("task_id"),
+                            "task_title": result.get("task_title"),
+                            "project_name": result.get("project_name")
+                        },
+                        metadata={
+                            "note": tool_input.get("note", "")[:200]
+                        }
+                    )
+
+                # Record project creations
+                elif tool_name == "create_project" and result.get("project"):
+                    self._record_action(
+                        action_type="create",
+                        entity_type="project",
+                        entity={
+                            "project_id": str(result["project"].get("_id")),
+                            "project_name": result["project"].get("name")
+                        },
+                        metadata={
+                            "description": result["project"].get("description", "")[:200]
+                        }
+                    )
+
+                # Record searches
+                elif tool_name in ["search_tasks", "search_projects"]:
+                    self._record_action(
+                        action_type="search",
+                        entity_type="search",
+                        entity={
+                            "query": tool_input.get("query")
+                        },
+                        metadata={
+                            "search_type": "tasks" if tool_name == "search_tasks" else "projects",
+                            "results_count": len(result.get("tasks", result.get("projects", [])))
                         }
                     )
 
