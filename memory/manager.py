@@ -391,6 +391,129 @@ class MemoryManager:
 
         return results
 
+    def search_history(self, user_id: str, semantic_query: str,
+                      time_range: str = None, action_type: str = None,
+                      limit: int = 10) -> List[Dict]:
+        """Search action history using vector similarity.
+
+        Args:
+            user_id: User ID to filter by
+            semantic_query: Natural language query (e.g., "debugging tasks", "memory work")
+            time_range: Optional time range filter
+            action_type: Optional action type filter
+            limit: Maximum results to return
+
+        Returns:
+            List of actions sorted by similarity score
+        """
+        if not self.embed:
+            raise ValueError("Embedding function not provided to MemoryManager")
+
+        # Generate query embedding
+        try:
+            query_embedding = self.embed(semantic_query)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to generate query embedding: {str(e)}",
+                "results": []
+            }
+
+        # Build $vectorSearch pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "memory_embeddings",  # Atlas search index name
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": limit * 10,  # Scan more candidates for better results
+                    "limit": limit * 2,  # Get more before filtering
+                    "filter": {"user_id": user_id}  # Filter by user
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "user_id": 1,
+                    "session_id": 1,
+                    "action_type": 1,
+                    "entity_type": 1,
+                    "entity": 1,
+                    "metadata": 1,
+                    "source_agent": 1,
+                    "timestamp": 1,
+                    "embedding_text": 1,
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        # Add additional filters if specified
+        match_filters = {}
+
+        if time_range and time_range != "all":
+            now = datetime.utcnow()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            time_filters = {
+                "today": {"$gte": today_start},
+                "yesterday": {
+                    "$gte": today_start - timedelta(days=1),
+                    "$lt": today_start
+                },
+                "this_week": {
+                    "$gte": (now - timedelta(days=now.weekday())).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                },
+                "last_week": {
+                    "$gte": (now - timedelta(days=now.weekday() + 7)).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ),
+                    "$lt": (now - timedelta(days=now.weekday())).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                },
+                "this_month": {
+                    "$gte": now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                }
+            }
+
+            if time_range in time_filters:
+                match_filters["timestamp"] = time_filters[time_range]
+
+        if action_type and action_type != "all":
+            match_filters["action_type"] = action_type
+
+        # Add $match stage if filters exist
+        if match_filters:
+            pipeline.append({"$match": match_filters})
+
+        # Limit final results
+        pipeline.append({"$limit": limit})
+
+        # Execute search
+        try:
+            results = list(self.long_term.aggregate(pipeline))
+
+            # Convert ObjectIds to strings
+            for doc in results:
+                doc["_id"] = str(doc["_id"])
+
+            return results
+
+        except Exception as e:
+            # Return error details
+            error_msg = str(e)
+            if "index" in error_msg.lower():
+                error_msg = f"Vector search index 'memory_embeddings' not found. Please create it in Atlas UI. Error: {error_msg}"
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "results": []
+            }
+
     def get_activity_summary(self, user_id: str,
                             time_range: str = "this_week") -> Dict:
         """Generate activity summary."""

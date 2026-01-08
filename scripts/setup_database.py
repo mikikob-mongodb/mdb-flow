@@ -259,9 +259,32 @@ def print_vector_index_instructions():
 """)
 
     print("-"*60)
+    print("🧠 LONG-TERM MEMORY VECTOR INDEX")
+    print("-"*60)
+    print("""
+{
+  "name": "memory_embeddings",
+  "type": "vectorSearch",
+  "definition": {
+    "fields": [
+      {
+        "path": "embedding",
+        "type": "vector",
+        "numDimensions": 1024,
+        "similarity": "cosine"
+      }
+    ]
+  }
+}
+""")
+
+    print("-"*60)
     print("\n📝 Notes:")
-    print("  - Index names MUST match exactly: 'task_embedding_index' and 'project_embedding_index'")
-    print("  - These names are used in the RetrievalAgent code")
+    print("  - Index names MUST match exactly:")
+    print("    * 'task_embedding_index' (tasks collection)")
+    print("    * 'project_embedding_index' (projects collection)")
+    print("    * 'memory_embeddings' (long_term_memory collection)")
+    print("  - These names are used in the RetrievalAgent and MemoryManager code")
     print("  - numDimensions: 1024 (for Voyage AI voyage-3 model)")
     print("  - similarity: cosine (recommended for text embeddings)")
     print("\n  - Index creation may take a few minutes")

@@ -422,30 +422,41 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "get_action_history",
-        "description": """Get history of past actions from long-term memory. Use for questions like:
+        "description": """Get history of past actions from long-term memory. Supports both filter-based and semantic search.
+
+FILTER MODE (when no semantic_query):
 - "What did I do today/yesterday/this week?"
 - "What have I completed?"
 - "What tasks did I start?"
 - "Summarize my activity"
-- "What have I been working on?"
-- "Show me my history"
+
+SEMANTIC MODE (when semantic_query provided):
+- "Find tasks related to debugging"
+- "Show me memory-related work"
+- "What have I done on voice agents?"
+- "Search for API integration tasks"
+
 Only available when long-term memory is enabled.""",
         "input_schema": {
             "type": "object",
             "properties": {
+                "semantic_query": {
+                    "type": "string",
+                    "description": "Natural language search query for semantic/vector search over action history. Use when user wants to find actions related to specific topics (e.g., 'debugging', 'memory', 'API'). Mutually exclusive with time_range filters - semantic mode takes precedence."
+                },
                 "time_range": {
                     "type": "string",
-                    "description": "Time range to query",
+                    "description": "Time range to query (filter mode only, ignored if semantic_query provided)",
                     "enum": ["today", "yesterday", "this_week", "last_week", "this_month", "all"]
                 },
                 "action_type": {
                     "type": "string",
-                    "description": "Filter by action type",
+                    "description": "Filter by action type (works in both modes)",
                     "enum": ["complete", "start", "stop", "create", "update", "add_note", "search", "all"]
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum results to return (for history mode)",
+                    "description": "Maximum results to return",
                     "default": 10
                 },
                 "summarize": {
@@ -454,7 +465,7 @@ Only available when long-term memory is enabled.""",
                     "default": False
                 }
             },
-            "required": ["time_range"]
+            "required": []
         }
     },
     {
@@ -1149,12 +1160,51 @@ Use this context to:
                         "error": "Long-term memory not enabled"
                     }
                 else:
-                    time_range = tool_input["time_range"]
+                    semantic_query = tool_input.get("semantic_query")
+                    time_range = tool_input.get("time_range", "all")
                     action_type = tool_input.get("action_type", "all")
                     limit = tool_input.get("limit", 10)
                     summarize = tool_input.get("summarize", False)
 
-                    if summarize:
+                    # SEMANTIC SEARCH MODE (when semantic_query provided)
+                    if semantic_query:
+                        # Use vector search
+                        search_results = self.memory.search_history(
+                            user_id=self.user_id,
+                            semantic_query=semantic_query,
+                            time_range=time_range if time_range != "all" else None,
+                            action_type=action_type if action_type != "all" else None,
+                            limit=limit
+                        )
+
+                        # Check if error returned (dict with "error" key)
+                        if isinstance(search_results, dict) and "error" in search_results:
+                            result = search_results
+                        else:
+                            # Format semantic search results
+                            formatted_actions = []
+                            for action in search_results:
+                                formatted_actions.append({
+                                    "action": action["action_type"],
+                                    "task": action.get("entity", {}).get("task_title"),
+                                    "project": action.get("entity", {}).get("project_name"),
+                                    "timestamp": action["timestamp"].strftime("%Y-%m-%d %H:%M") if action.get("timestamp") else None,
+                                    "agent": action.get("source_agent", "coordinator"),
+                                    "note": action.get("metadata", {}).get("note", "")[:100] if action.get("metadata", {}).get("note") else None,
+                                    "similarity_score": round(action.get("score", 0), 3),
+                                    "matched_text": action.get("embedding_text", "")[:200]
+                                })
+
+                            result = {
+                                "success": True,
+                                "type": "semantic_search",
+                                "query": semantic_query,
+                                "count": len(formatted_actions),
+                                "actions": formatted_actions
+                            }
+
+                    # FILTER MODE (traditional time-based filtering)
+                    elif summarize:
                         # Return activity summary
                         summary = self.memory.get_activity_summary(
                             user_id=self.user_id,
