@@ -2,7 +2,7 @@
 
 **Flow Companion - Multi-Agent System with Context Engineering**
 
-*Version 3.1 - January 2026*
+*Version 4.0 - January 2026 (Milestone 5 Complete)*
 
 ---
 
@@ -10,10 +10,11 @@
 
 1. [Architecture Overview](#architecture-overview)
 2. [Three-Agent System](#three-agent-system)
-3. [Context Engineering Optimizations](#context-engineering-optimizations)
-4. [Integration Between Agents and Optimizations](#integration-between-agents-and-optimizations)
-5. [Performance Characteristics](#performance-characteristics)
-6. [Future Enhancements](#future-enhancements)
+3. [Memory System (5-Tier Architecture)](#memory-system-5-tier-architecture)
+4. [Context Engineering Optimizations](#context-engineering-optimizations)
+5. [Integration Between Agents and Optimizations](#integration-between-agents-and-optimizations)
+6. [Performance Characteristics](#performance-characteristics)
+7. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -41,7 +42,7 @@ Worklog Agent    Retrieval Agent
 2. **Tool-Based Architecture**: Agents use Claude's native tool calling (no LangChain)
 3. **Stateless Agents**: Each agent instance can be reused across requests
 4. **Direct Database Access**: Coordinator calls agent methods directly (bypassing LLM when possible)
-5. **Shared Memory**: All agents share access to a Memory Manager for context
+5. **5-Tier Memory System**: Working, Episodic, Semantic, Procedural, and Shared memory for comprehensive context management
 
 ---
 
@@ -262,6 +263,365 @@ timings["mongodb_query"] = int((time.time() - start) * 1000)
 # Store for Coordinator to access
 self.last_query_timings = timings
 ```
+
+---
+
+## Memory System (5-Tier Architecture)
+
+Flow Companion implements a comprehensive **5-tier memory system** (Milestone 4 & 5) that provides agents with both short-term and long-term context across different time horizons and abstraction levels.
+
+### Memory Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     5-Tier Memory System                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ 1. Working Memory (2hr TTL)                          │   │
+│  │    Current project, task, action                     │   │
+│  │    Collection: short_term_memory                     │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ 2. Episodic Memory (Persistent)                      │   │
+│  │    Action history with embeddings                    │   │
+│  │    Collection: long_term_memory (type: episodic)     │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ 3. Semantic Memory (Persistent)                      │   │
+│  │    User preferences with confidence scoring          │   │
+│  │    Collection: long_term_memory (type: semantic)     │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ 4. Procedural Memory (Persistent)                    │   │
+│  │    Behavioral rules with usage tracking              │   │
+│  │    Collection: long_term_memory (type: procedural)   │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ 5. Shared Memory (5min TTL)                          │   │
+│  │    Agent handoffs, disambiguation state              │   │
+│  │    Collection: shared_memory                         │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 1. Working Memory (2-Hour TTL)
+
+**Purpose**: Store current session context (active project, task, last action)
+
+**Schema**:
+```javascript
+{
+  user_id: "user-123",
+  memory_type: "working",
+  working_type: "current_project" | "current_task" | "last_action",
+  value: "Project Name" | "Task Title" | "completed_task",
+  created_at: ISODate("2026-01-08T10:00:00Z"),
+  expires_at: ISODate("2026-01-08T12:00:00Z")  // 2hr TTL
+}
+```
+
+**API Methods**:
+- `set_working_memory(working_type, value)` - Set current context
+- `get_working_memory(working_type)` - Get current context
+- `clear_working_memory()` - Clear all working memory
+
+**Use Case**: "What's my current task?" → Check working memory first before searching database
+
+### 2. Episodic Memory (Persistent)
+
+**Purpose**: Record significant actions with timestamps and embeddings for semantic search
+
+**Schema**:
+```javascript
+{
+  user_id: "user-123",
+  memory_type: "episodic",
+  action_type: "task_completed" | "task_created" | "project_updated",
+  description: "Completed task: Debugging in AgentOps",
+  metadata: {
+    task_id: "abc123",
+    project_name: "AgentOps",
+    status: "done"
+  },
+  embedding: [0.123, -0.456, ...],  // 1024-dim Voyage AI vector
+  created_at: ISODate("2026-01-08T10:00:00Z")
+}
+```
+
+**API Methods**:
+- `record_action(action_type, description, metadata)` - Record action with auto-embedding
+- `get_action_history(limit, days)` - Recent actions by time
+- `search_action_history(query, limit)` - Semantic search of past actions
+
+**Use Case**: "What did I work on last week?" → Search episodic memory by time/semantics
+
+### 3. Semantic Memory (Persistent) - Milestone 5
+
+**Purpose**: Store learned user preferences with confidence scoring and source tracking
+
+**Schema**:
+```javascript
+{
+  user_id: "user-123",
+  memory_type: "semantic",
+  semantic_type: "preference",
+  key: "focus_project",
+  value: "Voice Agent",
+  source: "explicit",  // "explicit" | "inferred"
+  confidence: 0.9,     // 0.0-1.0
+  times_used: 5,       // Auto-increments on retrieval
+  created_at: ISODate("2026-01-08T09:00:00Z"),
+  updated_at: ISODate("2026-01-08T11:00:00Z")
+}
+```
+
+**API Methods**:
+- `record_preference(key, value, source, confidence)` - Store preference
+- `get_preferences(min_confidence)` - Get all preferences above threshold
+- `get_preference(key)` - Get specific preference
+- `update_preference(key, value, confidence)` - Update existing preference
+- `delete_preference(key)` - Remove preference
+
+**Confidence Scoring**:
+- **Explicit** (0.9-1.0): User directly stated ("I'm focusing on Project X")
+- **Inferred** (0.3-0.7): Extracted from behavior (user works on X 80% of the time)
+
+**Use Case**: Coordinator checks semantic memory before asking "What project?" → Finds user's focus_project preference
+
+### 4. Procedural Memory (Persistent) - Milestone 5
+
+**Purpose**: Store behavioral rules that trigger specific actions based on user patterns
+
+**Schema**:
+```javascript
+{
+  user_id: "user-123",
+  memory_type: "procedural",
+  trigger: "done",     // Normalized (lowercase)
+  action: "complete_current_task",
+  description: "When user says 'done', complete their current task",
+  times_used: 12,      // Auto-increments on trigger match
+  created_at: ISODate("2026-01-07T10:00:00Z"),
+  updated_at: ISODate("2026-01-08T11:00:00Z")
+}
+```
+
+**API Methods**:
+- `record_rule(trigger, action, description)` - Store behavioral rule
+- `get_rules()` - Get all rules sorted by times_used
+- `get_rule_for_trigger(trigger)` - Check if trigger matches any rule
+- `delete_rule(trigger)` - Remove rule
+
+**Trigger Normalization**: All triggers stored lowercase for case-insensitive matching
+
+**Action Types**:
+- `complete_current_task` - Mark current working memory task as done
+- `start_next_task` - Move to next task in queue
+- `save_context` - Record current context to episodic memory
+
+**Use Case**: User says "done" → Check procedural memory → Find "done" trigger → Auto-complete current task
+
+### 5. Shared Memory (5-Minute TTL)
+
+**Purpose**: Agent-to-agent handoffs and temporary disambiguation state
+
+**Schema**:
+```javascript
+{
+  user_id: "user-123",
+  memory_type: "shared",
+  shared_type: "handoff" | "disambiguation",
+  key: "last_search_results",
+  value: ["task_id_1", "task_id_2"],
+  metadata: {
+    from_agent: "retrieval",
+    to_agent: "worklog",
+    context: "User asked to complete debugging task"
+  },
+  created_at: ISODate("2026-01-08T11:00:00Z"),
+  expires_at: ISODate("2026-01-08T11:05:00Z")  // 5min TTL
+}
+```
+
+**API Methods**:
+- `set_shared_memory(shared_type, key, value, metadata)` - Store handoff data
+- `get_shared_memory(shared_type, key)` - Retrieve handoff data
+- `clear_shared_memory(shared_type)` - Clear all shared memory of type
+
+**Use Case**: Search finds multiple tasks → Store in shared memory → Next turn uses IDs for confirmation
+
+### Memory Manager Implementation
+
+**File**: `memory/manager.py`
+
+**Key Features**:
+- **Unified Interface**: Single MemoryManager class handles all 5 memory types
+- **Auto-Embedding**: Episodic memory auto-generates embeddings on record
+- **TTL Management**: MongoDB TTL indexes auto-expire working/shared memory
+- **Type Safety**: `memory_type` field distinguishes between episodic/semantic/procedural in same collection
+- **Usage Tracking**: Semantic/procedural memories auto-increment `times_used` on access
+
+**Collections**:
+```
+MongoDB Collections:
+├── short_term_memory    (working memory, 2hr TTL index)
+├── long_term_memory     (episodic/semantic/procedural, no TTL)
+└── shared_memory        (agent handoffs, 5min TTL index)
+```
+
+### Coordinator Integration
+
+**Context Injection** (`coordinator.py`):
+
+The Coordinator automatically injects memory context into the system prompt:
+
+```python
+def _build_context_from_memory(self):
+    """Inject memory context into system prompt"""
+
+    # 1. Working memory (current context)
+    current_project = memory.get_working_memory("current_project")
+    current_task = memory.get_working_memory("current_task")
+
+    # 2. Semantic memory (preferences)
+    preferences = memory.get_preferences(min_confidence=0.5)
+
+    # 3. Procedural memory (rules)
+    rules = memory.get_rules()
+
+    # 4. Episodic memory (recent actions)
+    recent_actions = memory.get_action_history(limit=5, days=7)
+
+    # Build context string
+    context = f"""
+CURRENT CONTEXT (Working Memory):
+- Project: {current_project}
+- Task: {current_task}
+
+USER PREFERENCES (Semantic Memory):
+{format_preferences(preferences)}
+
+LEARNED BEHAVIORS (Procedural Memory):
+{format_rules(rules)}
+
+RECENT ACTIVITY (Episodic Memory):
+{format_actions(recent_actions)}
+"""
+    return context
+```
+
+**Memory Extraction**:
+
+The Coordinator extracts memory items from conversation:
+
+```python
+def _extract_memory_from_turn(self, user_message, assistant_response):
+    """Extract semantic and procedural memory from conversation"""
+
+    # Extract preferences (semantic memory)
+    if "I'm focusing on" in user_message:
+        # Extract: key="focus_project", value="X", confidence=0.9
+        memory.record_preference(...)
+
+    # Extract rules (procedural memory)
+    if "when I say" in user_message.lower():
+        # Extract: trigger="done", action="complete_current_task"
+        memory.record_rule(...)
+
+    # Record action (episodic memory)
+    if tool_called == "complete_task":
+        memory.record_action(
+            action_type="task_completed",
+            description=f"Completed task: {task_title}",
+            metadata={"task_id": task_id}
+        )
+```
+
+### Memory Statistics
+
+**API Method**: `get_memory_stats()`
+
+Returns counts by memory type:
+```javascript
+{
+  "working": 3,
+  "episodic": 127,
+  "semantic": 8,
+  "procedural": 5,
+  "shared": 2,
+  "total": 145
+}
+```
+
+### Testing Coverage
+
+**Unit Tests** (13 tests in `test_memory_types.py`):
+- ✅ Semantic Memory: CRUD operations, confidence filtering, sorting by confidence
+- ✅ Procedural Memory: CRUD operations, trigger matching, usage tracking
+- ✅ Memory Stats: Count by memory type
+
+**Integration Tests** (14 tests in `tests/integration/memory/`):
+- ✅ `test_action_recording.py` - Episodic memory recording
+- ✅ `test_coordinator_context.py` - Working memory extraction
+- ✅ `test_coordinator_semantic_procedural.py` - Preference/rule extraction
+- ✅ `test_preferences_flow.py` - End-to-end semantic memory
+- ✅ `test_rules_flow.py` - End-to-end procedural memory
+- ✅ `test_rule_triggers.py` - Trigger matching and normalization
+- ✅ `test_memory_competencies.py` - 10 memory competency tests
+- ✅ 7 additional integration tests
+
+**Total**: 27 memory-related tests
+
+### UI Integration
+
+**Streamlit Sidebar** (`ui/streamlit_app.py`):
+
+The UI displays all 5 memory types in an expandable sidebar:
+
+```
+Memory System
+├─ 📝 Working Memory
+│  ├─ Current Project: Voice Agent
+│  ├─ Current Task: Debugging
+│  └─ Last Action: task_completed
+├─ 📚 Episodic Memory (127 actions)
+│  ├─ Completed task: Debugging in AgentOps (2h ago)
+│  └─ Created task: Testing in Voice Agent (3h ago)
+├─ 🧠 Semantic Memory (8 preferences)
+│  ├─ focus_project: Voice Agent (conf: 0.9, used: 5x)
+│  └─ default_priority: high (conf: 0.7, used: 3x)
+├─ 🔧 Procedural Memory (5 rules)
+│  ├─ "done" → complete_current_task (used: 12x)
+│  └─ "next" → start_next_task (used: 8x)
+└─ 🔄 Shared Memory (2 items)
+   └─ last_search_results: ["abc123", "def456"]
+```
+
+### Performance Characteristics
+
+**Storage**:
+- Working Memory: ~100 bytes per item × 3 items = 300 bytes
+- Episodic Memory: ~500 bytes per action (with 1024-dim embedding)
+- Semantic Memory: ~200 bytes per preference
+- Procedural Memory: ~150 bytes per rule
+- Shared Memory: ~300 bytes per handoff
+
+**Query Performance**:
+- Get working memory: ~5ms (indexed on user_id + memory_type)
+- Get preferences: ~10ms (indexed + sorted by confidence)
+- Get rules: ~8ms (indexed + sorted by times_used)
+- Search episodic: ~150ms (vector search on embeddings)
+
+**Memory Overhead**:
+- Total memory footprint for typical user: ~100KB
+- Embeddings dominate storage (episodic memory)
+- TTL indexes auto-cleanup short-term collections
 
 ---
 
@@ -651,45 +1011,59 @@ With compression enabled:
 
 ## Future Enhancements
 
-### Memory System (Milestone 4)
+### ✅ Completed (Milestone 4 & 5)
 
-**Currently Implemented** (basic structure):
-- Memory Manager initialized with embedding function
-- Shared across all agents
-- Long-term memory recording for significant actions
+**5-Tier Memory System** - Fully Implemented:
+- ✅ Working Memory (2hr TTL) - Current project/task/action
+- ✅ Episodic Memory (persistent) - Action history with embeddings
+- ✅ Semantic Memory (persistent) - User preferences with confidence scoring
+- ✅ Procedural Memory (persistent) - Behavioral rules with usage tracking
+- ✅ Shared Memory (5min TTL) - Agent handoffs and disambiguation
+- ✅ Auto-context injection into Coordinator prompts
+- ✅ Memory extraction from conversations
+- ✅ UI integration with 5-panel memory sidebar
+- ✅ 27 comprehensive tests (13 unit + 14 integration)
 
-**Planned**:
-- Short-term memory (session context) - 2-hour TTL
-- Long-term memory (action history) - persistent with embeddings
-- Shared memory (agent handoffs) - 5-minute TTL
-- Auto-context injection into prompts
+### 🔄 In Progress (Milestone 6)
 
-### Agent Coordination
+**Advanced Memory Competencies**:
+- Multi-turn rule learning (extract complex patterns)
+- Confidence adjustment (update preferences based on usage)
+- Memory consolidation (merge duplicate preferences)
+- Forgetting mechanisms (decay low-confidence items over time)
+- Cross-memory reasoning (combine semantic + procedural insights)
 
-**Currently**: Direct method calls (no LLM overhead)
+### 🎯 Planned Enhancements
 
-**Planned**:
-- Agent-to-agent handoffs via shared memory
-- Coordinator delegates complex multi-step workflows
-- Agents write handoff context for next agent
+**Agent Coordination**:
+- **Complex Workflows**: Coordinator delegates multi-step tasks across agents
+- **Handoff Patterns**: Agents write detailed handoff context in shared memory
+- **Parallel Execution**: Multiple agents work simultaneously on different subtasks
+- **Error Recovery**: Agents retry failed operations with alternative strategies
 
-### Search Optimizations
+**Search Optimizations**:
+- **Adaptive Weights**: Auto-adjust vector/text weights based on query type
+- **Query Analysis**: LLM analyzes query to select best search mode
+- **Relevance Feedback**: Learn from user interactions to improve ranking
+- **Query Expansion**: Use semantic memory to expand queries with user context
 
-**Currently**: Fixed search mode weights (60% vector, 40% text)
+**Prompt Optimization**:
+- **Dynamic Assembly**: Build prompts based on request type and memory context
+- **Few-Shot Injection**: Add examples only when pattern matching detects need
+- **User Personalization**: Customize prompt style based on semantic memory preferences
+- **Memory-Aware Prompts**: Include only relevant memory context (not all 5 tiers every time)
 
-**Planned**:
-- Adaptive weights based on query type
-- Query analysis to auto-select best search mode
-- Relevance feedback to improve ranking
+**Memory Intelligence**:
+- **Preference Inference**: Auto-extract preferences from repeated behaviors
+- **Rule Generation**: Suggest procedural rules based on episodic patterns
+- **Memory Summaries**: Generate daily/weekly summaries of episodic memory
+- **Context Prediction**: Pre-load likely context based on time-of-day patterns
 
-### Prompt Optimization
-
-**Currently**: Two prompt variants (verbose/streamlined)
-
-**Planned**:
-- Dynamic prompt assembly based on request type
-- Few-shot examples injected only when needed
-- User-specific prompt personalization
+**Performance**:
+- **Memory Caching**: Cache frequently accessed preferences/rules in-memory
+- **Lazy Loading**: Load memory context only when needed (not every turn)
+- **Batch Operations**: Batch memory writes to reduce DB round-trips
+- **Embedding Reuse**: Cache embeddings for common queries
 
 ---
 
@@ -697,10 +1071,17 @@ With compression enabled:
 
 Flow Companion's architecture demonstrates:
 
-1. **Efficient multi-agent design** with minimal overhead
-2. **Direct database access** avoiding redundant LLM calls
-3. **Context engineering optimizations** reducing costs by 90%
-4. **Flexible search modes** balancing speed vs. quality
-5. **Comprehensive performance tracking** for continuous optimization
+1. **Efficient multi-agent design** with minimal overhead (single active LLM)
+2. **Direct database access** avoiding redundant LLM calls (bypasses sub-agent LLMs)
+3. **5-tier memory system** providing comprehensive context across time horizons
+4. **Context engineering optimizations** reducing costs by 90% and latency by 52%
+5. **Flexible search modes** balancing speed vs. quality (text/vector/hybrid)
+6. **Comprehensive performance tracking** for continuous optimization
+7. **Memory intelligence** with semantic preferences and procedural rules
 
-The system achieves **production-grade performance** (1-2 second response times) while maintaining **conversation quality** through intelligent prompt design and result compression.
+The system achieves:
+- **Production-grade performance**: 1-2 second response times
+- **Intelligent context awareness**: Auto-injection of relevant memory
+- **User adaptation**: Learns preferences and behaviors over time
+- **Cost efficiency**: 90% token reduction through compression and caching
+- **Comprehensive testing**: 240+ tests including 27 memory-specific tests

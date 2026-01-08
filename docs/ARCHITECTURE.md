@@ -74,6 +74,134 @@
 
 ---
 
+## Memory System (5-Tier Architecture)
+
+Flow Companion includes a comprehensive **5-tier memory system** that provides agents with context across different time horizons:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Memory System Architecture                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  Working Memory (2hr TTL)        Episodic Memory             │
+│  ┌──────────────────┐           ┌──────────────────┐        │
+│  │ Current Project  │           │ Action History   │        │
+│  │ Current Task     │           │ With Embeddings  │        │
+│  │ Last Action      │           │ Semantic Search  │        │
+│  └──────────────────┘           └──────────────────┘        │
+│         ↓                                ↓                   │
+│  ┌────────────────────────────────────────────────┐         │
+│  │         Coordinator Agent                      │         │
+│  │  (Injects memory context into prompts)        │         │
+│  └────────────────────────────────────────────────┘         │
+│         ↑                                ↑                   │
+│  ┌──────────────────┐           ┌──────────────────┐        │
+│  │ Semantic Memory  │           │ Procedural Memory│        │
+│  │ User Preferences │           │ Behavioral Rules │        │
+│  │ Confidence Score │           │ Usage Tracking   │        │
+│  └──────────────────┘           └──────────────────┘        │
+│                                                               │
+│  Shared Memory (5min TTL)                                    │
+│  ┌──────────────────────────────────────────────┐           │
+│  │ Agent Handoffs, Disambiguation State         │           │
+│  └──────────────────────────────────────────────┘           │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Memory Types
+
+| Memory Type | TTL | Purpose | Examples |
+|-------------|-----|---------|----------|
+| **Working** | 2hr | Current session context | Current project: "Voice Agent"<br>Current task: "Debugging" |
+| **Episodic** | ∞ | Action history with timestamps | "Completed task: Debugging in AgentOps (2h ago)" |
+| **Semantic** | ∞ | Learned user preferences | focus_project: "Voice Agent" (confidence: 0.9) |
+| **Procedural** | ∞ | Behavioral rules | "done" → complete_current_task (used: 12x) |
+| **Shared** | 5min | Agent handoffs | last_search_results: ["abc123", "def456"] |
+
+### Memory Integration with Coordinator
+
+The Coordinator automatically:
+1. **Injects context** from all 5 memory types into system prompt
+2. **Extracts memory items** from user conversations
+3. **Updates memory** after each action (working, episodic, semantic, procedural)
+
+**Example Context Injection**:
+```
+System Prompt (Coordinator):
+---
+You are a task assistant...
+
+CURRENT CONTEXT (Working Memory):
+- Project: Voice Agent
+- Task: Debugging
+
+USER PREFERENCES (Semantic Memory):
+- focus_project: Voice Agent (confidence: 0.9, used: 5x)
+- default_priority: high (confidence: 0.7, used: 3x)
+
+LEARNED BEHAVIORS (Procedural Memory):
+- "done" → complete_current_task (used: 12x)
+- "next" → start_next_task (used: 8x)
+
+RECENT ACTIVITY (Episodic Memory):
+- Completed task: Debugging in AgentOps (2h ago)
+- Created task: Testing in Voice Agent (3h ago)
+---
+```
+
+**Example Memory Extraction**:
+```
+User: "I'm focusing on the Voice Agent project"
+→ Coordinator extracts:
+  semantic_memory.record_preference(
+    key="focus_project",
+    value="Voice Agent",
+    source="explicit",
+    confidence=0.9
+  )
+
+User: "When I say done, complete my current task"
+→ Coordinator extracts:
+  procedural_memory.record_rule(
+    trigger="done",
+    action="complete_current_task"
+  )
+```
+
+### Memory Collections (MongoDB)
+
+```
+MongoDB Collections:
+├── short_term_memory     # Working memory (2hr TTL index)
+│   ├── current_project
+│   ├── current_task
+│   └── last_action
+│
+├── long_term_memory      # Episodic/Semantic/Procedural
+│   ├── memory_type: "episodic"    # Action history
+│   ├── memory_type: "semantic"    # User preferences
+│   └── memory_type: "procedural"  # Behavioral rules
+│
+└── shared_memory         # Agent handoffs (5min TTL index)
+    ├── handoff data
+    └── disambiguation state
+```
+
+### Testing Coverage
+
+**27 Memory Tests**:
+- 13 unit tests (`test_memory_types.py`)
+  - Semantic memory CRUD, confidence filtering
+  - Procedural memory CRUD, trigger matching
+  - Memory statistics
+- 14 integration tests (`tests/integration/memory/`)
+  - Action recording, context injection
+  - Preference/rule extraction
+  - Memory competencies (10 competency tests)
+
+---
+
 ## Flow 1: "Create a task for debugging in AgentOps"
 
 ```
