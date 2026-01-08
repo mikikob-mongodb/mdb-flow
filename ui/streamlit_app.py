@@ -159,202 +159,243 @@ def render_context_engineering_toggles():
         help="Cache system prompt for faster subsequent calls"
     )
 
+    # ═══════════════════════════════════════════════════════════════════
+    # MEMORY PANEL
+    # ═══════════════════════════════════════════════════════════════════
+
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🧠 Memory Settings")
+    st.sidebar.subheader("🧠 Agent Memory")
 
-    # Memory master toggle
-    memory_enabled = st.sidebar.checkbox(
-        "Enable Memory",
-        value=True,
-        help="Master toggle for all memory features"
-    )
+    # Memory toggles (keep existing)
+    enable_memory = st.sidebar.checkbox("Enable Memory", value=True)
 
-    if memory_enabled:
+    if enable_memory:
         col1, col2 = st.sidebar.columns(2)
-
         with col1:
-            short_term = st.sidebar.checkbox(
-                "Short-term",
-                value=True,
-                help="Session context (2h TTL)"
-            )
-            long_term = st.sidebar.checkbox(
-                "Long-term",
-                value=True,
-                help="Action history (persistent)"
-            )
-
+            short_term = st.checkbox("Working", value=True, help="Working Memory (session)")
+            long_term = st.checkbox("Long-term", value=True, help="Episodic, Semantic, Procedural")
         with col2:
-            shared = st.sidebar.checkbox(
-                "Shared",
-                value=True,
-                help="Agent handoffs (5m TTL)"
-            )
-            context_inject = st.sidebar.checkbox(
-                "Ctx Inject",
-                value=True,
-                help="Inject context into prompt"
-            )
+            shared = st.checkbox("Shared", value=True, help="Agent handoffs")
+            context_inject = st.checkbox("Inject", value=True, help="Add memory to prompts")
     else:
-        short_term = False
-        long_term = False
-        shared = False
-        context_inject = False
+        short_term = long_term = shared = context_inject = False
+
+    memory_config = {
+        "short_term": short_term,
+        "long_term": long_term,
+        "shared": shared,
+        "context_injection": context_inject
+    }
 
     # Store in session state
     st.session_state.optimizations = {
         "compress_results": compress_results,
         "streamlined_prompt": streamline_prompt,
         "prompt_caching": cache_prompts,
-        "memory_enabled": memory_enabled,
+        "memory_enabled": enable_memory,
         "short_term_memory": short_term,
         "long_term_memory": long_term,
         "shared_memory": shared,
         "context_injection": context_inject
     }
 
-    # Update coordinator memory config
+    # Update coordinator config
     if coordinator:
-        coordinator.memory_config = {
-            "short_term": short_term,
-            "long_term": long_term,
-            "shared": shared,
-            "context_injection": context_inject
-        }
+        coordinator.memory_config = memory_config
 
-    # Show current context if available
-    if short_term and coordinator.memory:
-        with st.sidebar.expander("📍 Session Context", expanded=False):
-            try:
-                context = coordinator.memory.read_session_context(st.session_state.session_id)
+    # ─────────────────────────────────────────────────────────────────
+    # WORKING MEMORY (Short-term)
+    # ─────────────────────────────────────────────────────────────────
 
-                if context:
-                    # Current project/task/action
-                    if context.get("current_project"):
-                        st.write(f"**Project:** {context['current_project']}")
-                    if context.get("current_task"):
-                        st.write(f"**Task:** {context['current_task']}")
-                    if context.get("last_action"):
-                        st.write(f"**Last Action:** {context['last_action']}")
+    if short_term and coordinator and coordinator.memory:
+        with st.sidebar.expander("💭 Working Memory", expanded=False):
+            st.caption("Current session context (2hr TTL)")
 
-                    # Preferences
-                    if context.get("preferences"):
-                        st.markdown("**Preferences:**")
-                        for key, value in context["preferences"].items():
-                            st.caption(f"• {key}: {value}")
+            context = coordinator.memory.read_session_context(
+                st.session_state.session_id
+            )
 
-                    # Rules
-                    if context.get("rules"):
-                        st.markdown("**Rules:**")
-                        for rule in context["rules"]:
-                            st.caption(f"• {rule}")
-                else:
-                    st.caption("_No context yet_")
+            if context:
+                if context.get("current_project"):
+                    st.markdown(f"**Project:** `{context['current_project']}`")
+                if context.get("current_task"):
+                    st.markdown(f"**Task:** `{context['current_task']}`")
+                if context.get("last_action"):
+                    st.markdown(f"**Action:** `{context['last_action']}`")
 
-                # Pending disambiguation
-                disambiguation = coordinator.memory.get_pending_disambiguation(st.session_state.session_id)
-                if disambiguation:
-                    st.markdown("---")
-                    st.markdown(f"**🔍 Pending Selection:** '{disambiguation['query']}'")
-                    for r in disambiguation.get("results", []):
-                        st.caption(f"{r['index'] + 1}. {r['title']}")
-            except Exception as e:
-                st.caption(f"_Error loading context: {e}_")
+                if not any([context.get("current_project"),
+                           context.get("current_task"),
+                           context.get("last_action")]):
+                    st.caption("No active context")
+            else:
+                st.caption("No active context")
+                st.caption("Try: 'Show me AgentOps'")
 
-    # Agent Working Memory (future multi-agent support)
-    if shared and coordinator.memory:
-        with st.sidebar.expander("🔧 Agent State", expanded=False):
-            try:
-                has_working = False
-                for agent_id in ["coordinator", "retrieval", "worklog"]:
-                    working = coordinator.memory.read_agent_working(st.session_state.session_id, agent_id)
-                    if working:
-                        has_working = True
-                        st.markdown(f"**{agent_id.capitalize()}:**")
-                        for key, value in working.items():
-                            if not key.startswith("_"):  # Skip internal fields
-                                st.caption(f"• {key}: {value}")
-                        st.markdown("")
+            # Disambiguation
+            disambiguation = coordinator.memory.get_pending_disambiguation(
+                st.session_state.session_id
+            )
+            if disambiguation:
+                st.markdown("**Pending Selection:**")
+                for r in disambiguation.get("results", []):
+                    st.caption(f"  {r.get('index', 0) + 1}. {r.get('title', 'Unknown')}")
 
-                if not has_working:
-                    st.caption("_No agent state_")
-            except Exception as e:
-                st.caption(f"_Error: {e}_")
+    # ─────────────────────────────────────────────────────────────────
+    # EPISODIC MEMORY (Long-term actions)
+    # ─────────────────────────────────────────────────────────────────
 
-    # Pending Handoffs (future multi-agent support)
-    if shared and coordinator.memory:
-        with st.sidebar.expander("🤝 Handoffs", expanded=False):
-            try:
-                has_handoffs = False
-                for agent_id in ["coordinator", "retrieval", "worklog"]:
-                    pending_count = coordinator.memory.check_pending(st.session_state.session_id, agent_id)
-                    if pending_count:
-                        has_handoffs = True
-                        st.write(f"**{agent_id.capitalize()}:** {pending_count} pending")
+    if long_term and coordinator and coordinator.memory:
+        with st.sidebar.expander("📝 Episodic Memory", expanded=False):
+            st.caption("Action history (persistent)")
 
-                if not has_handoffs:
-                    st.caption("_No pending handoffs_")
-            except Exception as e:
-                st.caption(f"_Error: {e}_")
+            history = coordinator.memory.get_action_history(
+                user_id=st.session_state.user_id,
+                time_range="today",
+                limit=5
+            )
 
-    # Show memory stats
-    if memory_enabled and coordinator.memory:
+            if history:
+                for action in history:
+                    action_type = action.get("action_type", "?")
+                    entity = action.get("entity", {})
+                    task_title = entity.get("task_title", entity.get("project_name", "?"))
+
+                    emoji = {"complete": "✅", "start": "▶️", "stop": "⏸️",
+                            "create": "➕", "update": "📝", "search": "🔍"}.get(action_type, "•")
+
+                    st.caption(f"{emoji} {action_type}: {task_title[:30]}")
+            else:
+                st.caption("No actions recorded today")
+
+    # ─────────────────────────────────────────────────────────────────
+    # SEMANTIC MEMORY (Long-term preferences)
+    # ─────────────────────────────────────────────────────────────────
+
+    if long_term and coordinator and coordinator.memory:
+        with st.sidebar.expander("🎯 Semantic Memory", expanded=False):
+            st.caption("Learned preferences (persistent)")
+
+            preferences = coordinator.memory.get_preferences(
+                user_id=st.session_state.user_id
+            )
+
+            if preferences:
+                for pref in preferences:
+                    key = pref.get("key", "?")
+                    value = pref.get("value", "?")
+                    confidence = pref.get("confidence", 0)
+                    source = pref.get("source", "inferred")
+
+                    emoji = "📌" if source == "explicit" else "💡"
+                    st.markdown(f"{emoji} **{key}:** `{value}`")
+                    st.caption(f"   Confidence: {confidence:.0%}")
+            else:
+                st.caption("No preferences learned yet")
+                st.caption("Try: 'I'm focusing on Voice Agent'")
+
+    # ─────────────────────────────────────────────────────────────────
+    # PROCEDURAL MEMORY (Long-term rules)
+    # ─────────────────────────────────────────────────────────────────
+
+    if long_term and coordinator and coordinator.memory:
+        with st.sidebar.expander("⚙️ Procedural Memory", expanded=False):
+            st.caption("Learned rules (persistent)")
+
+            rules = coordinator.memory.get_rules(
+                user_id=st.session_state.user_id
+            )
+
+            if rules:
+                for rule in rules:
+                    trigger = rule.get("trigger_pattern", "?")
+                    action = rule.get("action_type", "?")
+                    times_used = rule.get("times_used", 0)
+
+                    action_display = {
+                        "complete_current_task": "complete current task",
+                        "start_next_task": "start next task",
+                        "stop_current_task": "stop current task"
+                    }.get(action, action)
+
+                    st.markdown(f"🔗 **\"{trigger}\"** → {action_display}")
+                    st.caption(f"   Used {times_used}x")
+            else:
+                st.caption("No rules learned yet")
+                st.caption("Try: 'When I say done, complete my task'")
+
+    # ─────────────────────────────────────────────────────────────────
+    # SHARED MEMORY (Agent handoffs)
+    # ─────────────────────────────────────────────────────────────────
+
+    if shared and coordinator and coordinator.memory:
+        with st.sidebar.expander("🤝 Shared Memory", expanded=False):
+            st.caption("Agent handoffs (5min TTL)")
+
+            total_pending = 0
+            for agent_id in ["coordinator", "retrieval", "worklog"]:
+                pending = coordinator.memory.read_all_pending(
+                    st.session_state.session_id, agent_id
+                )
+                if pending:
+                    total_pending += len(pending)
+                    st.markdown(f"**→ {agent_id}:** {len(pending)} pending")
+                    for h in pending[:2]:
+                        st.caption(f"  • {h.get('handoff_type', '?')}")
+
+            if total_pending == 0:
+                st.caption("No pending handoffs")
+
+    # ─────────────────────────────────────────────────────────────────
+    # MEMORY STATS
+    # ─────────────────────────────────────────────────────────────────
+
+    if enable_memory and coordinator and coordinator.memory:
         with st.sidebar.expander("📊 Memory Stats", expanded=False):
             try:
                 stats = coordinator.memory.get_memory_stats(
                     st.session_state.session_id,
                     st.session_state.user_id
                 )
-                st.write(f"**Short-term:** {stats['short_term_count']} entries")
-                st.write(f"**Long-term:** {stats['long_term_count']} actions")
 
-                # Show action breakdown if available
-                if stats.get('action_counts'):
-                    st.caption("  Action types:")
-                    for action_type, count in stats['action_counts'].items():
-                        st.caption(f"  • {action_type}: {count}")
+                by_type = stats.get("by_type", {})
 
-                st.write(f"**Shared:** {stats['shared_pending']} pending")
+                col1, col2 = st.columns(2)
+                col1.metric("Working", by_type.get("working_memory", 0))
+                col2.metric("Episodic", by_type.get("episodic_memory", 0))
+
+                col1, col2 = st.columns(2)
+                col1.metric("Semantic", by_type.get("semantic_memory", 0))
+                col2.metric("Procedural", by_type.get("procedural_memory", 0))
+
+                st.metric("Shared", by_type.get("shared_memory", 0))
+
             except Exception as e:
-                st.write(f"Error loading stats: {e}")
+                st.error(f"Error: {e}")
 
-    # Session controls
-    if memory_enabled and coordinator.memory:
-        col1, col2 = st.sidebar.columns(2)
+    # ─────────────────────────────────────────────────────────────────
+    # MEMORY CONTROLS
+    # ─────────────────────────────────────────────────────────────────
 
-        with col1:
-            if st.button("🗑️ Clear", use_container_width=True, help="Clear current session memory"):
-                try:
-                    coordinator.memory.clear_session(st.session_state.session_id)
-                    st.session_state.current_context = {}
-                    st.sidebar.success("✅ Cleared!")
-                    st.rerun()
-                except Exception as e:
-                    st.sidebar.error(f"Error: {e}")
+    col1, col2 = st.sidebar.columns(2)
 
-        with col2:
-            if st.button("🆕 New", use_container_width=True, help="Start a new session"):
-                try:
-                    import uuid
-                    # Clear old session
-                    coordinator.memory.clear_session(st.session_state.session_id)
+    with col1:
+        if st.button("🗑️ Clear Session"):
+            if coordinator:
+                coordinator.memory.clear_session(st.session_state.session_id)
+                st.success("Cleared working & shared!")
+                st.rerun()
 
-                    # Create new session
-                    st.session_state.session_id = str(uuid.uuid4())
-                    st.session_state.messages = []
-                    st.session_state.debug_history = []
-                    st.session_state.current_context = {}
-
-                    # Update coordinator
-                    coordinator.set_session(
-                        st.session_state.session_id,
-                        user_id=st.session_state.user_id
-                    )
-
-                    st.sidebar.success("✅ New session!")
-                    st.rerun()
-                except Exception as e:
-                    st.sidebar.error(f"Error: {e}")
+    with col2:
+        if st.button("🔄 New Session"):
+            import uuid
+            if coordinator:
+                coordinator.memory.clear_session(st.session_state.session_id)
+            st.session_state.session_id = str(uuid.uuid4())
+            st.session_state.messages = []
+            if 'debug_history' in st.session_state:
+                st.session_state.debug_history = []
+            st.success("New session!")
+            st.rerun()
 
     # Show active status
     active = []
@@ -371,63 +412,50 @@ def render_context_engineering_toggles():
     st.sidebar.markdown("---")
 
 
-def render_memory_debug(debug_info: dict):
-    """Render memory section of debug panel with competency indicators.
+def render_memory_debug(result: dict):
+    """Render memory debug panel with competency indicators."""
 
-    Args:
-        debug_info: Debug information dict with memory_ops
-    """
-    # Get memory_ops from debug info
-    memory_ops = debug_info.get("memory_ops", {})
+    st.subheader("🧠 Memory Operations")
 
-    if not memory_ops:
-        return  # No memory activity
+    ops = result.get("memory_ops", {})
 
-    st.markdown("---")
-    st.markdown("**🧠 Memory Operations**")
-
-    # Build competency indicators
+    # Build indicators
     indicators = []
 
-    # Context operations
-    if memory_ops.get("context_injected"):
-        indicators.append("CR-SH")  # Context Read from Short-term
-    if memory_ops.get("context_updated"):
-        indicators.append("CW-SH")  # Context Write to Short-term
+    if ops.get("context_injected"):
+        indicators.append("✅ **Working Memory** injected")
 
-    # Action recording
-    if memory_ops.get("action_recorded"):
-        action_type = memory_ops.get("recorded_action_type", "")
-        indicators.append(f"AR-T:{action_type}")  # Action Recorded to long-Term
+    if ops.get("context_updated"):
+        indicators.append("✅ **Working Memory** updated")
 
-    # Show indicators
+    if ops.get("preference_recorded"):
+        indicators.append("✅ **Semantic Memory** recorded preference")
+
+    if ops.get("rule_recorded"):
+        indicators.append("✅ **Procedural Memory** recorded rule")
+
+    if ops.get("action_recorded"):
+        action = ops.get("recorded_action_type", "action")
+        indicators.append(f"✅ **Episodic Memory** recorded `{action}`")
+
+    if ops.get("handoffs_created", 0) > 0:
+        indicators.append(f"🤝 **Shared Memory** created {ops['handoffs_created']} handoff(s)")
+
+    if ops.get("handoffs_consumed", 0) > 0:
+        indicators.append(f"🤝 **Shared Memory** consumed {ops['handoffs_consumed']} handoff(s)")
+
     if indicators:
-        st.markdown(f"**Competency:** `{' | '.join(indicators)}`")
-        st.caption("CR-SH=Context Read, CW-SH=Context Write, AR-T=Action Recorded")
+        for ind in indicators:
+            st.markdown(ind)
+    else:
+        st.caption("No memory operations this turn")
 
-    # Memory timing
-    memory_read = memory_ops.get("memory_read_ms", 0)
-    memory_write = memory_ops.get("memory_write_ms", 0)
-
-    if memory_read or memory_write:
-        cols = st.columns(3)
-
-        with cols[0]:
-            if memory_read:
-                st.metric("Read", f"{memory_read:.0f}ms")
-
-        with cols[1]:
-            if memory_write:
-                st.metric("Write", f"{memory_write:.0f}ms")
-
-        with cols[2]:
-            total = memory_read + memory_write
-            if total:
-                st.metric("Total", f"{total:.0f}ms")
-
-    # Show full memory_ops dict in expander
-    with st.expander("Memory Ops Detail", expanded=False):
-        st.json(memory_ops)
+    # Timing
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Read", f"{result.get('memory_read_ms', 0):.0f}ms")
+    col2.metric("Write", f"{result.get('memory_write_ms', 0):.0f}ms")
+    total = result.get('memory_read_ms', 0) + result.get('memory_write_ms', 0)
+    col3.metric("Total", f"{total:.0f}ms")
 
 
 def render_task_list():
