@@ -461,7 +461,7 @@ Only available when long-term memory is enabled.""",
                 },
                 "summarize": {
                     "type": "boolean",
-                    "description": "Return activity summary instead of detailed list. Use for 'summarize my activity' type queries.",
+                    "description": "Return activity summary instead of detailed list. Use for 'summarize my activity' type queries. Returns both pre-formatted narrative and raw stats for flexibility.",
                     "default": False
                 }
             },
@@ -1211,11 +1211,15 @@ Use this context to:
                             time_range=time_range if time_range != "all" else "this_week"
                         )
 
+                        # Generate narrative from raw stats
+                        narrative = self.memory.generate_narrative(summary)
+
                         result = {
                             "success": True,
                             "type": "summary",
                             "time_range": summary["time_range"],
                             "total": summary["total"],
+                            "narrative": narrative,  # Pre-formatted narrative
                             "by_type": summary["by_type"],
                             "by_project": summary["by_project"],
                             "by_agent": summary["by_agent"],

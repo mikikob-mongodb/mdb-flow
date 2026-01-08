@@ -569,6 +569,106 @@ class MemoryManager:
 
         return summary
 
+    def generate_narrative(self, summary: Dict) -> str:
+        """Generate narrative text from raw activity summary.
+
+        Args:
+            summary: Raw activity summary from get_activity_summary()
+
+        Returns:
+            Formatted markdown narrative text
+        """
+        parts = []
+        time_range = summary.get("time_range", "unknown").replace("_", " ").title()
+        total = summary.get("total", 0)
+
+        # No activity
+        if total == 0:
+            return f"**Activity Summary ({time_range})**\n\nNo activity recorded for this period."
+
+        # Overview
+        parts.append(f"**Activity Summary ({time_range})**")
+        parts.append(f"Total actions: {total}")
+
+        # By type (sorted by count)
+        by_type = summary.get("by_type", {})
+        if by_type:
+            parts.append("\n**Actions:**")
+            sorted_types = sorted(by_type.items(), key=lambda x: x[1], reverse=True)
+            for action_type, count in sorted_types:
+                # Make action type more readable
+                readable_type = action_type.replace("_", " ").title()
+                parts.append(f"- {readable_type}: {count}")
+
+        # By project (top 5)
+        by_project = summary.get("by_project", {})
+        if by_project:
+            parts.append("\n**Top Projects:**")
+            sorted_projects = sorted(
+                by_project.items(),
+                key=lambda x: x[1]["total"],
+                reverse=True
+            )
+            for project, data in sorted_projects[:5]:
+                project_total = data["total"]
+                # Show breakdown of action types for this project
+                project_types = data.get("by_type", {})
+                if project_types:
+                    # Get top 2 action types for this project
+                    top_actions = sorted(
+                        project_types.items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )[:2]
+                    action_details = ", ".join([
+                        f"{count} {action_type}"
+                        for action_type, count in top_actions
+                    ])
+                    parts.append(f"- **{project}**: {project_total} actions ({action_details})")
+                else:
+                    parts.append(f"- **{project}**: {project_total} actions")
+
+        # By agent
+        by_agent = summary.get("by_agent", {})
+        if by_agent and len(by_agent) > 1:  # Only show if multiple agents
+            parts.append("\n**Agent Activity:**")
+            sorted_agents = sorted(by_agent.items(), key=lambda x: x[1], reverse=True)
+            for agent, count in sorted_agents:
+                parts.append(f"- {agent.title()}: {count} actions")
+
+        # Recent timeline (last 5)
+        timeline = summary.get("timeline", [])
+        if timeline:
+            parts.append("\n**Recent Activity:**")
+            for item in timeline[:5]:
+                action = item.get("action", "unknown").replace("_", " ").title()
+                entity = item.get("entity", "Unknown")
+                project = item.get("project", "")
+                timestamp = item.get("timestamp", "")
+
+                # Format timestamp if available
+                time_str = ""
+                if timestamp:
+                    from datetime import datetime
+                    try:
+                        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                        time_str = dt.strftime("%b %d, %I:%M %p")
+                    except:
+                        time_str = timestamp[:16]  # Just take date/time portion
+
+                # Build timeline entry
+                if project:
+                    entry = f"- {action}: **{entity}** ({project})"
+                else:
+                    entry = f"- {action}: **{entity}**"
+
+                if time_str:
+                    entry += f" - {time_str}"
+
+                parts.append(entry)
+
+        return "\n".join(parts)
+
     # ═══════════════════════════════════════════════════════════════════
     # SHARED: WRITING HANDOFFS
     # ═══════════════════════════════════════════════════════════════════
