@@ -451,6 +451,28 @@ Only available when long-term memory is enabled.""",
             },
             "required": ["time_range"]
         }
+    },
+    {
+        "name": "resolve_disambiguation",
+        "description": """Resolve a pending disambiguation by selecting one of the numbered options shown in context.
+Use this when:
+- User says "the first one", "the second one", "number 3", etc.
+- User refers to a result by its position in the last search
+- Multiple results were shown and user is picking one
+
+The selection number is 1-based (1 = first result, 2 = second result, etc.)""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "selection": {
+                    "type": "integer",
+                    "description": "1-based selection number (1 = first, 2 = second, 3 = third, etc.)",
+                    "minimum": 1,
+                    "maximum": 5
+                }
+            },
+            "required": ["selection"]
+        }
     }
 ]
 
@@ -1075,6 +1097,42 @@ Use this context to:
                             "count": len(formatted_actions),
                             "actions": formatted_actions
                         }
+
+            elif tool_name == "resolve_disambiguation":
+                # Resolve pending disambiguation by selecting an option
+                if not self.memory or not self.session_id:
+                    result = {
+                        "success": False,
+                        "error": "Memory not available or session not set"
+                    }
+                else:
+                    selection = tool_input["selection"]
+                    index = selection - 1  # Convert 1-based to 0-based
+
+                    selected = self.memory.resolve_disambiguation(self.session_id, index)
+
+                    if selected:
+                        result = {
+                            "success": True,
+                            "selected_index": selection,
+                            "task_id": selected.get("task_id"),
+                            "title": selected.get("title"),
+                            "project": selected.get("project"),
+                            "message": f"Selected option {selection}: {selected.get('title')}"
+                        }
+                    else:
+                        # Check if there's a pending disambiguation
+                        pending = self.memory.get_pending_disambiguation(self.session_id)
+                        if not pending:
+                            result = {
+                                "success": False,
+                                "error": "No pending disambiguation to resolve"
+                            }
+                        else:
+                            result = {
+                                "success": False,
+                                "error": f"Invalid selection {selection}. Valid options: 1-{len(pending.get('results', []))}"
+                            }
 
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
