@@ -358,11 +358,12 @@ def seed_session_context(memory: MemoryManager, db):
         "auto_timestamp": True
     }
 
-    # Add rules
+    # Add rules (dict format with trigger/action)
     context_updates["rules"] = [
-        "Always add notes when completing tasks",
-        "Update task context with key decisions",
-        "Tag tasks with relevant project milestones"
+        {"trigger": "done", "action": "complete the current task"},
+        {"trigger": "finished", "action": "complete the current task"},
+        {"trigger": "start working", "action": "start the current task"},
+        {"trigger": "take a break", "action": "stop the current task"}
     ]
 
     # Write session context

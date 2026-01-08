@@ -586,6 +586,44 @@ Use this context to:
 - Resolve references like "it", "that task", "the first one", "number 2"
 """
 
+    def _check_rule_triggers(self, user_message: str) -> dict:
+        """Check if user message matches any stored rule triggers.
+
+        Args:
+            user_message: User's message to check
+
+        Returns:
+            Dict with matched_rule if found, None otherwise
+        """
+        if not self.memory:
+            return None
+
+        # Get session context with rules
+        context = self.memory.read_session_context(self.session_id)
+        if not context or "rules" not in context:
+            return None
+
+        rules = context.get("rules", [])
+        msg_lower = user_message.lower()
+
+        # Check each rule's trigger
+        for rule in rules:
+            trigger = rule.get("trigger", "").lower()
+            if not trigger:
+                continue
+
+            # Check if trigger appears in message
+            # Support both exact phrase and word matching
+            if trigger in msg_lower:
+                return {
+                    "matched": True,
+                    "trigger": trigger,
+                    "action": rule.get("action"),
+                    "original_rule": rule
+                }
+
+        return None
+
     def _extract_context_from_turn(self, user_message: str,
                                     tool_calls: list,
                                     tool_results: list) -> dict:
@@ -679,6 +717,40 @@ Use this context to:
         # Priority preference
         if "high priority" in msg_lower or "important" in msg_lower:
             updates.setdefault("preferences", {})["priority_filter"] = "high"
+
+        # Rule extraction (TTL-R)
+        # Pattern: "when I say X, do Y" or "whenever X, Y"
+        rule_patterns = [
+            (r"when (?:i say |i type |i write )?['\"]?([^'\"]+)['\"]?,?\s+(?:do |then )?(.+)", "when"),
+            (r"whenever (?:i say |i type )?['\"]?([^'\"]+)['\"]?,?\s+(?:do |then )?(.+)", "whenever"),
+            (r"if i say ['\"]?([^'\"]+)['\"]?,?\s+(?:do |then )?(.+)", "if"),
+            (r"always (.+) when (.+)", "always")
+        ]
+
+        import re
+        for pattern, pattern_type in rule_patterns:
+            match = re.search(pattern, msg_lower)
+            if match:
+                if pattern_type == "always":
+                    # Reversed order: "always ACTION when TRIGGER"
+                    action = match.group(1).strip()
+                    trigger = match.group(2).strip()
+                else:
+                    # Normal order: "when TRIGGER, do ACTION"
+                    trigger = match.group(1).strip()
+                    action = match.group(2).strip()
+
+                # Clean up action text (remove trailing punctuation)
+                action = action.rstrip(".,;")
+                trigger = trigger.rstrip(".,;")
+
+                # Add rule to updates
+                updates.setdefault("rules", [])
+                updates["rules"].append({
+                    "trigger": trigger,
+                    "action": action
+                })
+                break  # Only extract first rule per message
 
         # Context switch detection (CR-SH)
         switch_patterns = ["switch to", "actually,", "no wait", "change to", "never mind"]
@@ -1415,6 +1487,23 @@ Use this context to:
                 logger.info(f"📊 Context injected into system prompt")
 
         self.memory_ops["memory_read_ms"] = (time.time() - read_start) * 1000
+
+        # CHECK FOR RULE TRIGGERS (TTL-R)
+        rule_match = None
+        if self.memory_config.get("context_injection") and self.memory:
+            rule_match = self._check_rule_triggers(user_message)
+            if rule_match:
+                # Inject rule execution directive into system prompt
+                rule_directive = f"""
+
+<rule_triggered>
+User's message matched rule: "{rule_match['trigger']}" → {rule_match['action']}
+Execute the rule action: {rule_match['action']}
+</rule_triggered>
+"""
+                system_prompt += rule_directive
+                self.memory_ops["rule_triggered"] = rule_match['trigger']
+                logger.info(f"🔔 Rule triggered: '{rule_match['trigger']}' → {rule_match['action']}")
 
         # Get prompt caching setting
         cache_prompts = self.optimizations.get("prompt_caching", True)
