@@ -54,6 +54,46 @@ A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and
 - **Confidence Scoring** - Track reliability of inferred preferences (0.0-1.0)
 - **Usage Tracking** - Rules auto-increment times_used on each trigger
 
+### 🧪 Experimental: MCP Mode (Milestone 6)
+
+Flow Companion can connect to [Model Context Protocol](https://modelcontextprotocol.io) servers to handle requests that built-in tools can't. The agent learns by discovering tools, logging solutions, and reusing them for similar future requests.
+
+**How It Works:**
+1. **Discovery** - Agent discovers tools from connected MCP servers (e.g., Tavily for web search)
+2. **Learning** - When it figures out how to handle a new request, it logs the solution to `tool_discoveries`
+3. **Reuse** - Similar future requests reuse previous solutions (semantic similarity matching)
+4. **Caching** - Search results cached in `knowledge_cache` to avoid redundant API calls
+5. **Developer Insight** - Review discoveries to identify patterns worth promoting to static tools
+
+**Enabling MCP Mode:**
+
+1. Set up API keys in `.env`:
+   ```bash
+   TAVILY_API_KEY=your-tavily-key
+   MCP_MODE_ENABLED=false  # Toggle to true or enable in UI
+   ```
+
+2. In the app, toggle **"MCP Mode"** in the Experimental section (sidebar)
+
+3. The agent will now attempt to handle novel requests (research, web search, data extraction) via MCP
+
+**Connected Servers:**
+- **Tavily** (Remote SSE) - Web search and research via `tavily-search`, `tavily-extract`
+- **MongoDB MCP** (Local Docker, Optional) - Dynamic database queries and aggregations
+
+**Knowledge Cache:**
+- Search results cached for 7 days (configurable freshness)
+- Semantic similarity matching for cache hits
+- Reduces redundant API calls and improves response times
+
+**Tool Discoveries:**
+- All MCP solutions logged to MongoDB `tool_discoveries` collection
+- Developers can see what requests users make that static tools can't handle
+- Track success rates, usage counts, and identify promotion candidates
+- Discoveries reused via vector similarity search (0.85 threshold)
+
+**See:** `docs/features/MCP_AGENT.md` for architecture details and `tests/integration/test_mcp_agent.py` for integration tests.
+
 ## Tech Stack
 
 - **UI**: Streamlit (main app + evals dashboard)
