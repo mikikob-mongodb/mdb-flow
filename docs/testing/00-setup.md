@@ -31,16 +31,25 @@ LOG_LEVEL=INFO
 DEBUG=false
 ```
 
-### 1.2 Seed Demo Data (Optional)
+### 1.2 Seed Demo Data (Recommended)
 
-For demonstration and testing, seed the database with sample data:
+For demonstration and testing, use the demo reset script for a clean state:
 
 ```bash
 # Activate virtual environment
 source venv/bin/activate
 
-# Run seed script
+# RECOMMENDED: Full reset (clear + seed + verify)
+python scripts/reset_demo.py --force
+
+# Alternative: Just seed (if already clean)
 python scripts/seed_demo_data.py
+
+# Check current state
+python scripts/reset_demo.py --verify-only
+
+# See what would be deleted (dry run)
+python scripts/reset_demo.py --dry-run
 ```
 
 **What gets seeded:**
@@ -50,7 +59,14 @@ python scripts/seed_demo_data.py
 - Procedural rules (shortcuts like "done" → complete task)
 - GTM Roadmap Template (for multi-step workflow demos)
 
-**Note:** Run this once before demos. Data persists across sessions.
+**reset_demo.py Features:**
+- `--force` - Skip confirmation prompts (use for night before demo)
+- `--teardown-only` - Just clear collections
+- `--verify-only` - Check if demo data exists
+- `--dry-run` - Show what would be deleted without doing it
+- `--skip-embeddings` - Faster seeding (no vector search)
+
+**Note:** Run reset script before each demo for consistent state.
 
 ---
 

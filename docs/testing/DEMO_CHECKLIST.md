@@ -24,17 +24,26 @@
 □ Test Tavily MCP connection (toggle MCP Mode ON)
 ```
 
-### Database Seeding
+### Database Reset & Seeding
 
 ```
-□ Run: python scripts/seed_demo_data.py
-□ Verify data created:
-  □ 3 projects (Project Alpha, Beta, Marketing Website)
-  □ 15 tasks with various statuses
-  □ User preferences (working_hours, focus_mode)
-  □ Procedural rules ("done" → complete task)
-  □ GTM Roadmap Template
-□ Check Memory Stats shows procedural memory entries
+□ Run demo reset script (clears + seeds + verifies):
+  python scripts/reset_demo.py --force
+
+□ Verify output shows:
+  ✓ Cleared 6-7 collections
+  ✓ Seeded data (3 projects, 15 tasks, memories)
+  ✓ GTM Roadmap Template: EXISTS
+  ✓ Project Alpha: EXISTS (4 tasks)
+  🎬 Ready for demo!
+
+□ Alternative: Just verify current state:
+  python scripts/reset_demo.py --verify-only
+
+□ If verification fails:
+  □ Re-run reset script
+  □ Check .env configuration
+  □ Verify MongoDB connection
 ```
 
 ### Demo Practice
