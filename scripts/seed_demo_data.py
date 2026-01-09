@@ -795,8 +795,20 @@ def main():
     if args.skip_embeddings:
         print("⚠️  Skipping embeddings (semantic search will not work)")
 
-    mongodb = MongoDB()
-    db = mongodb.get_database()
+    try:
+        from shared.config import settings
+        print(f"\n📡 Connecting to MongoDB...")
+        print(f"   Database: {settings.mongodb_database}")
+
+        mongodb = MongoDB()
+        db = mongodb.get_database()
+
+        print(f"✓ Connected successfully")
+    except Exception as e:
+        print(f"\n❌ Failed to connect to MongoDB: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
     # Verify mode
     if args.verify:
@@ -875,12 +887,14 @@ def main():
 
         print("\n" + "=" * 60)
 
+        return 0
+
     except Exception as e:
         print(f"\n❌ Error seeding demo data: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -331,11 +331,36 @@ Examples:
     # Connect to MongoDB
     try:
         print(f"\n📡 Connecting to MongoDB...")
+        print(f"   Database: {settings.mongodb_database}")
+
         mongodb = MongoDB()
         db = mongodb.get_database()
-        print(f"✓ Connected to: {settings.mongodb_database}")
+
+        print(f"✓ Connected successfully")
+
+        # Check if collections exist
+        existing_collections = set(db.list_collection_names())
+        missing_collections = set(COLLECTIONS_TO_CLEAR) - existing_collections
+
+        if missing_collections and not args.verify_only:
+            print(f"\n⚠️  WARNING: Some collections don't exist yet:")
+            for collection in sorted(missing_collections):
+                print(f"  - {collection}")
+
+            print(f"\n💡 This might be a new database. Consider running:")
+            print(f"   python scripts/init_db.py")
+            print(f"\n   Or continue anyway (collections will be created during seeding).")
+
+            if not args.force and not args.dry_run:
+                response = input("\nContinue anyway? (yes/no) [yes]: ").strip().lower()
+                if response in ["no", "n"]:
+                    print("❌ Aborted")
+                    return 1
+
     except Exception as e:
         print(f"❌ Failed to connect to MongoDB: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
     # VERIFY ONLY MODE
@@ -383,6 +408,13 @@ Examples:
     print("\n" + "=" * 60)
     print("✅ Demo reset complete!")
     print("=" * 60)
+
+    print("\n💡 Next steps:")
+    print("   1. Review verification results above")
+    print("   2. (Optional) Run full verification: python scripts/verify_setup.py")
+    print("   3. Start app: streamlit run streamlit_app.py")
+    print("   4. Use demo user: demo-user")
+
     return 0
 
 if __name__ == "__main__":

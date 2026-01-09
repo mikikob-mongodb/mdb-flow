@@ -1,436 +1,515 @@
-# Scripts Directory
+# Flow Companion - Scripts Directory
 
-Utility scripts for Flow Companion database management, testing, and maintenance.
+Comprehensive collection of setup, maintenance, and demo preparation scripts for Flow Companion.
 
-## Overview
+---
 
-This directory contains consolidated scripts for common operations:
-- **setup_database.py** - Database setup (indexes + memory collections)
-- **cleanup_database.py** - Database cleanup and maintenance
-- **test_memory_system.py** - Memory system testing
-- **load_sample_data.py** - Sample projects and tasks loading
-- **seed_memory_demo_data.py** - Memory collections seeding (action history, session context)
-- **seed_demo_data.py** - ⭐ Presentation-ready demo dataset (complete 5-tier memory showcase)
-- **debug/** - Debug and diagnostic scripts
+## 🚀 Quick Start (New Developer)
 
-## Database Setup
+**If you've just cloned this repository:**
 
-### setup_database.py
-
-Creates all necessary MongoDB indexes for Flow Companion.
-
-**Usage:**
 ```bash
-# Setup everything (standard + text search + memory indexes)
-python scripts/setup_database.py
+# 1. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
-# Setup standard indexes only (tasks, projects, settings)
-python scripts/setup_database.py --standard
+# 2. Run all-in-one setup (creates .env, initializes DB, verifies)
+python scripts/setup.py
 
-# Setup text search indexes only
-python scripts/setup_database.py --text
+# 3. Create vector search indexes in Atlas UI (see output for instructions)
 
-# Setup memory indexes only (short-term, long-term, shared)
-python scripts/setup_database.py --memory
-
-# List all existing indexes
-python scripts/setup_database.py --list
-
-# Show vector index creation instructions
-python scripts/setup_database.py --vector-instructions
+# 4. Start the app
+streamlit run streamlit_app.py
 ```
 
-**What it creates:**
+**If preparing for a demo:**
 
-1. **Standard Indexes:**
-   - Tasks: project_id, status, created_at, last_worked_on, activity_timestamp, compound indexes
-   - Projects: status, created_at, last_activity
-   - Settings: user_id (unique)
-
-2. **Text Search Indexes:**
-   - Tasks: title (weight 10), context (weight 5), notes (weight 2)
-   - Projects: name (weight 10), description (weight 7), context (weight 5), decisions (weight 4), methods (weight 3), notes (weight 2)
-
-3. **Memory Indexes:**
-   - short_term_memory: 6 indexes including TTL (2-hour expiration)
-   - long_term_memory: 8 indexes including vector search support
-   - shared_memory: 9 indexes including TTL (5-minute expiration)
-
-**Vector Search Indexes:**
-- Must be created manually in MongoDB Atlas UI
-- The script provides detailed instructions
-- Required for semantic search to work
-
-## Database Cleanup
-
-### cleanup_database.py
-
-Comprehensive database cleanup for removing test data, duplicates, and orphaned records.
-
-**Usage:**
 ```bash
-# Show current database status
-python scripts/cleanup_database.py --status
+# Reset to clean demo state
+python scripts/reset_demo.py --force
 
-# Mark test data (safe, doesn't delete)
-python scripts/cleanup_database.py --mark
-
-# Delete all marked test data
-python scripts/cleanup_database.py --delete
-
-# Mark and delete in one command
-python scripts/cleanup_database.py --mark --delete
-
-# Full cleanup (mark + delete + show status)
-python scripts/cleanup_database.py --full
-
-# Remove specific duplicates
-python scripts/cleanup_database.py --remove-duplicates "Review documentation"
-
-# Remove duplicates in specific project
-python scripts/cleanup_database.py --remove-duplicates "Review documentation" --project AgentOps
+# Verify ready
+python scripts/reset_demo.py --verify-only
 ```
 
-**What it cleans:**
+---
 
-1. **Test Data Patterns:**
-   - Tasks/projects starting with "Test"
-   - Malformed tasks (starting with -t, -p, --)
-   - Common test titles ("Write unit tests", "Review documentation")
+## 📚 Script Categories
 
-2. **Orphaned Records:**
-   - Tasks with no project_id
-   - Tasks with invalid project_id (project doesn't exist)
+### 🎯 First-Time Setup
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| **setup.py** | All-in-one initialization | First time setup, new developers |
+| **init_db.py** | Create collections + indexes | Database initialization, schema updates |
+| **verify_setup.py** | Health check all components | After setup, before demos, troubleshooting |
 
-3. **Duplicate Records:**
-   - Keeps oldest, deletes rest
-   - Can filter by title pattern and project
+### 🎬 Demo & Data
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| **reset_demo.py** | Complete demo reset (clear + seed + verify) | Before demos, presentations |
+| **seed_demo_data.py** | Seed presentation-ready demo data | Demo preparation, testing memory system |
+| **seed_memory_demo_data.py** | Seed memory collections only | Memory-specific demos |
+| **load_sample_data.py** | Load sample tasks/projects | General testing, development |
 
-**Safety Features:**
-- --mark operation is safe (doesn't delete)
-- --full prompts for confirmation
-- Shows counts before and after
-- Can undo by querying {is_test: true}
+### 🔧 Maintenance & Testing
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| **setup_database.py** | Create indexes (legacy, use init_db.py instead) | Manual index creation |
+| **cleanup_database.py** | Clean test data, duplicates, orphans | Regular maintenance |
+| **test_memory_system.py** | Test 5-tier memory system | Development, verification |
 
-## Memory System Testing
+### 🐛 Debug Tools
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| **debug/debug_agent.py** | Test agent vs direct DB queries | Debugging agent behavior |
+| **debug/test_hybrid_search.py** | Test hybrid search | Search debugging |
+| **debug/test_tool_coordinator.py** | Test coordinator | Coordinator debugging |
+| **debug/test_voice_flow.py** | Test voice processing | Voice feature debugging |
 
-### test_memory_system.py
+---
 
-Comprehensive testing for the three-tier agent memory system.
+## 📖 Detailed Documentation
+
+### setup.py - All-in-One Setup ⭐
+
+**Purpose:** Complete first-time setup for new developers. Orchestrates all setup steps.
 
 **Usage:**
 ```bash
-# Test all memory systems
-python scripts/test_memory_system.py
+# Interactive setup (recommended)
+python scripts/setup.py
 
-# Test specific memory type
-python scripts/test_memory_system.py --short-term
-python scripts/test_memory_system.py --long-term
-python scripts/test_memory_system.py --shared
+# Non-interactive (requires existing .env)
+python scripts/setup.py --non-interactive
 
-# Test coordinator integration
-python scripts/test_memory_system.py --coordinator
+# Skip demo data
+python scripts/setup.py --no-demo-data
 
-# Test all agents have memory access
-python scripts/test_memory_system.py --agents
+# Quick verification only
+python scripts/setup.py --quick
 
-# Test memory performance (latency)
-python scripts/test_memory_system.py --performance
+# Full reset (DANGEROUS)
+python scripts/setup.py --reset
 ```
 
-**What it tests:**
+**What it does:**
+1. ✅ Checks Python 3.9+ and dependencies
+2. ✅ Creates/validates .env file (interactive)
+3. ✅ Calls `init_db.py` to create collections and indexes
+4. ✅ Calls `verify_setup.py` for health checks
+5. ✅ Optionally calls `seed_demo_data.py` for demo data
 
-1. **Short-term Memory:**
-   - Session context read/write
-   - 2-hour TTL expiration
-   - Session isolation
+**Exit codes:** 0 = success, 1 = failure
 
-2. **Long-term Memory:**
-   - Action history recording
-   - Vector search with embeddings
-   - Access tracking and strength calculation
+---
 
-3. **Shared Memory:**
-   - Agent-to-agent handoffs
-   - Atomic consumption (can't read twice)
-   - 5-minute TTL expiration
+### init_db.py - Database Initialization
 
-4. **Integration:**
-   - Coordinator has memory manager
-   - All agents have memory access
-   - Embedding function configured
-
-5. **Performance:**
-   - Read/write latency < 50ms
-   - Vector search latency ~300-400ms
-   - Total memory overhead < 5%
-
-**Exit Codes:**
-- 0: All tests passed
-- 1: Some tests failed
-
-## Sample Data Loading
-
-### load_sample_data.py
-
-Loads sample tasks and projects into the database for testing and demos.
+**Purpose:** Create all MongoDB collections and indexes. Foundation for database setup.
 
 **Usage:**
 ```bash
-# Load with embeddings (recommended)
-python scripts/load_sample_data.py
+# Initialize everything
+python scripts/init_db.py
 
-# Skip embeddings for faster loading
-python scripts/load_sample_data.py --skip-embeddings
-```
+# Collections only
+python scripts/init_db.py --collections-only
 
-**Creates:**
-- 10 sample projects (AgentOps, Voice Agent, LangGraph, etc.)
-- ~44 sample tasks across multiple statuses and priorities
-- Realistic activity logs and timestamps
-- Embeddings for vector search (1024-dim Voyage AI)
+# Indexes only
+python scripts/init_db.py --indexes-only
 
-### seed_memory_demo_data.py
+# Check existing setup
+python scripts/init_db.py --check
 
-Seeds the memory collections with realistic demo data, making the UI demo-ready on first load.
+# Show vector index instructions
+python scripts/init_db.py --vector-instructions
 
-**Usage:**
-```bash
-# Seed memory only (assumes projects/tasks already loaded)
-python scripts/seed_memory_demo_data.py
-
-# Load sample data first, then seed memory
-python scripts/seed_memory_demo_data.py --with-sample-data
-
-# Skip embeddings for faster seeding
-python scripts/seed_memory_demo_data.py --skip-embeddings
-
-# Seed specific memory types only
-python scripts/seed_memory_demo_data.py --short-term-only
-python scripts/seed_memory_demo_data.py --long-term-only
-
-# Include handoff examples (future multi-agent support)
-python scripts/seed_memory_demo_data.py --include-handoffs
+# Force recreate (DANGEROUS - drops data!)
+python scripts/init_db.py --force
 ```
 
 **Creates:**
 
-1. **Short-term Memory:**
-   - Session context for demo user (current_project, current_task, last_action)
-   - User preferences (focus_project, default_priority, auto_timestamp)
-   - User-defined rules (always add notes, update context, tag tasks)
-   - Sample disambiguation (multiple search results)
-   - Agent working memory for retrieval and worklog agents
+**Collections (8):**
+- tasks, projects, settings
+- short_term_memory, long_term_memory, shared_memory
+- tool_discoveries, eval_comparison_runs
 
-2. **Long-term Memory:**
-   - 40-60 realistic actions over past 7 days
-   - Action types: complete, start, create, update, search
-   - Realistic timestamps during working hours (9am-6pm weekdays)
-   - Embeddings for semantic search
-   - Attributed to demo_user
+**Indexes:**
+- Standard indexes (user_id, status, timestamps)
+- Compound indexes (user_id + status, etc.)
+- Text search indexes (weighted full-text search)
+- TTL indexes (auto-expiration: 2hr for short-term, 5min for shared)
 
-3. **Shared Memory (optional):**
-   - Sample handoff chain (coordinator → retrieval → worklog)
-   - Demonstrates multi-agent workflow patterns
+**Vector Search Indexes (Manual in Atlas UI):**
+1. tasks.vector_index
+2. projects.vector_index
+3. long_term_memory.memory_embeddings
+4. long_term_memory.vector_index
+5. tool_discoveries.discovery_vector_index
 
-**Recommended Setup:**
-```bash
-# Full demo setup
-python scripts/load_sample_data.py
-python scripts/seed_memory_demo_data.py
+All 1024 dimensions (Voyage AI voyage-3), cosine similarity.
 
-# Or combined
-python scripts/seed_memory_demo_data.py --with-sample-data
-```
+Run `--vector-instructions` for full JSON definitions.
 
-### seed_demo_data.py
+---
 
-**⭐ Presentation-Ready Demo Dataset** - Seeds a complete, interconnected dataset specifically designed for presenting the 5-tier memory system.
+### verify_setup.py - Health Check
+
+**Purpose:** Comprehensive verification that everything is configured correctly.
 
 **Usage:**
 ```bash
-# Seed all demo data (idempotent)
+# Full verification
+python scripts/verify_setup.py
+
+# Quick check (env + MongoDB only)
+python scripts/verify_setup.py --quick
+
+# Skip API tests (faster)
+python scripts/verify_setup.py --skip-api
+
+# Verbose output
+python scripts/verify_setup.py --verbose
+```
+
+**Checks:**
+- ✅ Environment (.env file, required/optional variables)
+- ✅ MongoDB (connection, database access, write permissions)
+- ✅ Collections (all 8 required collections exist)
+- ✅ Indexes (standard, text search, TTL, vector search)
+- ✅ APIs (Anthropic, Voyage AI, OpenAI, Tavily)
+- ✅ Operations (INSERT, QUERY, UPDATE, DELETE)
+
+**Exit codes:** 0 = all passed, 1 = some failed
+
+---
+
+### reset_demo.py - Demo Reset
+
+**Purpose:** Complete demo preparation (teardown + seed + verify). Use before presentations.
+
+**Usage:**
+```bash
+# Full reset (recommended before demos)
+python scripts/reset_demo.py --force
+
+# Just verify current state
+python scripts/reset_demo.py --verify-only
+
+# Just clear collections
+python scripts/reset_demo.py --teardown-only
+
+# Preview what would be deleted
+python scripts/reset_demo.py --dry-run
+
+# Skip embeddings (faster)
+python scripts/reset_demo.py --skip-embeddings
+```
+
+**Phases:**
+1. **TEARDOWN:** Clear 7 collections (projects, tasks, all memories)
+2. **SETUP:** Call seed_demo_data.py to seed fresh data
+3. **VERIFY:** Check GTM template, Project Alpha, Q3 GTM exist
+
+**⚠️  WARNING:** Deletes all demo data. DO NOT use with production data.
+
+**Exit codes:** 0 = ready for demo, 1 = verification failed
+
+---
+
+### seed_demo_data.py - Presentation Demo Data ⭐
+
+**Purpose:** Seed realistic, interconnected data for showcasing 5-tier memory system.
+
+**Usage:**
+```bash
+# Seed demo data (idempotent)
 python scripts/seed_demo_data.py
 
-# Clear existing demo data and reseed
+# Clear and reseed
 python scripts/seed_demo_data.py --clean
 
-# Verify demo data exists
+# Verify data exists
 python scripts/seed_demo_data.py --verify
 
-# Skip embeddings for faster seeding
+# Skip embeddings (faster, but no semantic search)
 python scripts/seed_demo_data.py --skip-embeddings
 ```
 
 **Creates:**
 
-1. **Projects (3):**
-   - Project Alpha (active) - Infrastructure modernization with 7 tasks
-   - Q3 Fintech GTM (completed) - Past successful GTM project
-   - AI Developer Outreach (completed) - Another past GTM project
+**Projects (3):**
+- Project Alpha (active) - Infrastructure modernization, 7 tasks
+- Q3 Fintech GTM (completed) - Past successful GTM
+- AI Developer Outreach (completed) - Another past GTM
 
-2. **Tasks (7):**
-   - All associated with Project Alpha
-   - Mix of statuses: 2 done, 1 in_progress, 4 todo
-   - Various priorities demonstrating active work
+**Tasks (7):** All for Project Alpha (2 done, 1 in_progress, 4 todo)
 
-3. **Procedural Memory (2):**
-   - **GTM Roadmap Template** (⭐ key for presentation finale) - 12 tasks across 3 phases
-   - Market Research Questions checklist - 6 standard due diligence questions
+**Procedural Memory (2):**
+- **GTM Roadmap Template** ⭐ - 12 tasks across 3 phases (key for demos!)
+- Market Research Questions - 6 standard questions
 
-4. **Semantic Memory (4):**
-   - User preferences: default_priority, communication_style, focus_area, work_style
-   - Varying confidence levels (0.75-0.9) based on usage frequency
-   - Times_used tracking (8-25 uses)
+**Semantic Memory (4 preferences):**
+- default_priority = high, communication_style = concise, etc.
 
-5. **Episodic Memory (3):**
-   - Created Q3 Fintech GTM using GTM Template (90 days ago)
-   - Completed Q3 Fintech GTM successfully (45 days ago)
-   - Applied GTM Template to AI Developer Outreach (120 days ago)
+**Episodic Memory (3 actions):**
+- Created Q3 Fintech GTM, Completed it, Applied template to AI Outreach
 
-**Key Feature:**
-The GTM Template is learned from past projects and can be automatically applied to new GTM projects, demonstrating the system's ability to learn and reuse successful patterns.
+**Demo User:** `demo-user`
 
-**Demo User ID:** `demo-user`
+**Embeddings:** 2 procedural + 3 episodic (1024-dim Voyage AI)
 
-**See:** `scripts/README_SEED_DEMO.md` for detailed documentation and presentation flow.
+**Features:**
+- Idempotent (can run multiple times safely)
+- Realistic interconnected data
+- Demonstrates template learning and reuse
 
-## Debug Scripts
+---
 
-Located in `scripts/debug/`, these are diagnostic tools for development:
+### Other Scripts (Existing)
 
-### debug_agent.py
-Tests agent behavior vs direct database queries.
+#### setup_database.py (Legacy - Use init_db.py instead)
 
-### test_hybrid_search.py
-Test hybrid search directly without the full agent stack.
+Creates indexes for tasks, projects, memory collections.
 
-**Usage:**
 ```bash
-python scripts/debug/test_hybrid_search.py
-```
-
-### test_tool_coordinator.py
-Test the tool-based coordinator with various queries.
-
-**Usage:**
-```bash
-python scripts/debug/test_tool_coordinator.py
-```
-
-### test_voice_flow.py
-Test voice input processing and transcription.
-
-**Usage:**
-```bash
-python scripts/debug/test_voice_flow.py
-```
-
-## Migration Notes
-
-This directory has been reorganized and consolidated:
-
-### Removed (Merged into Consolidated Scripts)
-
-**Cleanup Scripts (3 → 1):**
-- ~~cleanup_duplicate_tasks.py~~ → cleanup_database.py --remove-duplicates
-- ~~cleanup_test_data.py~~ → cleanup_database.py --mark --delete
-- ~~cleanup_test_pollution.py~~ → cleanup_database.py --full
-
-**Memory Test Scripts (3 → 1):**
-- ~~test_memory.py~~ → test_memory_system.py
-- ~~test_long_term_memory.py~~ → test_memory_system.py --long-term
-- ~~test_shared_memory.py~~ → test_memory_system.py --shared
-
-**Setup Scripts (2 → 1):**
-- ~~setup_indexes.py~~ → setup_database.py --standard --text
-- ~~setup_memory_indexes.py~~ → setup_database.py --memory
-
-### Benefits of Consolidation
-
-1. **Fewer Files**: 8 scripts → 3 scripts (62.5% reduction)
-2. **Clear Purpose**: Each script has a single, clear responsibility
-3. **Better CLI**: Argparse with --help documentation
-4. **Consistent Interface**: All scripts follow similar patterns
-5. **Easier Maintenance**: Changes only needed in one place
-6. **Better Documentation**: Comprehensive help text built-in
-
-## Quick Reference
-
-### First Time Setup
-```bash
-# 1. Setup database indexes
 python scripts/setup_database.py
+python scripts/setup_database.py --standard  # Standard indexes only
+python scripts/setup_database.py --memory    # Memory indexes only
+python scripts/setup_database.py --list      # List existing
+```
 
-# 2. Load sample data (projects and tasks)
+#### cleanup_database.py
+
+Remove test data, duplicates, orphaned records.
+
+```bash
+python scripts/cleanup_database.py --status          # Show status
+python scripts/cleanup_database.py --mark --delete   # Clean test data
+python scripts/cleanup_database.py --full            # Full cleanup
+```
+
+#### test_memory_system.py
+
+Test 5-tier memory system.
+
+```bash
+python scripts/test_memory_system.py                # All tests
+python scripts/test_memory_system.py --long-term    # Long-term only
+python scripts/test_memory_system.py --performance  # Performance tests
+```
+
+#### load_sample_data.py
+
+Load sample tasks/projects for general development.
+
+```bash
 python scripts/load_sample_data.py
+python scripts/load_sample_data.py --skip-embeddings
+```
 
-# 3. Seed memory with demo data (action history, session context)
+#### seed_memory_demo_data.py
+
+Seed memory collections (separate from seed_demo_data.py).
+
+```bash
 python scripts/seed_memory_demo_data.py
+python scripts/seed_memory_demo_data.py --with-sample-data
+python scripts/seed_memory_demo_data.py --skip-embeddings
+```
+
+---
+
+## 🔄 Common Workflows
+
+### New Developer Onboarding
+
+```bash
+# 1. Clone and setup environment
+git clone <repo>
+cd mdb-flow
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Run all-in-one setup
+python scripts/setup.py
+
+# 3. Create vector search indexes in Atlas UI
+python scripts/init_db.py --vector-instructions
+# Then create indexes manually in Atlas
 
 # 4. Verify everything works
-python scripts/test_memory_system.py
+python scripts/verify_setup.py
 
-# Or combined (steps 2-3)
-python scripts/seed_memory_demo_data.py --with-sample-data
+# 5. Start app
+streamlit run streamlit_app.py
 ```
 
-### Presentation Setup (5-Tier Memory Demo)
+### Demo Preparation
+
 ```bash
-# Complete presentation-ready dataset
+# Night before
+python scripts/reset_demo.py --force
+
+# Morning of demo (15 min before)
+python scripts/reset_demo.py --verify-only
+streamlit run streamlit_app.py
+# Use demo user: demo-user
+```
+
+### Database Schema Update
+
+```bash
+# After pulling new code
+git pull
+
+# Update indexes
+python scripts/init_db.py --indexes-only
+
+# Verify
+python scripts/verify_setup.py
+
+# Optionally reseed demo data
+python scripts/seed_demo_data.py --clean
+```
+
+### Troubleshooting
+
+```bash
+# 1. Quick health check
+python scripts/verify_setup.py --quick
+
+# 2. Full verification
+python scripts/verify_setup.py --verbose
+
+# 3. If database issues
+python scripts/init_db.py
+
+# 4. If data issues
 python scripts/seed_demo_data.py --clean
 
-# Verify all data loaded correctly
-python scripts/seed_demo_data.py --verify
-
-# Launch the UI
-streamlit run ui/streamlit_app.py
-# Select user: demo-user
+# 5. Full reset (last resort)
+python scripts/setup.py --reset
 ```
 
-### Regular Maintenance
+---
+
+## 🔐 Environment Variables
+
+### Required (App won't start without these)
 ```bash
-# Check database status
-python scripts/cleanup_database.py --status
-
-# Clean up test data
-python scripts/cleanup_database.py --full
-
-# List all indexes
-python scripts/setup_database.py --list
+ANTHROPIC_API_KEY=sk-ant-xxxxx       # Claude API
+VOYAGE_API_KEY=pa-xxxxx              # Embeddings
+OPENAI_API_KEY=sk-xxxxx              # Whisper (voice)
+MONGODB_URI=mongodb+srv://...        # MongoDB connection
+MONGODB_DATABASE=flow_companion       # Database name
 ```
 
-### Development/Debugging
+### Optional (Enable specific features)
 ```bash
-# Test memory system
-python scripts/test_memory_system.py
-
-# Test specific memory type
-python scripts/test_memory_system.py --long-term --performance
-
-# Debug hybrid search
-python scripts/debug/test_hybrid_search.py
-
-# Debug coordinator
-python scripts/debug/test_tool_coordinator.py
+TAVILY_API_KEY=tvly-xxxxx            # Web search (MCP)
+MONGODB_MCP_ENABLED=false            # MongoDB MCP (future)
+MCP_MODE_ENABLED=false               # MCP mode toggle
+LOG_LEVEL=INFO                       # Logging
+DEBUG=false                          # Debug mode
 ```
 
-## Environment Requirements
+### Where to Get Keys
+- Anthropic: https://console.anthropic.com/
+- Voyage AI: https://dash.voyageai.com/
+- OpenAI: https://platform.openai.com/api-keys
+- MongoDB Atlas: https://cloud.mongodb.com/
+- Tavily: https://tavily.com/
 
-All scripts require:
-- Python 3.9+
-- Virtual environment activated
-- MongoDB connection (MONGODB_URI in .env)
+---
 
-Some scripts additionally require:
-- ANTHROPIC_API_KEY (for coordinator tests)
-- VOYAGE_API_KEY (for embedding/vector search tests)
-- OPENAI_API_KEY (for voice transcription tests)
+## ⚠️ Safety & Best Practices
 
-## See Also
+### DO ✅
+- Run `verify_setup.py` after configuration changes
+- Use `reset_demo.py --force` before demos
+- Keep `.env` file secure (never commit)
+- Create vector search indexes after running `init_db.py`
+- Test scripts in development first
+- Use `--dry-run` to preview changes
 
-- **Database Schema**: `shared/models.py`
-- **Database Helpers**: `shared/db.py`
-- **Memory System**: `memory/` directory
-- **Test Suite**: `tests/` directory
-- **Documentation**: `docs/` directory
+### DON'T ❌
+- Run `--force` or `--reset` in production
+- Share API keys or `.env` files
+- Skip vector search index creation
+- Run `reset_demo.py` with real user data
+- Use `--clean` without understanding it deletes data
+
+---
+
+## 📊 Script Comparison Matrix
+
+| Feature | setup.py | init_db.py | verify_setup.py | seed_demo_data.py | reset_demo.py |
+|---------|----------|------------|-----------------|-------------------|---------------|
+| Creates collections | ✓ (via init_db) | ✓ | - | - | - |
+| Creates indexes | ✓ (via init_db) | ✓ | - | - | - |
+| Checks environment | ✓ | - | ✓ | - | - |
+| Checks collections | - | ✓ | ✓ | - | - |
+| Checks indexes | - | - | ✓ | - | - |
+| Checks APIs | - | - | ✓ | - | - |
+| Seeds data | ✓ (optional) | - | - | ✓ | ✓ |
+| Clears data | - | - | - | ✓ (--clean) | ✓ |
+| Interactive | ✓ | - | - | - | ✓ (confirm) |
+| Idempotent | ✓ | ✓ | ✓ | ✓ | - |
+| **Use for** | First-time | DB setup | Verify | Demos | Before demos |
+
+---
+
+## 🛠️ Troubleshooting
+
+### "Failed to connect to MongoDB"
+```bash
+# Check .env
+cat .env | grep MONGODB
+
+# Test connection
+python -c "from shared.db import MongoDB; MongoDB().get_database(); print('OK')"
+```
+
+### "Collection does not exist"
+```bash
+# Initialize database
+python scripts/init_db.py
+
+# Verify
+python scripts/init_db.py --check
+```
+
+### "Vector search index not found"
+```bash
+# Get instructions
+python scripts/init_db.py --vector-instructions
+
+# Then create indexes manually in Atlas UI
+```
+
+### "Missing required environment variables"
+```bash
+# Run setup to recreate .env
+python scripts/setup.py
+
+# Or manually edit .env
+```
+
+---
+
+## 📚 Additional Resources
+
+- **Main README:** `/README.md`
+- **Architecture Docs:** `/docs/architecture/`
+- **Testing Guide:** `/docs/testing/`
+- **Demo Checklist:** `/docs/testing/DEMO_CHECKLIST.md`
+- **Test Coverage:** `/docs/testing/TEST_COVERAGE.md`
+
+---
+
+**Last Updated:** January 9, 2026
+**Version:** 3.0 (Milestone 6 - MCP Agent)
