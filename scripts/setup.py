@@ -1,489 +1,392 @@
 #!/usr/bin/env python3
 """
-All-in-One Setup Script for Flow Companion.
+Complete First-Time Setup Script for Flow Companion.
 
-This is the single script a new developer should run to set up the entire
-project from scratch. It orchestrates all setup steps in the correct order.
+This is the ONE command a new developer runs after cloning the repo.
 
-What it does:
-    1. Checks Python version and dependencies
-    2. Creates .env file (if missing) and validates environment
-    3. Initializes MongoDB (collections + indexes)
-    4. Verifies setup (health checks)
-    5. Optionally seeds demo data
-    6. Displays next steps
+It orchestrates all setup steps in order:
+    1. Pre-flight checks (environment variables)
+    2. Initialize database (collections + indexes)
+    3. Seed demo data
+    4. Verify setup (health checks)
+    5. Success message with next steps
 
 Usage:
-    # Interactive setup (recommended for first-time)
+    # Full first-time setup
     python scripts/setup.py
 
-    # Non-interactive setup (use existing .env)
-    python scripts/setup.py --non-interactive
+    # Initialize DB but don't seed data
+    python scripts/setup.py --skip-seed
 
-    # Skip demo data seeding
-    python scripts/setup.py --no-demo-data
-
-    # Skip verification
-    python scripts/setup.py --no-verify
-
-    # Full reset (dangerous - drops all data!)
-    python scripts/setup.py --reset
+    # Re-run even if already set up
+    python scripts/setup.py --force
 """
 
 import sys
 import os
-import subprocess
-import argparse
+import logging
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import functions from other scripts
+sys.path.insert(0, str(Path(__file__).parent))
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-PROJECT_ROOT = Path(__file__).parent.parent
-ENV_FILE = PROJECT_ROOT / ".env"
-ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
+REQUIRED_ENV_VARS = [
+    "ANTHROPIC_API_KEY",
+    "VOYAGE_API_KEY",
+    "OPENAI_API_KEY",
+    "MONGODB_URI",
+    "MONGODB_DATABASE"
+]
 
-MIN_PYTHON_VERSION = (3, 9)
-
-REQUIRED_ENV_VARS = {
-    "ANTHROPIC_API_KEY": {
-        "description": "Claude API key from Anthropic",
-        "url": "https://console.anthropic.com/",
-        "format": "sk-ant-xxxxx",
-        "required": True
-    },
-    "VOYAGE_API_KEY": {
-        "description": "Voyage AI embeddings API key",
-        "url": "https://dash.voyageai.com/",
-        "format": "pa-xxxxx",
-        "required": True
-    },
-    "OPENAI_API_KEY": {
-        "description": "OpenAI API key (for Whisper voice transcription)",
-        "url": "https://platform.openai.com/api-keys",
-        "format": "sk-xxxxx",
-        "required": True
-    },
-    "MONGODB_URI": {
-        "description": "MongoDB Atlas connection string",
-        "url": "https://cloud.mongodb.com/",
-        "format": "mongodb+srv://user:pass@cluster.mongodb.net/",
-        "required": True
-    },
-    "MONGODB_DATABASE": {
-        "description": "MongoDB database name",
-        "url": None,
-        "format": "flow_companion",
-        "required": True
-    },
-    "TAVILY_API_KEY": {
-        "description": "Tavily API key (optional - for web search via MCP)",
-        "url": "https://tavily.com/",
-        "format": "tvly-xxxxx",
-        "required": False
-    }
-}
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # UTILITIES
 # =============================================================================
 
-def print_banner(text: str):
-    """Print a formatted banner."""
-    print("\n" + "="*70)
-    print(text)
-    print("="*70)
+def print_long_separator():
+    """Print long visual separator."""
+    logger.info("━" * 67)
 
-def print_step(number: int, total: int, text: str):
-    """Print a step header."""
-    print(f"\n{'='*70}")
-    print(f"STEP {number}/{total}: {text}")
-    print(f"{'='*70}")
 
-def run_command(cmd: list, description: str, check: bool = True) -> Tuple[bool, str]:
-    """
-    Run a shell command and return success status and output.
+def print_header(text: str):
+    """Print section header with separators."""
+    print_long_separator()
+    logger.info(text)
+    print_long_separator()
 
-    Args:
-        cmd: Command as list of strings
-        description: Human-readable description
-        check: If True, raise error on failure
 
-    Returns:
-        Tuple of (success, output)
-    """
-    print(f"\n🔧 {description}...")
+def print_step(step: int, total: int, text: str):
+    """Print step header."""
+    logger.info(f"Step {step}/{total}: {text}")
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=check,
-            cwd=PROJECT_ROOT
-        )
-
-        if result.returncode == 0:
-            print(f"✓ {description} completed")
-            return True, result.stdout
-        else:
-            print(f"✗ {description} failed")
-            if result.stderr:
-                print(f"Error: {result.stderr[:200]}")
-            return False, result.stderr
-
-    except subprocess.CalledProcessError as e:
-        print(f"✗ {description} failed: {e}")
-        if e.stderr:
-            print(f"Error: {e.stderr[:200]}")
-        return False, e.stderr
-    except Exception as e:
-        print(f"✗ {description} failed: {e}")
-        return False, str(e)
-
-def check_python_version() -> bool:
-    """Check if Python version meets minimum requirements."""
-    current = sys.version_info[:2]
-    if current >= MIN_PYTHON_VERSION:
-        print(f"✓ Python {current[0]}.{current[1]} (minimum: {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]})")
-        return True
-    else:
-        print(f"✗ Python {current[0]}.{current[1]} is too old (minimum: {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]})")
-        return False
-
-def check_dependencies() -> bool:
-    """Check if required Python packages are installed."""
-    print("\n📦 Checking dependencies...")
-
-    # Map package names to their import names (when different)
-    package_import_names = {
-        "python-dotenv": "dotenv"
-    }
-
-    required_packages = [
-        "anthropic",
-        "voyageai",
-        "openai",
-        "pymongo",
-        "streamlit",
-        "pydantic",
-        "python-dotenv"
-    ]
-
-    missing = []
-    for package in required_packages:
-        try:
-            # Use mapped import name if exists, otherwise convert dashes to underscores
-            import_name = package_import_names.get(package, package.replace("-", "_"))
-            __import__(import_name)
-        except ImportError:
-            missing.append(package)
-
-    if missing:
-        print(f"✗ Missing packages: {', '.join(missing)}")
-        print("\n💡 Install with: pip install -r requirements.txt")
-        return False
-    else:
-        print(f"✓ All required packages installed")
-        return True
 
 # =============================================================================
-# ENVIRONMENT SETUP
+# STEP 1: PRE-FLIGHT CHECKS
 # =============================================================================
 
-def create_env_file(interactive: bool = True) -> bool:
-    """Create .env file from user input or template."""
+def check_environment() -> bool:
+    """Check .env file and required variables."""
+    print_step(1, 4, "Checking environment...")
 
-    if ENV_FILE.exists():
-        print(f"\n✓ .env file already exists: {ENV_FILE}")
-        return True
-
-    print_step(2, 6, "ENVIRONMENT CONFIGURATION")
-
-    if not interactive:
-        print("\n✗ .env file not found and non-interactive mode specified")
-        print(f"  Create {ENV_FILE} manually or run without --non-interactive")
-        return False
-
-    print("\n📝 .env file not found. Let's create it!")
-    print("\nYou'll need to provide API keys and MongoDB credentials.")
-    print("Press Enter to skip optional values.\n")
-
-    env_contents = []
-
-    # Collect required and optional variables
-    for var_name, var_info in REQUIRED_ENV_VARS.items():
-        print(f"\n{var_name}:")
-        print(f"  Description: {var_info['description']}")
-        if var_info['url']:
-            print(f"  Get key from: {var_info['url']}")
-        print(f"  Format: {var_info['format']}")
-
-        if var_info['required']:
-            while True:
-                value = input(f"  Enter value: ").strip()
-                if value:
-                    env_contents.append(f"{var_name}={value}")
-                    break
-                else:
-                    print("  ✗ This value is required. Please enter a value.")
-        else:
-            value = input(f"  Enter value (optional): ").strip()
-            if value:
-                env_contents.append(f"{var_name}={value}")
-            else:
-                env_contents.append(f"# {var_name}=  # Optional")
-
-    # Add additional optional vars
-    env_contents.append("\n# Optional settings")
-    env_contents.append("MONGODB_MCP_ENABLED=false")
-    env_contents.append("MCP_MODE_ENABLED=false")
-    env_contents.append("LOG_LEVEL=INFO")
-    env_contents.append("DEBUG=false")
-
-    # Write to file
-    try:
-        ENV_FILE.write_text("\n".join(env_contents) + "\n")
-        print(f"\n✓ Created .env file: {ENV_FILE}")
-        return True
-    except Exception as e:
-        print(f"\n✗ Failed to create .env file: {e}")
-        return False
-
-def validate_environment() -> bool:
-    """Validate environment variables are set correctly."""
-
-    print("\n🔍 Validating environment variables...")
-
-    # Load environment from .env
+    # Load .env file
     from dotenv import load_dotenv
-    load_dotenv(ENV_FILE)
+    env_file = Path(__file__).parent.parent / ".env"
 
-    missing = []
-    warnings = []
-
-    for var_name, var_info in REQUIRED_ENV_VARS.items():
-        value = os.getenv(var_name)
-
-        if var_info['required']:
-            if not value:
-                missing.append(var_name)
-                print(f"  ✗ {var_name}: NOT SET (required)")
-            else:
-                print(f"  ✓ {var_name}: set")
-
-                # Format validation
-                expected_format = var_info['format']
-                if expected_format.startswith("sk-") and not value.startswith("sk-"):
-                    warnings.append(f"{var_name} doesn't start with 'sk-' (expected format: {expected_format})")
-                elif expected_format.startswith("pa-") and not value.startswith("pa-"):
-                    warnings.append(f"{var_name} doesn't start with 'pa-' (expected format: {expected_format})")
-                elif expected_format.startswith("mongodb") and not value.startswith("mongodb"):
-                    warnings.append(f"{var_name} doesn't start with 'mongodb' (expected format: {expected_format})")
-        else:
-            if value:
-                print(f"  ✓ {var_name}: set (optional)")
-            else:
-                print(f"  - {var_name}: not set (optional)")
-
-    if missing:
-        print(f"\n✗ Missing required variables: {', '.join(missing)}")
-        print(f"  Edit {ENV_FILE} and add the missing values")
+    if not env_file.exists():
+        logger.error("❌ .env file not found")
+        logger.error("")
+        logger.error("To fix:")
+        logger.error(f"  1. Copy .env.example to .env")
+        logger.error(f"  2. Edit .env and add your API keys")
+        logger.error(f"  3. Run this script again")
+        logger.error("")
+        logger.error("Required variables:")
+        for var in REQUIRED_ENV_VARS:
+            logger.error(f"  - {var}")
         return False
 
-    if warnings:
-        print(f"\n⚠️  Warnings:")
-        for warning in warnings:
-            print(f"  - {warning}")
+    logger.info("✅ .env file found")
+    load_dotenv(env_file)
 
-    print(f"\n✓ Environment validation passed")
+    # Check required variables
+    missing = []
+    for var in REQUIRED_ENV_VARS:
+        value = os.getenv(var)
+        if not value:
+            missing.append(var)
+
+    if missing:
+        logger.error("❌ Missing required environment variables:")
+        for var in missing:
+            logger.error(f"  - {var}")
+        logger.error("")
+        logger.error(f"Edit {env_file} and add the missing variables")
+        return False
+
+    logger.info("✅ Required variables set")
     return True
 
+
 # =============================================================================
-# SETUP ORCHESTRATION
+# STEP 2: INITIALIZE DATABASE
 # =============================================================================
 
-def run_init_db(force: bool = False) -> bool:
-    """Run database initialization script."""
+def initialize_database(force: bool = False) -> bool:
+    """Initialize MongoDB database."""
+    print_step(2, 4, "Initializing database...")
 
-    print_step(3, 6, "DATABASE INITIALIZATION")
+    try:
+        from shared.db import MongoDB
+        from init_db import (
+            COLLECTIONS,
+            create_collections,
+            create_tasks_indexes,
+            create_projects_indexes,
+            create_settings_indexes,
+            create_memory_indexes,
+            create_tool_discoveries_indexes,
+            create_eval_indexes
+        )
 
-    cmd = [sys.executable, "scripts/init_db.py"]
-    if force:
-        cmd.append("--force")
-        print("\n⚠️  Force mode: Will drop and recreate collections!")
+        # Connect to MongoDB
+        mongodb = MongoDB()
+        db = mongodb.get_database()
+        logger.info("✅ Connected to MongoDB")
 
-    success, _ = run_command(cmd, "Initialize MongoDB collections and indexes")
-    return success
+        # Create collections
+        collection_results = create_collections(db, verify_only=False)
+        collections_count = sum(1 for status in collection_results.values() if status in ["exists", "created"])
+        logger.info(f"✅ Collections created ({collections_count})")
 
-def run_verification(quick: bool = False) -> bool:
-    """Run setup verification script."""
+        # Create indexes (suppress verbose output)
+        create_tasks_indexes(db, verify_only=False)
+        create_projects_indexes(db, verify_only=False)
+        create_settings_indexes(db, verify_only=False)
+        create_memory_indexes(db, verify_only=False)
+        create_tool_discoveries_indexes(db, verify_only=False)
+        create_eval_indexes(db, verify_only=False)
 
-    print_step(4, 6, "VERIFICATION")
+        # Count total indexes
+        total_indexes = 0
+        for collection in COLLECTIONS.keys():
+            indexes = list(db[collection].list_indexes())
+            total_indexes += len(indexes)
 
-    cmd = [sys.executable, "scripts/verify_setup.py"]
-    if quick:
-        cmd.append("--quick")
+        logger.info(f"✅ Indexes created ({total_indexes})")
 
-    success, output = run_command(cmd, "Verify setup", check=False)
-
-    # verification script returns detailed output, always show it
-    if output:
-        print(output)
-
-    return success
-
-def run_demo_seeding() -> bool:
-    """Run demo data seeding script."""
-
-    print_step(5, 6, "DEMO DATA (Optional)")
-
-    response = input("\nSeed demo data? (yes/no) [yes]: ").strip().lower()
-
-    if response in ["", "yes", "y"]:
-        cmd = [sys.executable, "scripts/seed_demo_data.py"]
-        success, _ = run_command(cmd, "Seed demo data")
-        return success
-    else:
-        print("\n⏭️  Skipping demo data seeding")
         return True
+
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        logger.error("")
+        logger.error("Check:")
+        logger.error("  - MONGODB_URI is correct in .env")
+        logger.error("  - MongoDB Atlas allows your IP address")
+        logger.error("  - Network connection is working")
+        return False
+
+
+# =============================================================================
+# STEP 3: SEED DEMO DATA
+# =============================================================================
+
+def seed_demo_data(skip: bool = False) -> bool:
+    """Seed demo data."""
+    print_step(3, 4, "Seeding demo data...")
+
+    if skip:
+        logger.info("⏭️  Skipped (--skip-seed)")
+        return True
+
+    try:
+        from shared.db import MongoDB
+        import seed_demo_data
+
+        # Suppress verbose output
+        import io
+        import contextlib
+
+        mongodb = MongoDB()
+        db = mongodb.get_database()
+
+        stdout_buffer = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout_buffer):
+            # Seed all data
+            projects = seed_demo_data.seed_projects(db, clean=False)
+            tasks = seed_demo_data.seed_tasks(db, clean=False)
+            procedural = seed_demo_data.seed_procedural_memory(db, skip_embeddings=False, clean=False)
+            semantic = seed_demo_data.seed_semantic_memory(db, clean=False)
+            episodic = seed_demo_data.seed_episodic_memory(db, skip_embeddings=False, clean=False)
+
+        logger.info(f"✅ Projects: {projects}")
+        logger.info(f"✅ Tasks: {tasks}")
+        logger.info(f"✅ Memory entries: {procedural + semantic + episodic}")
+
+        # Count embeddings
+        embeddings_count = db.long_term_memory.count_documents({
+            "user_id": "demo-user",
+            "embedding": {"$exists": True}
+        })
+        logger.info(f"✅ Embeddings generated: {embeddings_count}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Demo data seeding failed: {e}")
+        logger.error("")
+        logger.error("This is not critical - you can seed data later:")
+        logger.error("  python scripts/reset_demo.py")
+        logger.error("")
+        logger.error("Continuing with verification...")
+        return False  # Non-critical, continue
+
+
+# =============================================================================
+# STEP 4: VERIFY SETUP
+# =============================================================================
+
+def verify_setup() -> Dict[str, bool]:
+    """Verify setup is working."""
+    print_step(4, 4, "Verifying setup...")
+
+    results = {}
+
+    # Database check
+    try:
+        from shared.db import MongoDB
+        mongodb = MongoDB()
+        db = mongodb.get_database()
+        db.list_collection_names()
+        logger.info("✅ Database: OK")
+        results["database"] = True
+    except Exception as e:
+        logger.error(f"❌ Database: FAILED ({e})")
+        results["database"] = False
+
+    # Voyage AI check
+    try:
+        from shared.embeddings import embed_document
+        embedding = embed_document("test")
+        if len(embedding) == 1024:
+            logger.info("✅ Voyage AI: OK")
+            results["voyage"] = True
+        else:
+            logger.error(f"⚠️  Voyage AI: unexpected dimensions ({len(embedding)})")
+            results["voyage"] = False
+    except Exception as e:
+        logger.error(f"❌ Voyage AI: FAILED ({e})")
+        results["voyage"] = False
+
+    # Anthropic check
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        response = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "Say 'ok'"}]
+        )
+        if response.content:
+            logger.info("✅ Anthropic: OK")
+            results["anthropic"] = True
+        else:
+            logger.error("❌ Anthropic: FAILED")
+            results["anthropic"] = False
+    except Exception as e:
+        logger.error(f"❌ Anthropic: FAILED ({e})")
+        results["anthropic"] = False
+
+    # Tavily check (optional)
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if tavily_key:
+        logger.info("✅ Tavily: configured")
+        results["tavily"] = True
+    else:
+        logger.info("⚠️  Tavily: not configured (optional)")
+        results["tavily"] = None  # Optional, not a failure
+
+    return results
+
 
 # =============================================================================
 # MAIN
 # =============================================================================
 
 def main():
+    import argparse
+
     parser = argparse.ArgumentParser(
-        description="All-in-one setup for Flow Companion",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        description="Complete first-time setup for Flow Companion",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument(
-        "--non-interactive",
+        "--skip-seed",
         action="store_true",
-        help="Non-interactive mode (requires existing .env file)"
+        help="Initialize DB but don't seed demo data"
     )
 
     parser.add_argument(
-        "--no-demo-data",
+        "--force",
         action="store_true",
-        help="Skip demo data seeding"
-    )
-
-    parser.add_argument(
-        "--no-verify",
-        action="store_true",
-        help="Skip verification step"
-    )
-
-    parser.add_argument(
-        "--reset",
-        action="store_true",
-        help="Reset database (DANGEROUS: drops all collections)"
-    )
-
-    parser.add_argument(
-        "--quick",
-        action="store_true",
-        help="Quick verification (environment + MongoDB only)"
+        help="Re-run even if already set up"
     )
 
     args = parser.parse_args()
 
-    # Banner
-    print_banner("FLOW COMPANION - FIRST-TIME SETUP")
-    print("\nThis script will set up your local development environment.")
-    print("It will:")
-    print("  1. Check Python version and dependencies")
-    print("  2. Create/validate .env file")
-    print("  3. Initialize MongoDB database")
-    print("  4. Verify everything works")
-    print("  5. Optionally seed demo data")
-
-    if args.reset:
-        print("\n⚠️  WARNING: --reset will DROP ALL DATA in your database!")
-        response = input("\nContinue? (type 'yes' to confirm): ").strip().lower()
-        if response != "yes":
-            print("\n❌ Aborted")
-            return 1
+    # Print header
+    print_header("🚀 Flow Companion - First Time Setup")
 
     # Step 1: Pre-flight checks
-    print_step(1, 6, "PRE-FLIGHT CHECKS")
-
-    if not check_python_version():
+    if not check_environment():
         return 1
 
-    if not check_dependencies():
+    # Step 2: Initialize database
+    if not initialize_database(force=args.force):
         return 1
 
-    # Step 2: Environment setup
-    if not create_env_file(interactive=not args.non_interactive):
-        return 1
+    # Step 3: Seed demo data
+    seed_success = seed_demo_data(skip=args.skip_seed)
 
-    if not validate_environment():
-        return 1
+    # Step 4: Verify setup
+    results = verify_setup()
 
-    # Step 3: Database initialization
-    if not run_init_db(force=args.reset):
-        print("\n✗ Database initialization failed")
-        print("  See errors above for details")
-        return 1
+    # Summary
+    print_long_separator()
 
-    # Step 4: Verification
-    if not args.no_verify:
-        verify_success = run_verification(quick=args.quick)
-        if not verify_success:
-            print("\n⚠️  Verification found issues")
-            print("  Review errors above and fix before proceeding")
+    # Check if all critical components passed
+    critical_passed = all([
+        results.get("database", False),
+        results.get("voyage", False),
+        results.get("anthropic", False)
+    ])
 
-            response = input("\nContinue anyway? (yes/no) [no]: ").strip().lower()
-            if response not in ["yes", "y"]:
-                return 1
+    if critical_passed:
+        logger.info("✅ Setup Complete!")
+        print_long_separator()
+        logger.info("")
+        logger.info("To start the app:")
+        logger.info("  streamlit run streamlit_app.py")
+        logger.info("")
+        logger.info("To reset demo data later:")
+        logger.info("  python scripts/reset_demo.py")
+        logger.info("")
+        logger.info("To verify setup:")
+        logger.info("  python scripts/verify_setup.py")
+        logger.info("")
+        return 0
     else:
-        print_step(4, 6, "VERIFICATION (Skipped)")
+        logger.error("❌ Setup incomplete - some checks failed")
+        print_long_separator()
+        logger.error("")
+        logger.error("Failed components:")
+        if not results.get("database"):
+            logger.error("  - Database (check MONGODB_URI)")
+        if not results.get("voyage"):
+            logger.error("  - Voyage AI (check VOYAGE_API_KEY)")
+        if not results.get("anthropic"):
+            logger.error("  - Anthropic (check ANTHROPIC_API_KEY)")
+        logger.error("")
+        logger.error("Fix the issues above and run again:")
+        logger.error("  python scripts/setup.py")
+        logger.error("")
+        return 1
 
-    # Step 5: Demo data
-    if not args.no_demo_data and not args.non_interactive:
-        run_demo_seeding()
-    else:
-        print_step(5, 6, "DEMO DATA (Skipped)")
-
-    # Step 6: Final instructions
-    print_step(6, 6, "SETUP COMPLETE!")
-
-    print("\n✅ Flow Companion is ready to use!\n")
-
-    print("📋 Next Steps:")
-    print("\n1. Start the application:")
-    print("   streamlit run streamlit_app.py")
-    print("\n2. Open your browser to:")
-    print("   http://localhost:8501")
-    print("\n3. (Optional) Create vector search indexes:")
-    print("   python scripts/init_db.py --vector-instructions")
-    print("   Then create them manually in MongoDB Atlas UI")
-
-    print("\n📚 Useful Commands:")
-    print("   python scripts/verify_setup.py          # Verify setup")
-    print("   python scripts/seed_demo_data.py        # Seed demo data")
-    print("   python scripts/reset_demo.py --force    # Reset demo data")
-    print("   streamlit run streamlit_app.py          # Start app")
-    print("   streamlit run evals_app.py              # Start evals dashboard")
-
-    print("\n🔧 Development:")
-    print("   pytest tests/                           # Run tests")
-    print("   python scripts/verify_setup.py --verbose  # Detailed verification")
-
-    print("\n💡 Tips:")
-    print("   - Demo user ID: demo-user")
-    print("   - Check docs/testing/ for test guides")
-    print("   - See README.md for architecture overview")
-
-    print("\n🎉 Happy coding!")
-
-    return 0
 
 if __name__ == "__main__":
     sys.exit(main())
