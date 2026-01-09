@@ -1,7 +1,8 @@
 # 06 - Memory Engineering
 
-**Time:** 30 minutes  
+**Time:** 35 minutes
 **Priority:** P0 - Core demo feature
+**Updated:** January 9, 2026 (Milestone 6 - Knowledge Cache & GTM Templates)
 
 ---
 
@@ -19,9 +20,11 @@ Flow Companion implements a 5-tier memory architecture based on MongoDB's Agent 
 |------|------------|-----|---------|---------|
 | **Working Memory** | short_term | 2hr | Current context, task focus | "Currently viewing AgentOps project" |
 | **Episodic Memory** | long_term | ∞ | Action history (what happened) | "Completed debugging task at 2pm" |
-| **Semantic Memory** | long_term | ∞ | Preferences (what I know about user) | "User prefers Voice Agent project" |
-| **Procedural Memory** | long_term | ∞ | Rules (how to act) | "When user says 'done', complete task" |
+| **Semantic Memory** | long_term | 7d* | Preferences + Knowledge cache* | "User prefers Voice Agent" + "AI news from Tavily" |
+| **Procedural Memory** | long_term | ∞ | Rules + Templates* | "done→complete" + "GTM template" |
 | **Shared Memory** | shared | 5min | Agent handoffs, coordination | "Retrieval found task X → Worklog" |
+
+*New in Milestone 6: Knowledge cache (semantic.knowledge) and templates (procedural.template)
 
 ### 4 Capabilities (AR, TTL, LRU, CR)
 
@@ -181,6 +184,28 @@ Settings:
 | 2 | New session | - | □ |
 | 3 | "What's my current focus?" | Doesn't know | □ |
 
+#### Test 6.3.5: Knowledge Caching (Milestone 6)
+
+**Purpose:** Cache MCP search results to avoid redundant API calls (7-day TTL).
+
+```
+Settings:
+☑ Semantic Memory: ON
+☑ MCP Mode: ON (requires TAVILY_API_KEY)
+```
+
+| Step | Action | Expected | Capability | Pass |
+|------|--------|----------|------------|------|
+| 1 | "What are the latest MongoDB features?" | Tavily search, results cached | Setup | □ |
+| 2 | Check Memory Stats | Knowledge cache: 1 entry | Verify | □ |
+| 3 | "MongoDB features 2026" (similar query) | Uses cache (~0.5s, no API call) | AR | □ |
+| 4 | Check response | Shows "📚 Source: Knowledge Cache" | Verify | □ |
+
+**Verification:**
+- Debug panel shows "Knowledge Cache HIT" for step 3
+- Response time <1s (vs 3-5s for fresh Tavily search)
+- Tool Discoveries count stays same (no new discovery)
+
 ---
 
 ### 6.4 Procedural Memory (Rules)
@@ -215,6 +240,30 @@ Settings:
 | 1 | "When I say 'done', complete my task" | Stores rule | Setup | □ |
 | 2 | "Actually, when I say 'done', just add a 'completed' note" | Updates rule | CR | □ |
 | 3 | "Start task X" then "Done" | Adds note (not complete) | CR | □ |
+
+#### Test 6.4.4: GTM Template (Milestone 6)
+
+**Purpose:** Use procedural templates for multi-step workflows (see 07-multi-turn.md).
+
+```
+Settings:
+☑ Procedural Memory: ON
+☑ MCP Mode: ON (for research step)
+```
+
+| Step | Action | Expected | Capability | Pass |
+|------|--------|----------|------------|------|
+| 1 | Verify GTM template exists | Check Memory Stats → Procedural: 1+ | Setup | □ |
+| 2 | "Research gaming market and create GTM project with tasks" | Multi-step workflow triggers | Setup | □ |
+| 3 | Check project created | "Gaming Market" project exists | Verify | □ |
+| 4 | Check tasks | 12 tasks across 3 phases (Research, Strategy, Execution) | AR | □ |
+| 5 | Verify template usage | Template `times_used` incremented | Verify | □ |
+
+**Template Structure Verified:**
+- Phase 1: Research (4 tasks)
+- Phase 2: Strategy (4 tasks)
+- Phase 3: Execution (4 tasks)
+- Each task prefixed with phase name: `[Research] Market size analysis`
 
 ---
 
@@ -336,10 +385,10 @@ Record memory operation times:
 |-------------|-------|--------|--------|
 | Working Memory | 4 | __ | __ |
 | Episodic Memory | 4 | __ | __ |
-| Semantic Memory | 4 | __ | __ |
-| Procedural Memory | 3 | __ | __ |
+| Semantic Memory | 5 | __ | __ |
+| Procedural Memory | 4 | __ | __ |
 | Shared Memory | 3 | __ | __ |
-| **Total** | **18** | __ | __ |
+| **Total** | **20** | __ | __ |
 
 | Capability | Tests | Passed | Failed |
 |------------|-------|--------|--------|
@@ -378,5 +427,6 @@ Record memory operation times:
 
 ---
 
-*Memory Engineering Testing Guide v2.0*
+*Memory Engineering Testing Guide v3.0*
+*Updated for Milestone 6: Knowledge Cache & GTM Templates*
 *Based on MongoDB Agent Memory Framework*

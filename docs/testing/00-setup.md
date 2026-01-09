@@ -1,11 +1,60 @@
 # 00 - Pre-Test Setup
 
-**Time:** 5 minutes  
+**Time:** 5-10 minutes
 **Priority:** Required before any testing
+**Updated:** January 9, 2026 (Milestone 6 - MCP Agent)
 
 ---
 
-## 1. Start the Applications
+## 1. Environment Configuration
+
+### 1.1 Required Environment Variables
+
+Create or verify `.env` file in project root:
+
+```bash
+# Required: AI & Embedding APIs
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+VOYAGE_API_KEY=pa-xxxxx
+OPENAI_API_KEY=sk-xxxxx  # For voice transcription
+
+# Required: Database
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/
+MONGODB_DATABASE=flow_companion
+
+# Optional: MCP Mode (Milestone 6)
+MCP_MODE_ENABLED=false  # Toggle in UI instead
+TAVILY_API_KEY=tvly-xxxxx  # Leave empty to disable Tavily
+
+# Optional: Development
+LOG_LEVEL=INFO
+DEBUG=false
+```
+
+### 1.2 Seed Demo Data (Optional)
+
+For demonstration and testing, seed the database with sample data:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run seed script
+python scripts/seed_demo_data.py
+```
+
+**What gets seeded:**
+- 3 demo projects (Project Alpha, Beta, Marketing Website)
+- 15 sample tasks with various statuses
+- User preferences (working_hours, focus_mode)
+- Procedural rules (shortcuts like "done" → complete task)
+- GTM Roadmap Template (for multi-step workflow demos)
+
+**Note:** Run this once before demos. Data persists across sessions.
+
+---
+
+## 2. Start the Applications
 
 ```bash
 # Terminal 1: Main app
@@ -18,7 +67,7 @@ streamlit run evals_app.py --server.port 8502
 
 ---
 
-## 2. Verify Services
+## 3. Verify Services
 
 | Service | Check | Expected |
 |---------|-------|----------|
@@ -37,7 +86,7 @@ streamlit run evals_app.py --server.port 8502
 
 ---
 
-## 3. Reset Test State
+## 4. Reset Test State
 
 Before each test session:
 
@@ -60,7 +109,7 @@ For a **completely clean state** (new user simulation):
 
 ---
 
-## 4. Default Toggle Settings
+## 5. Default Toggle Settings
 
 ### Baseline Testing (All ON)
 
@@ -78,6 +127,9 @@ Memory Engineering:
 ☑ Procedural Memory: ON
 ☑ Shared Memory: ON
 ☑ Context Injection: ON
+
+Experimental (Milestone 6):
+☐ MCP Mode: OFF (default - enable when testing MCP features)
 ```
 
 ### Comparison Testing (Baseline OFF)
@@ -90,7 +142,7 @@ Memory Engineering:
 
 ---
 
-## 5. Test Environment Checklist
+## 6. Test Environment Checklist
 
 | Item | Check | Notes |
 |------|-------|-------|
@@ -101,7 +153,7 @@ Memory Engineering:
 
 ---
 
-## 6. Known Environment Issues
+## 7. Known Environment Issues
 
 | Issue | Symptom | Solution |
 |-------|---------|----------|
@@ -109,6 +161,8 @@ Memory Engineering:
 | Embedding cold start | First search slow | Run a warm-up search |
 | Voice permission | No audio capture | Check browser permissions |
 | Memory not updating | Stats don't change | Check MongoDB write permissions |
+| MCP connection fails | Tavily tools not available | Verify TAVILY_API_KEY in .env |
+| MCP timeout | Request takes >30s | Network issue or Tavily API down |
 
 ---
 
@@ -121,4 +175,27 @@ Once setup is verified, proceed to:
 
 ---
 
-*Setup Guide v2.0*
+## 8. MCP Mode Setup (Optional - Milestone 6)
+
+To test MCP Agent features:
+
+**1. Get Tavily API Key:**
+- Sign up at https://tavily.com
+- Get API key from dashboard
+- Add to `.env`: `TAVILY_API_KEY=tvly-xxxxx`
+
+**2. Enable in UI:**
+- In sidebar under "🧪 Experimental"
+- Toggle "MCP Mode" ON
+- Verify: "MCP Servers: 1 connected (Tavily)" appears
+
+**3. Test Connection:**
+- Ask: "What are the latest AI developments?"
+- Should route to Tavily for web search
+- Response includes 🔌 MCP indicator
+
+**Note:** MCP Mode is disabled by default. Only enable for testing web search and multi-step workflows.
+
+---
+
+*Setup Guide v3.0 - Updated for Milestone 6*

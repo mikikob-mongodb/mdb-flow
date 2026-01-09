@@ -1,7 +1,8 @@
 # 09 - Demo Dry Run
 
-**Time:** 20 minutes  
+**Time:** 25 minutes
 **Priority:** P0 - Demo rehearsal
+**Updated:** January 9, 2026 (Milestone 6 - Current Demo Script)
 
 ---
 
@@ -11,15 +12,26 @@ This is the full demo script. Run through it 3x before the actual demo to ensure
 
 ---
 
-## Pre-Demo Setup
+## Pre-Demo Setup (Night Before)
+
+```
+□ Run seed_demo_data.py to populate database
+□ Verify .env has TAVILY_API_KEY
+□ Test all demo commands 3x
+□ Prepare backup plan (screenshots, video)
+□ Charge laptop, test WiFi
+```
+
+## Day-Of Setup (15 min before)
 
 ```
 □ App running on localhost:8501
-□ Evals dashboard on localhost:8502 (optional)
-□ All toggles ON (Context Engineering + Memory)
-□ Memory cleared (clean state)
-□ Browser in presentation mode (hide bookmarks, etc.)
-□ Backup video ready (in case of live issues)
+□ All toggles ON: Context Engineering + Memory
+□ MCP Mode: OFF (will toggle during demo)
+□ Memory cleared (🗑️ Clear Session Memory)
+□ Browser in presentation mode (hide bookmarks, dev tools)
+□ Debug panel visible at bottom
+□ Slides ready, synced with demo flow
 ```
 
 ---
@@ -93,59 +105,98 @@ Show voice input produces same results.
 
 ---
 
-### Memory Patterns (9-15 min)
+### Memory Engineering Demo (9-17 min) ⭐ CORE SECTION
 
-This is the core demo section - show memory value.
+**This is the main demo - show 5-tier memory architecture value.**
 
-#### Working Memory Demo
+#### Step 1: Baseline Query (Slash Command)
 
-| Step | Action | Expected | Pass |
-|------|--------|----------|------|
-| 1 | "Show me AgentOps" | Context stored | □ |
-| 2 | "What's high priority?" | Filtered to AgentOps | □ |
-| 3 | Check Memory Stats | Working Memory: 1 | □ |
+| Action | Expected | Latency | Pass |
+|--------|----------|---------|------|
+| `/tasks` | Shows all tasks (15 from seed data) | <200ms | □ |
 
-**Talking Point:** Working Memory maintains session context.
+**Talking Point:** Direct MongoDB query - our baseline.
 
-#### Working Memory OFF
+#### Step 2: Episodic Memory (Action History)
 
-| Step | Action | Expected | Pass |
-|------|--------|----------|------|
-| 1 | [Toggle Working Memory OFF] | | □ |
-| 2 | "What's high priority?" | ALL high priority OR asks "which project?" | □ |
+| Action | Expected | Pass |
+|--------|----------|------|
+| "What was completed on Project Alpha?" | Shows completed tasks from history | □ |
+| Check debug panel | `get_action_history` tool called | □ |
 
-**Talking Point:** Without Working Memory, context is lost.
+**Talking Point:** Episodic Memory tracks what happened - persistent action history.
 
-#### Working Memory ON + Semantic Memory
+#### Step 3: Semantic Memory (Preferences)
 
-| Step | Action | Expected | Pass |
-|------|--------|----------|------|
-| 1 | [Toggle Working Memory ON] | | □ |
-| 2 | "I'm focusing on Voice Agent" | Preference stored | □ |
-| 3 | Check Memory Stats | Semantic Memory: 1 | □ |
-| 4 | "What should I do next?" | Suggests Voice Agent tasks | □ |
+| Action | Expected | Pass |
+|--------|----------|------|
+| "I'm focusing on Project Alpha" | Stores preference | □ |
+| Check Memory Stats | Semantic Memory: 1 entry | □ |
 
-**Talking Point:** Semantic Memory learns preferences.
+**Talking Point:** Semantic Memory learns user preferences - stored permanently.
 
-#### Episodic Memory Demo
+#### Step 4: Working Memory (Session Context)
 
-| Step | Action | Expected | Pass |
-|------|--------|----------|------|
-| 1 | "What did I complete today?" | Shows history | □ |
-| 2 | [Toggle Episodic Memory OFF] | | □ |
-| 3 | "What did I complete today?" | Can't access history | □ |
+| Action | Expected | Pass |
+|--------|----------|------|
+| "What should I work on next?" | Suggests Project Alpha tasks (uses preference) | □ |
+| Check Memory Stats | Working Memory: 1 entry (current focus) | □ |
 
-**Talking Point:** Episodic Memory provides action history.
+**Talking Point:** Working Memory maintains conversation context - knows "next" refers to Project Alpha.
 
-#### Shared Memory Demo
+#### Step 5: Memory Contrast (Toggle OFF)
 
-| Step | Action | Expected | Pass |
-|------|--------|----------|------|
-| 1 | [All toggles ON] | | □ |
-| 2 | "I finished the checkpointer task" | Complete flow | □ |
-| 3 | Check debug panel | Handoff visible | □ |
+| Action | Expected | Pass |
+|--------|----------|------|
+| [Toggle Working Memory OFF in sidebar] | Toggle shows unchecked | □ |
+| "What should I work on next?" | Shows ALL tasks OR asks "which project?" | □ |
 
-**Talking Point:** Shared Memory enables agent coordination.
+**Talking Point:** Without Working Memory, context is lost - system doesn't remember our focus.
+
+**[Toggle Working Memory back ON]**
+
+#### Step 6: MCP Agent (Web Search) - NEW in Milestone 6
+
+| Action | Expected | Pass |
+|--------|----------|------|
+| [Toggle MCP Mode ON in Experimental section] | Shows "MCP Servers: 1 connected (Tavily)" | □ |
+| "Research gaming market and create GTM project with tasks" | Multi-step workflow executes | □ |
+
+**Expected Execution Flow:**
+```
+Step 1/3: Research gaming market trends
+  → Routing to MCP Agent (Tavily)...
+  → ✓ Research completed via tavily-search
+
+Step 2/3: Create GTM project for gaming
+  → Detected GTM project
+  → Loading template from procedural memory...
+  → ✓ Found template: GTM Roadmap Template
+  → ✓ Project created: Gaming Market
+
+Step 3/3: Generate tasks from template
+  → Phase: Research (4 tasks)
+  → Phase: Strategy (4 tasks)
+  → Phase: Execution (4 tasks)
+  → ✓ Generated 12 tasks across 3 phases
+
+Multi-step execution complete: 3/3 steps successful
+```
+
+**Talking Points:**
+- Procedural Memory: GTM template loaded automatically
+- MCP Agent: Dynamic tool discovery (Tavily web search)
+- Knowledge Cache: Research results cached for 7 days
+- Multi-step workflows: Automatic orchestration
+
+#### Step 7: Knowledge Cache (Memory Reuse)
+
+| Action | Expected | Pass |
+|--------|----------|------|
+| "What do you know about gaming?" | Uses cached research (~0.5s, no new API call) | □ |
+| Check response | Shows "📚 Source: Knowledge Cache" | □ |
+
+**Talking Point:** Knowledge Cache (Semantic Memory) - avoids redundant API calls, 7-day TTL.
 
 ---
 
@@ -166,20 +217,24 @@ Show metrics if time permits.
 
 ---
 
-### Wrap-up (17-20 min)
+### Wrap-up (17-25 min)
 
 ```
 □ Debug panel shows clear breakdown
 □ Latency numbers support narrative
-□ Memory toggles demonstrated value
+□ All 5 memory types demonstrated
+□ MCP Agent and multi-step workflows shown
 □ Q&A ready
 ```
 
 **Key Takeaways:**
-1. Context Engineering: 40-60% latency reduction
-2. Memory Engineering: 5 types, 4 capabilities
-3. MongoDB as unified memory layer
-4. Systematic evaluation approach
+1. **5-Tier Memory Architecture**: Working, Episodic, Semantic, Procedural, Shared
+2. **Context Engineering**: 40-60% latency reduction through optimization
+3. **MCP Agent (Milestone 6)**: Dynamic tool discovery with Tavily integration
+4. **Multi-Step Workflows**: Automatic orchestration (Research → Create → Generate)
+5. **Knowledge Cache**: 7-day TTL, 90% faster on repeated queries
+6. **MongoDB Atlas**: Unified memory layer with vector search
+7. **Production-Ready**: 47 tests, 90% coverage
 
 ---
 
@@ -202,35 +257,52 @@ Print this for demo day:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ FLOW COMPANION - DEMO QUICK REFERENCE                    │
+│ FLOW COMPANION - DEMO QUICK REFERENCE (Jan 15, 2026)    │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
-│ SLASH COMMANDS (fast, direct DB):                       │
-│   /tasks                    All tasks                    │
-│   /tasks status:X           Filter by status             │
-│   /search <query>           Hybrid search                │
-│   /projects                 All projects                 │
+│ EXACT DEMO SEQUENCE (8 Commands):                       │
 │                                                          │
-│ TEXT QUERIES (LLM):                                      │
-│   "What are my tasks?"                                   │
-│   "Show me the AgentOps project"                        │
-│   "Find tasks about debugging"                           │
+│ 1. /tasks                                                │
+│    → Shows all 15 tasks (<200ms)                        │
 │                                                          │
-│ ACTIONS:                                                 │
-│   "I finished the X task"   Complete                     │
-│   "Start the X task"        Start                        │
-│   "Add a note to X: ..."    Add note                     │
+│ 2. "What was completed on Project Alpha?"               │
+│    → Episodic Memory (action history)                   │
 │                                                          │
-│ MEMORY DEMOS:                                            │
-│   Working:   "Show me AgentOps" → "What's high priority?"│
-│   Semantic:  "I'm focusing on Voice Agent"              │
-│   Episodic:  "What did I complete today?"               │
-│   Shared:    "I finished X" → watch debug for handoff   │
+│ 3. "I'm focusing on Project Alpha"                      │
+│    → Semantic Memory (stores preference)                │
+│                                                          │
+│ 4. "What should I work on next?"                        │
+│    → Working Memory (uses Project Alpha context)        │
+│                                                          │
+│ 5. [Toggle Working Memory OFF]                          │
+│    → "What should I work on next?"                      │
+│    → Shows context is lost                              │
+│    [Toggle Working Memory back ON]                      │
+│                                                          │
+│ 6. [Toggle MCP Mode ON]                                 │
+│    → "Research gaming market and create GTM project     │
+│        with tasks"                                       │
+│    → Multi-step workflow (3 steps, ~10s)                │
+│    → Procedural Memory (GTM template)                   │
+│    → MCP Agent (Tavily research)                        │
+│    → 12 tasks created automatically                      │
+│                                                          │
+│ 7. "What do you know about gaming?"                     │
+│    → Knowledge Cache hit (~0.5s, no API call)           │
 │                                                          │
 │ EXPECTED LATENCIES:                                      │
-│   Slash commands: <500ms                                 │
-│   LLM queries: 6-12s (optimized)                        │
-│   Memory operations: <50ms                               │
+│   /tasks:            <200ms                              │
+│   Text queries:      6-12s (optimized)                  │
+│   MCP + multi-step:  ~10s (3 steps)                     │
+│   Knowledge cache:   <1s (90% faster)                   │
+│   Memory ops:        <50ms                               │
+│                                                          │
+│ STATS TO MENTION:                                        │
+│   • 5-tier memory architecture                          │
+│   • 47 tests, 90% coverage                              │
+│   • 40-60% latency reduction (context engineering)      │
+│   • 7-day knowledge cache TTL                           │
+│   • Vector search: 1024-dim Voyage AI embeddings        │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -249,5 +321,20 @@ Print this for demo day:
 
 ---
 
-*Demo Dry Run Guide v2.0*
+## Verification After Each Dry Run
+
+```
+□ All 7 demo commands executed successfully
+□ Multi-step workflow created 12 tasks with correct phases
+□ Knowledge cache showed "📚 Source: Knowledge Cache"
+□ Memory toggles demonstrated clear before/after
+□ Debug panel showed tool calls and timing
+□ No errors in console
+□ Backup plan ready if any step fails
+```
+
+---
+
+*Demo Dry Run Guide v3.0*
+*Updated for Milestone 6: MCP Agent & Multi-Step Workflows*
 *MongoDB Developer Day - January 15, 2026*

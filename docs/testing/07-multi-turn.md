@@ -1,13 +1,16 @@
-# 07 - Multi-Turn Conversations
+# 07 - Multi-Turn Conversations & Multi-Step Workflows
 
-**Time:** 15 minutes  
+**Time:** 20 minutes
 **Priority:** P1 - Important for realistic demo
+**Updated:** January 9, 2026 (Milestone 6 - Multi-Step Workflows)
 
 ---
 
 ## Overview
 
-Multi-turn conversations test how well the system maintains context across multiple exchanges. This combines Working Memory with natural conversation flow.
+This guide tests:
+1. **Multi-turn conversations**: Context persistence across exchanges (Working Memory)
+2. **Multi-step workflows** (NEW): Automatic detection and execution of complex requests
 
 ---
 
@@ -97,8 +100,97 @@ Multi-turn conversations test how well the system maintains context across multi
 
 ---
 
+## Multi-Step Workflows (Milestone 6)
+
+**Purpose:** Automatically detect and execute complex multi-step requests without explicit orchestration.
+
+### 7.7 Basic Multi-Step: Research + Create + Generate
+
+**Setup:**
+```
+☑ MCP Mode: ON (requires TAVILY_API_KEY)
+☑ Procedural Memory: ON (for GTM template)
+☑ Working Memory: ON
+```
+
+| Turn | Query/Action | Expected | Pass |
+|------|-------------|----------|------|
+| 1 | "Research the gaming market and create a GTM project with tasks" | Detects 3-step workflow | □ |
+| 2 | **Step 1: Research** | Routes to Tavily MCP, gets market data | □ |
+| 3 | **Step 2: Create** | Creates "Gaming Market" project, loads GTM template | □ |
+| 4 | **Step 3: Generate** | Creates 12 tasks across 3 phases | □ |
+| 5 | Check response | Shows all 3 steps completed with results | □ |
+
+**Verification:**
+```
+□ Response includes research results from Tavily
+□ Project created: "Gaming Market"
+□ 12 tasks created with phase prefixes:
+  - [Research] Market size and growth analysis
+  - [Research] Competitor landscape mapping
+  - [Research] Target customer persona development
+  - [Research] Pricing strategy research
+  - [Strategy] Value proposition refinement
+  - [Strategy] Channel strategy definition
+  - [Strategy] Partnership opportunity identification
+  - [Strategy] Go-to-market timeline creation
+  - [Execution] Marketing collateral development
+  - [Execution] Sales enablement materials
+  - [Execution] Launch event planning
+  - [Execution] Success metrics definition
+□ GTM template usage count incremented
+□ Total time: ~7-11 seconds
+```
+
+### 7.8 Multi-Step Detection Patterns
+
+Test these patterns to verify detection:
+
+| Query | Expected Detection | Pass |
+|-------|-------------------|------|
+| "Research MongoDB features and create a project" | 2 steps: research + create_project | □ |
+| "Look up AI trends then make tasks" | 2 steps: research + generate_tasks | □ |
+| "Find gaming news and then create a GTM project with tasks" | 3 steps: research + create + generate | □ |
+
+**Should NOT detect (single-step):**
+| Query | Expected Behavior | Pass |
+|-------|------------------|------|
+| "Research the gaming market" | Single MCP call (not multi-step) | □ |
+| "Create a GTM project" | Single create (no workflow) | □ |
+
+### 7.9 Multi-Step Context Passing
+
+**Purpose:** Verify context flows between steps.
+
+| Turn | Query/Check | Expected | Pass |
+|------|------------|----------|------|
+| 1 | Run multi-step workflow (test 7.7) | All steps complete | □ |
+| 2 | "What do you know about gaming?" | Uses cached research from step 1 | □ |
+| 3 | "Show me the GTM project" | Shows the created project | □ |
+| 4 | "List the research phase tasks" | Shows 4 research tasks | □ |
+
+### 7.10 Multi-Step Error Handling
+
+**Scenario A: MCP Mode Disabled**
+
+| Turn | Query | Expected | Pass |
+|------|-------|----------|------|
+| 1 | Toggle MCP Mode OFF | - | □ |
+| 2 | "Research gaming and create GTM project" | Error: "Enable MCP Mode for research" | □ |
+
+**Scenario B: Missing Template**
+
+| Turn | Query | Expected | Pass |
+|------|-------|----------|------|
+| 1 | Delete GTM template from database | - | □ |
+| 2 | "Research X and create GTM project with tasks" | Research works, project created, but task generation skips | □ |
+| 3 | Response | Shows warning about missing template | □ |
+
+---
+
 ## Verification Checklist
 
+**Multi-Turn Conversations:**
 ```
 □ Context persists across turns without explicit mention
 □ Pronouns ("it", "that", "the first one") resolve correctly
@@ -106,6 +198,17 @@ Multi-turn conversations test how well the system maintains context across multi
 □ Mixed input types (text/voice) maintain context
 □ Context switches when explicitly requested
 □ Long conversations don't lose early context
+```
+
+**Multi-Step Workflows (NEW):**
+```
+□ Detects "Research X and create Y and generate Z" patterns
+□ Executes steps sequentially (research → create → generate)
+□ Passes context between steps (research results → project creation)
+□ Loads GTM template from procedural memory
+□ Creates 12 tasks with correct phase prefixes
+□ Handles errors gracefully (MCP disabled, missing template)
+□ Total execution time reasonable (~7-11s for 3 steps)
 ```
 
 ---
@@ -131,8 +234,10 @@ Multi-turn conversations test how well the system maintains context across multi
 | Context Switching | 4 | __ | __ |
 | Pronoun Resolution | 4 | __ | __ |
 | Long Conversation | 10 | __ | __ |
-| **Total** | **32** | __ | __ |
+| **Multi-Step Workflows (NEW)** | **11** | __ | __ |
+| **Total** | **43** | __ | __ |
 
 ---
 
-*Multi-Turn Conversation Testing Guide v2.0*
+*Multi-Turn Conversation & Multi-Step Workflow Testing Guide v3.0*
+*Updated for Milestone 6*
