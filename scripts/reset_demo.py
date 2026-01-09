@@ -7,34 +7,36 @@ a clean, verified state for presentations.
 
 Features:
     - TEARDOWN: Clear all demo-related collections
-    - SETUP: Seed fresh demo data via seed_demo_data.py
-    - VERIFY: Confirm clean state with collection counts
+    - SETUP: Seed fresh demo data
+    - VERIFY: Confirm clean state with validation
 
 Usage:
     # Full reset (teardown + setup + verify)
     python scripts/reset_demo.py
 
-    # Just clear collections
-    python scripts/reset_demo.py --teardown-only
+    # Just clear collections (requires --force)
+    python scripts/reset_demo.py --teardown-only --force
+
+    # Just seed (no teardown)
+    python scripts/reset_demo.py --seed-only
 
     # Just verify current state
     python scripts/reset_demo.py --verify-only
 
-    # Skip confirmation prompts
-    python scripts/reset_demo.py --force
-
-    # Dry run (show what would be deleted)
-    python scripts/reset_demo.py --dry-run
+    # Skip embeddings (faster)
+    python scripts/reset_demo.py --skip-embeddings
 
 Examples:
     # Night before demo: Full reset
-    python scripts/reset_demo.py --force
+    python scripts/reset_demo.py
 
     # Quick check before demo
     python scripts/reset_demo.py --verify-only
 
-    # See what will be cleared without doing it
-    python scripts/reset_demo.py --dry-run
+Safety:
+    - Detects production URIs and requires extra confirmation
+    - Requires --force flag for --teardown-only
+    - Always shows what will be deleted before proceeding
 
 Requires:
     - .env file with MongoDB credentials
@@ -42,10 +44,10 @@ Requires:
 """
 
 import sys
-import argparse
+import os
+import logging
 from pathlib import Path
 from typing import Dict, Any
-from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -53,8 +55,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.db import MongoDB
 from shared.config import settings
 
-# We'll call seed_demo_data as subprocess instead of importing
-import subprocess
+# Import seeding functions directly
+import seed_demo_data
 
 # =============================================================================
 # CONFIGURATION
@@ -64,34 +66,78 @@ import subprocess
 COLLECTIONS_TO_CLEAR = [
     "projects",
     "tasks",
-    "working_memory",
+    "short_term_memory",
     "long_term_memory",
     "shared_memory",
     "tool_discoveries",
-    "knowledge_cache",  # If separate collection
 ]
 
-# Demo user ID (should match seed_demo_data.py)
+# Demo user ID (must match seed_demo_data.py)
 DEMO_USER_ID = "demo-user"
+
+# Production URI keywords
+PRODUCTION_KEYWORDS = ["production", "prod", "live"]
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# SAFETY CHECKS
+# =============================================================================
+
+def is_production_database() -> bool:
+    """Check if the MongoDB URI appears to be for production."""
+    uri = settings.mongodb_uri.lower()
+    db_name = settings.mongodb_database.lower()
+
+    for keyword in PRODUCTION_KEYWORDS:
+        if keyword in uri or keyword in db_name:
+            return True
+
+    return False
+
+
+def confirm_production_reset() -> bool:
+    """Extra confirmation for production database reset."""
+    logger.warning("⚠️  WARNING: This appears to be a PRODUCTION database!")
+    logger.warning(f"   Database: {settings.mongodb_database}")
+    logger.warning(f"   This will DELETE ALL DATA in the collections listed above.")
+    logger.warning("")
+
+    response = input("Type 'DELETE PRODUCTION DATA' to confirm: ").strip()
+
+    if response == "DELETE PRODUCTION DATA":
+        logger.info("✓ Confirmed")
+        return True
+    else:
+        logger.error("❌ Confirmation failed - aborted")
+        return False
+
 
 # =============================================================================
 # TEARDOWN
 # =============================================================================
 
-def clear_collections(db_instance, dry_run: bool = False) -> Dict[str, int]:
+def teardown(db_instance, dry_run: bool = False) -> Dict[str, int]:
     """
     Clear all demo-related collections.
 
     Args:
-        db_instance: MongoDB database instance (from get_database())
+        db_instance: MongoDB database instance
         dry_run: If True, count but don't delete
 
     Returns:
         Dictionary of collection names to counts deleted
     """
-    results = {}
+    logger.info("🗑️  Teardown:")
+    logger.info("")
 
-    print("\n🗑️  Clearing collections...\n")
+    results = {}
+    total_deleted = 0
 
     for collection_name in COLLECTIONS_TO_CLEAR:
         try:
@@ -101,100 +147,135 @@ def clear_collections(db_instance, dry_run: bool = False) -> Dict[str, int]:
             count = collection.count_documents({})
 
             if count == 0:
-                print(f"  {collection_name}: already empty")
+                # Skip empty collections in output
                 results[collection_name] = 0
                 continue
 
             if dry_run:
-                print(f"  {collection_name}: {count} would be deleted")
+                logger.info(f"  {collection_name}: {count} would be deleted")
                 results[collection_name] = count
             else:
                 # Delete all documents
                 result = collection.delete_many({})
                 deleted = result.deleted_count
-                print(f"  {collection_name}: {deleted} deleted")
+                logger.info(f"  {collection_name}: {deleted} deleted")
                 results[collection_name] = deleted
+                total_deleted += deleted
 
         except Exception as e:
-            print(f"  ⚠️  {collection_name}: Error - {e}")
+            logger.warning(f"  ⚠️  {collection_name}: Error - {e}")
             results[collection_name] = 0
 
+    logger.info("")
+
     if dry_run:
-        print("\n💡 This was a dry run - no data was deleted")
-    else:
-        print(f"\n✅ Cleared {len(results)} collections")
+        logger.info("💡 Dry run - no data was deleted")
 
     return results
+
 
 # =============================================================================
 # SETUP
 # =============================================================================
 
-def seed_data(skip_embeddings: bool = False) -> bool:
+def setup(db_instance, skip_embeddings: bool = False) -> Dict[str, int]:
     """
-    Seed demo data by calling seed_demo_data.py script.
+    Seed demo data by calling seed_demo_data functions.
 
     Args:
+        db_instance: MongoDB database instance
         skip_embeddings: Skip generating embeddings for speed
 
     Returns:
-        True if seeding succeeded, False otherwise
+        Dictionary of data types to counts inserted
     """
-    print("\n🌱 Seeding demo data...\n")
+    logger.info("🌱 Seeding:")
+    logger.info("")
+
+    results = {}
 
     try:
-        # Build command
-        script_path = Path(__file__).parent / "seed_demo_data.py"
-        cmd = [sys.executable, str(script_path)]
+        # Suppress stdout from seed functions (they use print())
+        import io
+        import contextlib
 
-        if skip_embeddings:
-            cmd.append("--skip-embeddings")
+        stdout_buffer = io.StringIO()
 
-        # Run seed script (clean=False since we already cleared)
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False
-        )
+        with contextlib.redirect_stdout(stdout_buffer):
+            # Seed projects
+            results["projects"] = seed_demo_data.seed_projects(db_instance, clean=False)
 
-        # Print output
-        if result.stdout:
-            print(result.stdout)
+            # Seed tasks
+            results["tasks"] = seed_demo_data.seed_tasks(db_instance, clean=False)
 
-        if result.returncode != 0:
-            if result.stderr:
-                print(result.stderr)
-            return False
+            # Seed procedural memory
+            results["procedural"] = seed_demo_data.seed_procedural_memory(
+                db_instance,
+                skip_embeddings=skip_embeddings,
+                clean=False
+            )
 
-        return True
+            # Seed semantic memory
+            results["semantic"] = seed_demo_data.seed_semantic_memory(db_instance, clean=False)
+
+            # Seed episodic memory
+            results["episodic"] = seed_demo_data.seed_episodic_memory(
+                db_instance,
+                skip_embeddings=skip_embeddings,
+                clean=False
+            )
+
+        # Show summary
+        logger.info(f"  projects: {results['projects']} inserted")
+        logger.info(f"  tasks: {results['tasks']} inserted")
+        logger.info(f"  procedural memory: {results['procedural']} inserted")
+        logger.info(f"  semantic memory: {results['semantic']} inserted")
+        logger.info(f"  episodic memory: {results['episodic']} inserted")
+
+        # Count embeddings generated
+        if not skip_embeddings:
+            embeddings_count = db_instance.long_term_memory.count_documents({
+                "user_id": DEMO_USER_ID,
+                "embedding": {"$exists": True}
+            })
+            results["embeddings"] = embeddings_count
+            logger.info(f"  embeddings: {embeddings_count} generated")
+        else:
+            results["embeddings"] = 0
+
+        logger.info("")
+
+        return results
 
     except Exception as e:
-        print(f"❌ Error seeding data: {e}")
+        logger.error(f"❌ Error seeding data: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return {}
+
 
 # =============================================================================
 # VERIFICATION
 # =============================================================================
 
-def verify_state(db_instance) -> bool:
+def verify(db_instance) -> bool:
     """
     Verify the demo state is ready.
 
     Checks:
         - GTM Roadmap Template exists in procedural memory
         - Project Alpha exists with tasks
-        - Expected collection counts
+        - Q3 Fintech GTM exists (completed)
+        - User preferences exist in semantic memory
 
     Args:
-        db_instance: MongoDB database instance (from get_database())
+        db_instance: MongoDB database instance
 
     Returns:
         True if verification passed, False otherwise
     """
-    print("\n✅ Verification:\n")
+    logger.info("✅ Verification:")
+    logger.info("")
 
     all_passed = True
 
@@ -208,13 +289,13 @@ def verify_state(db_instance) -> bool:
         })
 
         if gtm_template:
-            print("  ✓ GTM Roadmap Template: EXISTS")
+            logger.info("  GTM Roadmap Template: ✅ EXISTS")
         else:
-            print("  ✗ GTM Roadmap Template: MISSING")
+            logger.info("  GTM Roadmap Template: ❌ MISSING")
             all_passed = False
 
     except Exception as e:
-        print(f"  ✗ GTM Roadmap Template: Error checking - {e}")
+        logger.warning(f"  GTM Roadmap Template: ⚠️  Error - {e}")
         all_passed = False
 
     # Check Project Alpha
@@ -230,13 +311,13 @@ def verify_state(db_instance) -> bool:
                 "user_id": DEMO_USER_ID,
                 "project_id": project_alpha["_id"]
             })
-            print(f"  ✓ Project Alpha: EXISTS ({task_count} tasks)")
+            logger.info(f"  Project Alpha: ✅ EXISTS ({task_count} tasks)")
         else:
-            print("  ✗ Project Alpha: MISSING")
+            logger.info("  Project Alpha: ❌ MISSING")
             all_passed = False
 
     except Exception as e:
-        print(f"  ✗ Project Alpha: Error checking - {e}")
+        logger.warning(f"  Project Alpha: ⚠️  Error - {e}")
         all_passed = False
 
     # Check Q3 Fintech GTM (completed demo project)
@@ -247,55 +328,69 @@ def verify_state(db_instance) -> bool:
         })
 
         if q3_gtm:
-            print("  ✓ Q3 Fintech GTM: EXISTS (completed)")
+            status = q3_gtm.get("status", "unknown")
+            logger.info(f"  Q3 Fintech GTM: ✅ EXISTS ({status})")
         else:
-            print("  ℹ️  Q3 Fintech GTM: Not found (optional)")
+            logger.info("  Q3 Fintech GTM: ❌ MISSING")
+            all_passed = False
 
     except Exception as e:
-        print(f"  ⚠️  Q3 Fintech GTM: Error checking - {e}")
+        logger.warning(f"  Q3 Fintech GTM: ⚠️  Error - {e}")
+        all_passed = False
 
-    # Print collection counts
-    print("\n📊 Collection Counts:\n")
+    # Check User preferences in semantic memory
+    try:
+        preferences_count = db_instance.long_term_memory.count_documents({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "semantic",
+            "semantic_type": "preference"
+        })
 
-    for collection_name in COLLECTIONS_TO_CLEAR:
-        try:
-            count = db_instance[collection_name].count_documents({})
-            if count > 0:
-                print(f"  {collection_name}: {count}")
-        except Exception as e:
-            print(f"  {collection_name}: Error - {e}")
+        if preferences_count > 0:
+            logger.info(f"  User preferences: ✅ EXISTS ({preferences_count} preferences)")
+        else:
+            logger.info("  User preferences: ❌ MISSING")
+            all_passed = False
 
-    # Final status
-    print()
-    if all_passed:
-        print("🎬 Ready for demo!")
-        return True
-    else:
-        print("⚠️  Verification failed - some issues detected")
-        return False
+    except Exception as e:
+        logger.warning(f"  User preferences: ⚠️  Error - {e}")
+        all_passed = False
+
+    logger.info("")
+
+    return all_passed
+
 
 # =============================================================================
 # MAIN
 # =============================================================================
 
 def main():
+    import argparse
+
     parser = argparse.ArgumentParser(
         description="Reset demo environment for Flow Companion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python scripts/reset_demo.py                  # Full reset
-  python scripts/reset_demo.py --force          # Skip confirmation
-  python scripts/reset_demo.py --teardown-only  # Just clear
-  python scripts/reset_demo.py --verify-only    # Just verify
-  python scripts/reset_demo.py --dry-run        # Show what would happen
+  python scripts/reset_demo.py                      # Full reset
+  python scripts/reset_demo.py --teardown-only --force  # Just clear
+  python scripts/reset_demo.py --seed-only          # Just seed
+  python scripts/reset_demo.py --verify-only        # Just verify
+  python scripts/reset_demo.py --skip-embeddings    # Faster seeding
         """
     )
 
     parser.add_argument(
         "--teardown-only",
         action="store_true",
-        help="Only clear collections, don't seed"
+        help="Only clear collections (requires --force)"
+    )
+
+    parser.add_argument(
+        "--seed-only",
+        action="store_true",
+        help="Only seed data, don't teardown"
     )
 
     parser.add_argument(
@@ -311,12 +406,6 @@ Examples:
     )
 
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be deleted without doing it"
-    )
-
-    parser.add_argument(
         "--skip-embeddings",
         action="store_true",
         help="Skip generating embeddings (faster seeding)"
@@ -324,98 +413,116 @@ Examples:
 
     args = parser.parse_args()
 
-    print("=" * 60)
-    print("Flow Companion - Demo Reset Script")
-    print("=" * 60)
+    # Validation: --teardown-only requires --force
+    if args.teardown_only and not args.force:
+        logger.error("❌ --teardown-only requires --force flag for safety")
+        logger.error("   This operation will DELETE all data!")
+        return 1
+
+    # Print header
+    logger.info("🔄 Resetting Flow Companion Demo Data...")
+    logger.info("")
 
     # Connect to MongoDB
     try:
-        print(f"\n📡 Connecting to MongoDB...")
-        print(f"   Database: {settings.mongodb_database}")
-
         mongodb = MongoDB()
         db = mongodb.get_database()
 
-        print(f"✓ Connected successfully")
-
-        # Check if collections exist
-        existing_collections = set(db.list_collection_names())
-        missing_collections = set(COLLECTIONS_TO_CLEAR) - existing_collections
-
-        if missing_collections and not args.verify_only:
-            print(f"\n⚠️  WARNING: Some collections don't exist yet:")
-            for collection in sorted(missing_collections):
-                print(f"  - {collection}")
-
-            print(f"\n💡 This might be a new database. Consider running:")
-            print(f"   python scripts/init_db.py")
-            print(f"\n   Or continue anyway (collections will be created during seeding).")
-
-            if not args.force and not args.dry_run:
-                response = input("\nContinue anyway? (yes/no) [yes]: ").strip().lower()
-                if response in ["no", "n"]:
-                    print("❌ Aborted")
-                    return 1
-
     except Exception as e:
-        print(f"❌ Failed to connect to MongoDB: {e}")
+        logger.error(f"❌ Failed to connect to MongoDB: {e}")
         import traceback
         traceback.print_exc()
         return 1
 
     # VERIFY ONLY MODE
     if args.verify_only:
-        verify_state(db)
-        return 0
+        verified = verify(db)
 
-    # CONFIRM (unless --force or --dry-run)
-    if not args.force and not args.dry_run:
-        print("\n⚠️  WARNING: This will DELETE all data in the following collections:")
-        for collection in COLLECTIONS_TO_CLEAR:
-            print(f"  - {collection}")
-
-        response = input("\nContinue? (yes/no): ").strip().lower()
-        if response not in ["yes", "y"]:
-            print("❌ Aborted")
+        if verified:
+            logger.info("━" * 43)
+            logger.info("🎬 Ready for demo!")
+            logger.info("━" * 43)
+            return 0
+        else:
+            logger.info("━" * 43)
+            logger.info("⚠️  Some verification checks failed")
+            logger.info("━" * 43)
             return 1
 
-    # TEARDOWN
-    clear_results = clear_collections(db, dry_run=args.dry_run)
+    # SEED ONLY MODE
+    if args.seed_only:
+        setup_results = setup(db, skip_embeddings=args.skip_embeddings)
 
-    if args.dry_run:
-        print("\n💡 Dry run complete - no changes made")
-        return 0
+        if setup_results:
+            logger.info("")
+            verified = verify(db)
+
+            if verified:
+                logger.info("━" * 43)
+                logger.info("🎬 Ready for demo!")
+                logger.info("━" * 43)
+                return 0
+            else:
+                logger.info("━" * 43)
+                logger.info("⚠️  Seeding complete but verification failed")
+                logger.info("━" * 43)
+                return 1
+        else:
+            logger.error("❌ Seeding failed")
+            return 1
+
+    # FULL RESET OR TEARDOWN ONLY
+
+    # Safety check for production
+    if is_production_database():
+        if not confirm_production_reset():
+            return 1
+
+    # Confirm (unless --force)
+    if not args.force:
+        logger.warning("⚠️  WARNING: This will DELETE all data in the following collections:")
+        for collection in COLLECTIONS_TO_CLEAR:
+            logger.warning(f"  - {collection}")
+        logger.warning("")
+
+        response = input("Continue? (yes/no): ").strip().lower()
+        if response not in ["yes", "y"]:
+            logger.error("❌ Aborted")
+            return 1
+        logger.info("")
+
+    # TEARDOWN
+    teardown_results = teardown(db)
 
     # TEARDOWN ONLY MODE
     if args.teardown_only:
-        print("\n✅ Teardown complete")
+        logger.info("✅ Teardown complete")
         return 0
 
     # SETUP
-    seed_success = seed_data(skip_embeddings=args.skip_embeddings)
+    logger.info("")
+    setup_results = setup(db, skip_embeddings=args.skip_embeddings)
 
-    if not seed_success:
-        print("\n❌ Seeding failed")
+    if not setup_results:
+        logger.error("❌ Seeding failed")
         return 1
 
     # VERIFY
-    verified = verify_state(db)
+    logger.info("")
+    verified = verify(db)
 
-    if not verified:
-        print("\n⚠️  Reset complete but verification found issues")
-        return 1
+    logger.info("")
+    logger.info("━" * 43)
 
-    print("\n" + "=" * 60)
-    print("✅ Demo reset complete!")
-    print("=" * 60)
+    if verified:
+        logger.info("🎬 Ready for demo!")
+    else:
+        logger.info("⚠️  Reset complete but verification found issues")
 
-    print("\n💡 Next steps:")
-    print("   1. Review verification results above")
-    print("   2. (Optional) Run full verification: python scripts/verify_setup.py")
-    print("   3. Start app: streamlit run streamlit_app.py")
-    print("   4. Use demo user: demo-user")
+    logger.info("━" * 43)
 
-    return 0
+    return 0 if verified else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
