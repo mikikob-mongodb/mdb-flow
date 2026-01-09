@@ -1,8 +1,8 @@
 # Flow Companion
 
-**Version 4.0 (Milestone 5 - Semantic & Procedural Memory)**
+**Version 4.6 (Milestone 6 - MCP Mode & Multi-Step Intents)**
 
-A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and Claude API. Features a 5-tier memory system with persistent user personalization, voice input, context engineering optimizations, and comprehensive evaluation tools.
+A conversational TODO app powered by AI agents, MongoDB Atlas vector search, and Claude API. Features a 5-tier memory system with persistent user personalization, MCP dynamic tool discovery, multi-step workflow execution, voice input, context engineering optimizations, and comprehensive evaluation tools.
 
 ## Features
 
@@ -78,12 +78,12 @@ Flow Companion can connect to [Model Context Protocol](https://modelcontextproto
 3. The agent will now attempt to handle novel requests (research, web search, data extraction) via MCP
 
 **Connected Servers:**
-- **Tavily** (Remote SSE) - Web search and research via `tavily-search`, `tavily-extract`
-- **MongoDB MCP** (Local Docker, Optional) - Dynamic database queries and aggregations
+- **Tavily** (Remote SSE) - Web search and research via `tavily-search`, `tavily-extract`, `tavily-map`, `tavily-crawl`
+- **MongoDB MCP** (Local Docker, Optional) - Dynamic database queries and aggregations (planned for future milestone)
 
 **Knowledge Cache:**
 - Search results cached for 7 days (configurable freshness)
-- Semantic similarity matching for cache hits
+- Semantic similarity matching for cache hits (0.85 threshold)
 - Reduces redundant API calls and improves response times
 
 **Tool Discoveries:**
@@ -91,8 +91,9 @@ Flow Companion can connect to [Model Context Protocol](https://modelcontextproto
 - Developers can see what requests users make that static tools can't handle
 - Track success rates, usage counts, and identify promotion candidates
 - Discoveries reused via vector similarity search (0.85 threshold)
+- View discoveries in UI sidebar under "🔬 Tool Discoveries"
 
-**See:** `docs/features/MCP_AGENT.md` for architecture details and `tests/integration/test_mcp_agent.py` for integration tests.
+**See:** `docs/features/MCP_AGENT.md` for complete architecture documentation, `tests/README_MCP_TESTS.md` for testing guide, and `tests/integration/test_mcp_agent.py` for integration tests.
 
 ## Tech Stack
 
@@ -111,7 +112,8 @@ mdb-flow/
 ├── agents/
 │   ├── coordinator.py      # Intent routing agent
 │   ├── worklog.py          # Task/project management agent
-│   └── retrieval.py        # Search & analytics agent
+│   ├── retrieval.py        # Search & analytics agent
+│   └── mcp_agent.py        # 🧪 MCP dynamic tool discovery agent
 ├── shared/
 │   ├── config.py           # Environment configuration
 │   ├── db.py               # MongoDB connection & helpers
@@ -123,7 +125,8 @@ mdb-flow/
 │   ├── slash_commands.py   # Direct DB query commands
 │   └── formatters.py       # Result formatting utilities
 ├── memory/
-│   └── manager.py          # Memory system (5 types)
+│   ├── manager.py          # Memory system (5 types)
+│   └── tool_discoveries.py # 🧪 MCP tool discovery store
 ├── evals/
 │   ├── configs.py          # Optimization configurations
 │   ├── test_suite.py       # 46 test queries
@@ -132,19 +135,32 @@ mdb-flow/
 │   └── storage.py          # MongoDB persistence
 ├── evals_app.py            # Evals dashboard (port 8502)
 ├── tests/
-│   ├── test_memory_types.py           # Unit tests (13 tests)
-│   └── integration/memory/            # Integration tests (14 tests)
+│   ├── test_memory_types.py           # Memory unit tests (13 tests)
+│   ├── test_mcp_agent.py              # 🧪 MCP unit tests (19 tests)
+│   ├── test_tool_discoveries.py       # 🧪 Discovery store tests (17 tests)
+│   └── integration/
+│       ├── memory/                    # Memory integration tests (14 tests)
+│       └── test_mcp_agent.py          # 🧪 MCP integration tests (11 tests)
 ├── utils/
 │   └── audio.py            # Audio recording and transcription
 ├── scripts/
 │   ├── setup_database.py              # Database setup (indexes + memory)
 │   ├── cleanup_database.py            # Database cleanup utilities
+│   ├── seed_demo_data.py              # Complete demo data (projects, tasks, memory)
 │   └── seed_memory_demo_data.py       # Memory system demo data
 ├── docs/
-│   ├── ARCHITECTURE.md                # System architecture
-│   ├── MEMORY.md                      # Memory system guide
-│   ├── TESTING.md                     # Testing guide
-│   └── SLASH_COMMANDS.md              # Slash command reference
+│   ├── architecture/
+│   │   ├── ARCHITECTURE.md            # System architecture
+│   │   └── MCP_ARCHITECTURE.md        # 🧪 MCP architecture details
+│   ├── features/
+│   │   ├── MEMORY.md                  # Memory system guide
+│   │   ├── MCP_AGENT.md               # 🧪 MCP feature documentation
+│   │   ├── MULTI_STEP_INTENTS.md      # Multi-step workflow guide
+│   │   └── SLASH_COMMANDS.md          # Slash command reference
+│   └── testing/
+│       ├── TESTING.md                 # Testing guide
+│       ├── MCP_AGENT_TEST_SUMMARY.md  # 🧪 MCP test documentation
+│       └── README_MCP_TESTS.md        # 🧪 MCP test quick reference
 ├── requirements.txt
 └── .env.example            # Environment variables template
 ```
@@ -617,8 +633,28 @@ Compare optimization configurations:
 - **Demo Data Seeding**: Realistic memory data for testing and demonstrations
 - **Integration Tests**: Comprehensive test coverage for all memory features
 
-### 🔮 Future Enhancements (Milestone 5+)
+### ✅ Milestone 5: Semantic & Procedural Memory (Complete - v4.5)
+- **Five-tier Memory Architecture**: Working → Episodic → Semantic → Procedural → Shared
+- **Semantic Memory**: Learned user preferences with confidence scoring and vector search
+- **Procedural Memory**: Behavioral rules, templates, and checklists with usage tracking
+- **Vector Search**: Semantic search over episodic history and procedural rules
+- **Template System**: GTM Roadmap Template with phase-based task generation
+- **Context Engineering**: Memory injection into agent prompts for personalized responses
+- **Comprehensive Testing**: 27+ integration tests for memory competencies
+
+### ✅ Milestone 6: MCP Mode & Multi-Step Intents (Complete - v4.6)
+- **MCP Agent**: Dynamic tool discovery via Model Context Protocol servers
+- **Tool Discoveries**: Learning system that logs and reuses MCP solutions
+- **Knowledge Cache**: 7-day caching of search results with semantic matching
+- **Tavily Integration**: Web search and research via Tavily MCP server
+- **Multi-Step Workflows**: Detect and execute complex multi-step requests
+- **Sequential Execution**: Research → Create Project → Generate Tasks with context passing
+- **Discovery Analytics**: Track tool usage, success rates, and promotion candidates
+- **Comprehensive Testing**: 47 tests (35 unit + 11 integration + discovery tests)
+
+### 🔮 Future Enhancements (Milestone 7+)
 - **Real-time Collaboration** - Multi-user support
+- **MongoDB MCP Server** - Natural language → aggregation pipeline queries
 - **File Attachments** - Link documents to tasks
 - **Calendar Integration** - Sync with Google Calendar
 - **Recurring Tasks** - Automated task creation
@@ -626,6 +662,7 @@ Compare optimization configurations:
 - **Advanced Analytics** - Predictive insights and trends
 - **Auto-Evaluation** - Automated pass/fail checking in evals
 - **Cost Tracking** - Token usage and API cost monitoring
+- **Automatic Tool Promotion** - Auto-convert popular discoveries to static tools
 
 ## License
 
