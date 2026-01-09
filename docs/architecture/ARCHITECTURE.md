@@ -202,6 +202,236 @@ MongoDB Collections:
 
 ---
 
+## 🧪 MCP Agent (Milestone 6 - Experimental)
+
+Flow Companion can connect to external **Model Context Protocol (MCP)** servers to handle requests that static tools can't. The MCP Agent learns by discovering tools, logging solutions, and reusing them.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Streamlit UI                             │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │ 🧪 Experimental Section                            │     │
+│  │  • MCP Mode Toggle                                 │     │
+│  │  • MCP Servers Status (Tavily: ✅ 4 tools)        │     │
+│  │  • Knowledge Cache (📚 8 fresh, 2 expired)        │     │
+│  │  • Tool Discoveries (📊 12 discoveries, 91.7%)    │     │
+│  └────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│                  Coordinator Agent                           │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │ 1. Classify Intent (_classify_intent)             │     │
+│  │    - Static: create_task, list_tasks, etc.        │     │
+│  │    - MCP: research, web_search, unknown           │     │
+│  │                                                    │     │
+│  │ 2. Route Decision (_can_static_tools_handle)      │     │
+│  │    - Static tools? → Use Worklog/Retrieval        │     │
+│  │    - MCP needed? → Check if MCP mode enabled      │     │
+│  │                                                    │     │
+│  │ 3. MCP Routing (if enabled)                       │     │
+│  │    - Route to MCP Agent                           │     │
+│  │    - Format response with source indicator        │     │
+│  └────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│                      MCP Agent                               │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │ handle_request(user_request, intent):              │     │
+│  │                                                    │     │
+│  │ 1. Check Knowledge Cache (7-day TTL)              │     │
+│  │    memory.get_cached_knowledge(user_id, query)    │     │
+│  │    → HIT? Return cached results 📚                │     │
+│  │                                                    │     │
+│  │ 2. Find Similar Discovery (vector search 0.85)    │     │
+│  │    discovery_store.find_similar_discovery(query)  │     │
+│  │    → FOUND? Reuse solution 🔄                     │     │
+│  │                                                    │     │
+│  │ 3. Figure Out Solution (LLM + tools)               │     │
+│  │    llm.generate("Which tool to use?")             │     │
+│  │    → Returns: {mcp_server, tool_used, arguments}  │     │
+│  │                                                    │     │
+│  │ 4. Execute via MCP Protocol                        │     │
+│  │    session.call_tool(name, arguments)             │     │
+│  │    → Get results from external MCP server         │     │
+│  │                                                    │     │
+│  │ 5. Log Discovery                                   │     │
+│  │    discovery_store.log_discovery(solution)        │     │
+│  │    → Store for future reuse 🆕                    │     │
+│  │                                                    │     │
+│  │ 6. Cache Knowledge                                 │     │
+│  │    memory.cache_knowledge(query, results)         │     │
+│  │    → Cache for 7 days                             │     │
+│  └────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+            ↓                               ↓
+┌──────────────────────────┐   ┌──────────────────────────────┐
+│  Tool Discovery Store    │   │    Memory Manager            │
+│                          │   │                              │
+│  - log_discovery()       │   │  - cache_knowledge()         │
+│  - find_similar()        │   │  - get_cached_knowledge()    │
+│  - get_popular()         │   │  - search_knowledge()        │
+│  - mark_as_promoted()    │   │                              │
+└──────────┬───────────────┘   └──────────┬───────────────────┘
+           │                              │
+           └──────────────┬───────────────┘
+                          ↓
+           ┌──────────────────────────────┐
+           │      MongoDB Atlas           │
+           │                              │
+           │  • tool_discoveries          │
+           │    (vector index on          │
+           │     request_embedding)       │
+           │                              │
+           │  • long_term_memory          │
+           │    (semantic.knowledge)      │
+           │    (7-day TTL)               │
+           └──────────────┬───────────────┘
+                          ↓
+           ┌──────────────────────────────┐
+           │   External MCP Servers       │
+           │                              │
+           │  • Tavily (SSE Remote)       │
+           │    - tavily-search           │
+           │    - tavily-extract          │
+           │    - tavily-map              │
+           │    - tavily-crawl            │
+           │                              │
+           │  • MongoDB MCP (Future)      │
+           │    - Dynamic DB queries      │
+           └──────────────────────────────┘
+```
+
+### Request Flow Examples
+
+**Example 1: First Request (🆕 New Discovery)**
+```
+User: "What are the latest MongoDB Atlas features?"
+  ↓
+Coordinator: intent = "web_search" → Route to MCP Agent
+  ↓
+MCP Agent:
+  1. Knowledge cache → MISS
+  2. Similar discovery → MISS
+  3. LLM solution → {server: "tavily", tool: "tavily-search", args: {...}}
+  4. Execute via MCP → Get web search results
+  5. Log discovery → tool_discoveries collection
+  6. Cache knowledge → long_term_memory (7-day TTL)
+  ↓
+Response: "🆕 I figured out how to do this:
+           [MongoDB Atlas 2026 features...]
+           🔌 MCP: tavily/tavily-search
+           📝 Discovery: a1b2c3d4..."
+```
+
+**Example 2: Similar Request (🔄 Discovery Reuse)**
+```
+User: "MongoDB Atlas updates"
+  ↓
+MCP Agent:
+  1. Knowledge cache → MISS (expired or low similarity)
+  2. Similar discovery → HIT (similarity 0.88)
+  3. Reuse previous solution
+  4. Execute via MCP
+  5. Increment times_used counter
+  ↓
+Response: "🔄 I've solved this before:
+           [Results...]"
+```
+
+**Example 3: Cached Request (📚 Knowledge Cache)**
+```
+User: "MongoDB Atlas features"
+  ↓
+MCP Agent:
+  1. Knowledge cache → HIT (similarity 0.87, fresh)
+  2. Return cached results immediately
+  ↓
+Response: "📚 Found this in my knowledge cache:
+           [Results...]"
+```
+
+### Key Features
+
+**Discovery Learning**:
+- All MCP solutions logged to `tool_discoveries` with vector embeddings
+- Semantic similarity matching (0.85 threshold) for reuse
+- Usage tracking (times_used, success rate)
+- Developer workflow (promotion candidates)
+
+**Knowledge Caching**:
+- Search results cached in `long_term_memory` (semantic.knowledge)
+- 7-day TTL (configurable freshness)
+- Vector search for semantic cache hits
+- Reduces redundant API calls
+
+**MCP Protocol Integration**:
+- SSE transport for remote servers (Tavily)
+- AsyncExitStack for resource management
+- Dynamic tool discovery via `session.list_tools()`
+- Tool execution with 30s timeout
+
+**Developer Insights**:
+- View popular discoveries (promotion candidates)
+- Track success rates and usage patterns
+- Identify requests static tools can't handle
+- Export statistics for analytics
+
+### MongoDB Collections
+
+```javascript
+// tool_discoveries - Discovery logging
+{
+  user_request: "What's the latest AI news?",
+  intent: "web_search",
+  request_embedding: [0.123, -0.456, ...],  // 1024-dim
+  solution: {
+    mcp_server: "tavily",
+    tool_used: "tavily-search",
+    arguments: {query: "AI news", max_results: 5}
+  },
+  success: true,
+  times_used: 5,
+  promoted_to_static: false
+}
+
+// long_term_memory (semantic.knowledge) - Knowledge cache
+{
+  user_id: "demo_user",
+  memory_type: "semantic",
+  semantic_type: "knowledge",
+  query: "AI news",
+  results: ["Article 1...", "Article 2..."],
+  source: "tavily",
+  embedding: [0.1, -0.2, ...],  // 1024-dim
+  fetched_at: ISODate("2026-01-08T10:00:00Z"),
+  expires_at: ISODate("2026-01-15T10:00:00Z"),  // 7-day TTL
+  times_accessed: 3
+}
+```
+
+### Configuration
+
+```bash
+# .env
+TAVILY_API_KEY=your-tavily-key
+MCP_MODE_ENABLED=false  # Toggle in UI
+```
+
+### Testing Coverage
+
+**47 MCP Tests**:
+- 17 unit tests (`test_tool_discoveries.py`) - Discovery store CRUD, vector search, stats
+- 18 unit tests (`test_mcp_agent.py`) - Agent initialization, routing, execution, errors
+- 11 integration tests (`test_mcp_agent.py`) - Real Tavily API calls (requires API key)
+
+**See:** `docs/features/MCP_AGENT.md` for detailed architecture documentation.
+
+---
+
 ## Flow 1: "Create a task for debugging in AgentOps"
 
 ```

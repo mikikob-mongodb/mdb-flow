@@ -166,9 +166,11 @@ results = memory.search_history(
 ---
 
 ### 3. Semantic Memory (Long-term)
-**Purpose**: Store learned preferences
-**TTL**: None (persistent)
+**Purpose**: Store learned preferences and cached knowledge
+**TTL**: None for preferences, 7 days for knowledge cache
 **Storage**: `long_term_memory` collection (memory_type="semantic")
+
+#### 3a. User Preferences (semantic_type="preference")
 
 **Schema:**
 ```javascript
@@ -211,6 +213,96 @@ pref = memory.get_preference(user_id="user-123", key="focus_project")
 - "I'm focusing on X" → `focus_project: X` (explicit, confidence=0.9)
 - "Working on X" → `focus_project: X` (inferred, confidence=0.7)
 - "Show me high priority tasks" → `priority_filter: high` (explicit, confidence=0.85)
+
+#### 3b. Knowledge Cache (semantic_type="knowledge") - Milestone 6
+
+**Purpose**: Cache search/research results from MCP Agent to avoid redundant API calls
+
+**Schema:**
+```javascript
+{
+  user_id: "user-123",
+  memory_type: "semantic",
+  semantic_type: "knowledge",
+  query: "latest AI news",
+  query_embedding: [0.123, -0.456, ...],  // 1024-dim Voyage AI
+  results: [
+    {
+      title: "GPT-5 Announced",
+      url: "https://...",
+      snippet: "OpenAI announces..."
+    },
+    // ... more results
+  ],
+  source: "tavily",  // MCP server that provided results
+  fetched_at: ISODate("2026-01-08T10:00:00Z"),
+  expires_at: ISODate("2026-01-15T10:00:00Z"),  // 7-day TTL
+  times_accessed: 3,
+  created_at: ISODate("2026-01-08T10:00:00Z")
+}
+```
+
+**Usage:**
+```python
+# Cache search results
+memory.cache_knowledge(
+    user_id="user-123",
+    query="latest AI news",
+    results=[...],
+    source="tavily",
+    freshness_days=7
+)
+
+# Get cached knowledge (vector search)
+cached = memory.get_cached_knowledge(
+    user_id="user-123",
+    query="recent AI developments",  # Semantically similar
+    similarity_threshold=0.85
+)
+# Returns cached results if similar query found and not expired
+
+# Search knowledge cache
+results = memory.search_knowledge(
+    user_id="user-123",
+    query_text="AI news",
+    limit=5
+)
+
+# Get cache statistics
+stats = memory.get_knowledge_stats(user_id="user-123")
+# Returns: {total: 10, fresh: 8, expired: 2}
+
+# Clear expired knowledge
+memory.clear_knowledge_cache(user_id="user-123")
+```
+
+**Key Features:**
+- **Semantic Similarity Matching**: Uses vector search to find similar queries (0.85 threshold)
+- **7-Day TTL**: Results expire after 7 days (configurable via `freshness_days`)
+- **Usage Tracking**: `times_accessed` auto-increments on cache hits
+- **Source Tracking**: Records which MCP server provided the results
+
+**Cache Behavior:**
+- **Cache Hit**: Query semantically similar to cached query → Return cached results instantly (no API call)
+- **Cache Miss**: No similar query or expired → Execute MCP tool and cache new results
+- **Cache Expiry**: Automatically filtered out by `expires_at < now()` check
+
+**Use Case** (MCP Agent):
+```
+User: "What's the latest AI news?"
+  ↓
+MCP Agent checks cache: MISS
+  ↓
+Execute Tavily search (1200ms)
+  ↓
+Cache results (7-day TTL)
+  ↓
+User: "Show me recent AI developments" (2 hours later)
+  ↓
+MCP Agent checks cache: HIT (0.92 similarity)
+  ↓
+Return cached results instantly (120ms) - 90% faster!
+```
 
 ---
 
@@ -326,11 +418,18 @@ memory.consume_handoff(handoff_id)
 - `get_action_history(user_id, time_range="today", action_type=None, limit=10)`
 - `search_history(user_id, query, limit=5)` - Vector search
 
-**Semantic Memory:**
+**Semantic Memory (Preferences):**
 - `record_preference(user_id, key, value, source="inferred", confidence=0.8)`
 - `get_preferences(user_id, min_confidence=0.0)` - Returns sorted by confidence
 - `get_preference(user_id, key)`
 - `delete_preference(user_id, key)`
+
+**Semantic Memory (Knowledge Cache - Milestone 6):**
+- `cache_knowledge(user_id, query, results, source="tavily", freshness_days=7)` - Cache search results with TTL
+- `get_cached_knowledge(user_id, query, similarity_threshold=0.85)` - Vector search for cached knowledge
+- `search_knowledge(user_id, query_text, limit=5)` - Semantic search across cache
+- `clear_knowledge_cache(user_id)` - Clear all cached knowledge
+- `get_knowledge_stats(user_id)` - Get cache statistics (total, fresh, expired)
 
 **Procedural Memory:**
 - `record_rule(user_id, trigger, action, parameters=None, source="explicit", confidence=0.8)`
@@ -344,8 +443,9 @@ memory.consume_handoff(handoff_id)
 - `consume_handoff(handoff_id)`
 
 **Statistics:**
-- `get_memory_stats(session_id, user_id)` - Returns counts by type
+- `get_memory_stats(session_id, user_id)` - Returns counts by type (includes knowledge_cache)
 - `get_user_memory_profile(user_id)` - Combined profile
+- `get_knowledge_stats(user_id)` - Knowledge cache-specific statistics
 
 ---
 
@@ -484,6 +584,7 @@ When I say "done", complete my current task
 - **🎯 Semantic Memory** - Learned preferences
 - **⚙️ Procedural Memory** - Learned rules
 - **🤝 Shared Memory** - Pending handoffs
+- **🌐 Knowledge Cache** - Cached search results (Milestone 6)
 - **📊 Memory Stats** - Counts by type
 
 **5. Use Disambiguation**:
@@ -560,13 +661,20 @@ results = memory.search_history(
     user_id="user-123",
     query="What did I work on yesterday?"
 )
+
+# Get cached knowledge (Milestone 6)
+cached = memory.get_cached_knowledge(
+    user_id="user-123",
+    query="AI news",
+    similarity_threshold=0.85
+)
 ```
 
 ---
 
 ## Component Status
 
-**Last Audit:** January 7, 2026
+**Last Audit:** January 8, 2026
 
 | Component | Status | Location |
 |-----------|--------|----------|
@@ -582,11 +690,12 @@ results = memory.search_history(
 
 ### Coverage Summary
 - **5/5 Memory Types**: Implemented and tested
+- **Knowledge Cache**: Implemented and tested (Milestone 6)
 - **13 Unit Tests**: All passing
 - **14 Integration Tests**: All passing
 - **10 Competencies**: All verified
-- **UI Integration**: Complete with 5-panel sidebar
-- **Vector Search**: Atlas Search integration working
+- **UI Integration**: Complete with 6-panel sidebar (includes knowledge cache)
+- **Vector Search**: Atlas Search integration working (episodic + knowledge cache)
 
 ### Known Gaps
 - ❌ Interactive demo script for memory features
