@@ -13,7 +13,7 @@ Memory Types:
 - Shared: Agent handoffs with chain tracking (TTL: 5min)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Any, Callable
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.collection import Collection
@@ -1125,6 +1125,260 @@ class MemoryManager:
         }
 
     # ═══════════════════════════════════════════════════════════════════
+    # LONG-TERM: KNOWLEDGE CACHE (Semantic Memory - Knowledge)
+    # ═══════════════════════════════════════════════════════════════════
+
+    def cache_knowledge(
+        self,
+        user_id: str,
+        query: str,
+        results: any,
+        source: str = "tavily",
+        freshness_days: int = 7
+    ) -> str:
+        """
+        Cache search/research results as knowledge.
+
+        Stored in long_term_memory with:
+        - memory_type: "semantic"
+        - semantic_type: "knowledge"
+
+        Args:
+            user_id: User identifier
+            query: Search query text
+            results: Search results to cache
+            source: Source of knowledge (e.g., "tavily", "mcp")
+            freshness_days: Days until cache expires (default 7)
+
+        Returns:
+            Inserted document ID as string
+        """
+        now = datetime.now(timezone.utc)
+
+        # Generate embedding for semantic search
+        embedding = None
+        if self.embed:
+            try:
+                embedding = self.embed(query)
+            except Exception as e:
+                from shared.logger import get_logger
+                logger = get_logger("memory")
+                logger.warning(f"Failed to generate embedding for knowledge cache: {e}")
+
+        doc = {
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "knowledge",
+            "query": query,
+            "results": results,
+            "source": source,
+            "embedding": embedding,
+            "fetched_at": now,
+            "expires_at": now + timedelta(days=freshness_days),
+            "times_accessed": 0,
+            "created_at": now
+        }
+
+        result = self.long_term.insert_one(doc)
+        return str(result.inserted_id)
+
+    def get_cached_knowledge(
+        self,
+        user_id: str,
+        query: str,
+        max_age_days: int = 7,
+        similarity_threshold: float = 0.85
+    ) -> Optional[dict]:
+        """
+        Find cached knowledge matching the query via vector search.
+
+        Returns None if:
+        - No similar query found
+        - Found but expired
+        - No embedding function available
+
+        If found and fresh:
+        - Increments times_accessed
+        - Returns the document
+
+        Args:
+            user_id: User identifier
+            query: Search query
+            max_age_days: Maximum age in days (default 7)
+            similarity_threshold: Minimum similarity score (default 0.85)
+
+        Returns:
+            Cached knowledge document or None
+        """
+        if not self.embed:
+            return None
+
+        now = datetime.now(timezone.utc)
+
+        try:
+            query_embedding = self.embed(query)
+        except Exception:
+            return None
+
+        # Vector search on knowledge entries
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 20,
+                    "limit": 5,
+                    "filter": {
+                        "user_id": user_id,
+                        "memory_type": "semantic",
+                        "semantic_type": "knowledge"
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            },
+            {
+                "$match": {
+                    "score": {"$gte": similarity_threshold},
+                    "expires_at": {"$gt": now}
+                }
+            },
+            {"$limit": 1}
+        ]
+
+        try:
+            results = list(self.long_term.aggregate(pipeline))
+        except Exception as e:
+            from shared.logger import get_logger
+            logger = get_logger("memory")
+            logger.warning(f"Vector search failed for knowledge cache: {e}")
+            return None
+
+        if not results:
+            return None
+
+        doc = results[0]
+
+        # Increment access count
+        self.long_term.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$inc": {"times_accessed": 1},
+                "$set": {"last_accessed": now}
+            }
+        )
+
+        return doc
+
+    def search_knowledge(
+        self,
+        user_id: str,
+        query: str,
+        limit: int = 5
+    ) -> List[dict]:
+        """
+        Semantic search over all cached knowledge (regardless of age).
+        Useful for "what do you know about X" queries.
+
+        Args:
+            user_id: User identifier
+            query: Search query
+            limit: Maximum results to return (default 5)
+
+        Returns:
+            List of knowledge documents with similarity scores
+        """
+        if not self.embed:
+            return []
+
+        try:
+            query_embedding = self.embed(query)
+        except Exception:
+            return []
+
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 50,
+                    "limit": limit,
+                    "filter": {
+                        "user_id": user_id,
+                        "memory_type": "semantic",
+                        "semantic_type": "knowledge"
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        try:
+            return list(self.long_term.aggregate(pipeline))
+        except Exception as e:
+            from shared.logger import get_logger
+            logger = get_logger("memory")
+            logger.warning(f"Vector search failed for knowledge: {e}")
+            return []
+
+    def clear_knowledge_cache(self, user_id: str) -> int:
+        """
+        Clear all cached knowledge for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Count of deleted documents
+        """
+        result = self.long_term.delete_many({
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "knowledge"
+        })
+        return result.deleted_count
+
+    def get_knowledge_stats(self, user_id: str) -> dict:
+        """
+        Get knowledge cache statistics.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Dict with total, fresh, and expired counts
+        """
+        now = datetime.now(timezone.utc)
+
+        total = self.long_term.count_documents({
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "knowledge"
+        })
+
+        fresh = self.long_term.count_documents({
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "knowledge",
+            "expires_at": {"$gt": now}
+        })
+
+        return {
+            "total": total,
+            "fresh": fresh,
+            "expired": total - fresh
+        }
+
+    # ═══════════════════════════════════════════════════════════════════
     # UTILITIES
     # ═══════════════════════════════════════════════════════════════════
 
@@ -1154,6 +1408,9 @@ class MemoryManager:
             "memory_type": "procedural"
         })
 
+        # Knowledge cache stats
+        knowledge_stats = self.get_knowledge_stats(user_id)
+
         # Action counts (episodic only)
         action_counts = self._get_action_counts(user_id)
 
@@ -1168,6 +1425,7 @@ class MemoryManager:
                 "procedural_memory": procedural_count,
                 "shared_memory": shared_pending
             },
+            "knowledge_cache": knowledge_stats,
             "action_counts": action_counts
         }
 
