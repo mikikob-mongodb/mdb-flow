@@ -359,6 +359,111 @@ rule = memory.get_rule_for_trigger(user_id="user-123", trigger="done")
 - `stop_current_task`
 - `skip_current_task`
 
+**Templates (Milestone 6):**
+
+Procedural memory also stores reusable templates for complex workflows. Templates are procedural rules with `rule_type="template"` that provide structured guidance for multi-step tasks.
+
+**GTM Roadmap Template Schema:**
+```javascript
+{
+  user_id: "demo_user",
+  memory_type: "procedural",
+  rule_type: "template",  // Distinguishes from trigger-action rules
+  name: "GTM Roadmap Template",
+  description: "3-phase go-to-market roadmap with 12 tasks",
+  trigger: "create_gtm_project",  // When to apply
+  template: {
+    phases: [
+      {
+        name: "Research",
+        description: "Market analysis and customer research",
+        tasks: [
+          "Market size and growth analysis",
+          "Competitor landscape mapping",
+          "Target customer persona development",
+          "Pricing strategy research"
+        ]
+      },
+      {
+        name: "Strategy",
+        description: "Strategic planning and positioning",
+        tasks: [
+          "Value proposition refinement",
+          "Channel strategy definition",
+          "Partnership opportunity identification",
+          "Go-to-market timeline creation"
+        ]
+      },
+      {
+        name: "Execution",
+        description: "Tactical execution and launch",
+        tasks: [
+          "Marketing collateral development",
+          "Sales enablement materials",
+          "Launch event planning",
+          "Success metrics definition"
+        ]
+      }
+    ]
+  },
+  times_used: 3,
+  last_used: ISODate("2026-01-09T10:00:00Z"),
+  created_at: ISODate("2026-01-08T10:00:00Z")
+}
+```
+
+**Usage in Multi-Step Workflows:**
+```python
+# Load template from procedural memory
+template = memory.get_procedural_rule(
+    user_id="demo_user",
+    rule_type="template",
+    trigger="create_gtm_project"
+)
+
+# Template loaded into context for step execution
+context["template"] = template
+
+# Generate tasks from template
+for phase in template["template"]["phases"]:
+    for task_title in phase["tasks"]:
+        # Create task with phase prefix
+        full_title = f"[{phase['name']}] {task_title}"
+        worklog_agent._create_task(
+            title=full_title,
+            project_id=project["_id"],
+            context=f"Generated from {template['name']}"
+        )
+
+# Auto-increment usage tracking
+memory.increment_rule_usage(template["_id"])
+# times_used: 3 → 4
+```
+
+**Template Detection in Multi-Step Workflows:**
+```python
+# Step 2: Create Project handler detects GTM keywords
+if "gtm" in step["description"].lower() or "go-to-market" in step["description"].lower():
+    # Load GTM template from procedural memory
+    template = memory.get_procedural_rule(
+        user_id=user_id,
+        rule_type="template",
+        trigger="create_gtm_project"
+    )
+    context["template"] = template  # Pass to next step
+
+# Step 3: Generate Tasks uses template from context
+if context.get("template"):
+    # Create 12 tasks organized by 3 phases
+    # Usage count automatically incremented
+```
+
+**Benefits:**
+- **Consistency**: Same template structure applied across all GTM projects
+- **Learning**: Usage tracking shows which templates are most valuable
+- **Efficiency**: 12 tasks created instantly from template (vs manual creation)
+- **Evolution**: Templates can be updated centrally, affecting future usage
+
 ---
 
 ### 5. Shared Memory (Agent handoffs)

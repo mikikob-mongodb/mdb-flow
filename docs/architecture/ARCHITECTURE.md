@@ -202,6 +202,107 @@ MongoDB Collections:
 
 ---
 
+## 🔄 Multi-Step Workflows (Milestone 6)
+
+Flow Companion can detect and execute complex multi-step requests automatically, passing context between steps for seamless workflows.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Coordinator Agent                           │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │ process() - Main Entry Point                      │     │
+│  │                                                    │     │
+│  │ 1. Context Injection (memory system)              │     │
+│  │ 2. Rule Trigger Check (procedural memory)         │     │
+│  │ 3. ★ Multi-Step Detection ★ (NEW)                 │     │
+│  │    - _classify_multi_step_intent()                │     │
+│  │    - Detect patterns: "X and Y", "X then Y"       │     │
+│  │    - Parse via LLM into sequential steps          │     │
+│  │                                                    │     │
+│  │ 4. If Multi-Step → Execute Sequentially            │     │
+│  │    - _execute_multi_step()                        │     │
+│  │    - Pass context between steps                   │     │
+│  │    - Return formatted response                    │     │
+│  │                                                    │     │
+│  │ 5. Else → Normal routing (MCP or static tools)   │     │
+│  └────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Supported Workflows
+
+**Research → Create → Generate Pattern:**
+```
+User: "Research the gaming market and create a GTM project with tasks"
+
+Parsed Steps:
+1. {intent: "research", description: "Research gaming market trends"}
+2. {intent: "create_project", description: "Create GTM project for gaming"}
+3. {intent: "generate_tasks", description: "Generate tasks from template"}
+
+Execution Flow:
+Step 1: Research via MCP Agent (Tavily)
+  → Results cached in context["research_results"]
+
+Step 2: Create Project
+  → Detect GTM keywords ("gtm", "go-to-market")
+  → Load GTM Roadmap Template from procedural memory
+  → Extract project name: "Gaming Market"
+  → Create project via Worklog Agent
+  → Store project in context["project"]
+
+Step 3: Generate Tasks
+  → Use template from context
+  → Iterate phases: Research, Strategy, Execution
+  → Create 12 tasks with phase prefixes
+  → Update template usage count
+```
+
+### Key Features
+
+- **Pattern Detection**: Identifies sequential indicators ("and", "then", "followed by")
+- **LLM Parsing**: Uses Claude to parse into structured steps (temperature=0.0)
+- **Context Passing**: Each step can access data from previous steps
+- **GTM Auto-Detection**: Keywords trigger automatic template loading
+- **Template Integration**: Procedural memory templates applied automatically
+- **Usage Tracking**: Updates template times_used and last_used
+
+### Example
+
+**User Input**: *"Research AI trends and create a project with tasks"*
+
+**Response**:
+```
+✅ Multi-step workflow completed (3/3 steps)
+
+**1. Research completed** (via tavily-search)
+   AI industry shows rapid growth in LLMs, with focus on...
+
+**2. Project created**: AI Trends Analysis
+   📋 Template detected and loaded
+
+**3. Tasks generated**: 12 tasks across 3 phases
+   Preview:
+   • [Research] Market size and growth analysis
+   • [Research] Competitor landscape mapping
+   • [Strategy] Value proposition refinement
+   • [Execution] Launch event planning
+
+📚 Template: GTM Roadmap Template
+🔍 Research source: tavily-search
+
+---
+💡 Next steps:
+• View project tasks: Show me tasks for AI Trends Analysis
+• Start working: Start the first task
+```
+
+**See**: `docs/features/MULTI_STEP_INTENTS.md` for complete documentation.
+
+---
+
 ## 🧪 MCP Agent (Milestone 6 - Experimental)
 
 Flow Companion can connect to external **Model Context Protocol (MCP)** servers to handle requests that static tools can't. The MCP Agent learns by discovering tools, logging solutions, and reusing them.

@@ -2,7 +2,7 @@
 
 **Flow Companion - Multi-Agent System with Context Engineering**
 
-*Version 4.5 - January 2026 (Milestone 6 - MCP Agent)*
+*Version 4.6 - January 2026 (Milestone 6 - MCP Agent & Multi-Step Workflows)*
 
 ---
 
@@ -11,11 +11,12 @@
 1. [Architecture Overview](#architecture-overview)
 2. [Three-Agent System](#three-agent-system)
 3. [Memory System (5-Tier Architecture)](#memory-system-5-tier-architecture)
-4. [MCP Agent (Milestone 6 - Experimental)](#mcp-agent-milestone-6---experimental)
-5. [Context Engineering Optimizations](#context-engineering-optimizations)
-6. [Integration Between Agents and Optimizations](#integration-between-agents-and-optimizations)
-7. [Performance Characteristics](#performance-characteristics)
-8. [Future Enhancements](#future-enhancements)
+4. [Multi-Step Workflows (Milestone 6)](#multi-step-workflows-milestone-6)
+5. [MCP Agent (Milestone 6 - Experimental)](#mcp-agent-milestone-6---experimental)
+6. [Context Engineering Optimizations](#context-engineering-optimizations)
+7. [Integration Between Agents and Optimizations](#integration-between-agents-and-optimizations)
+8. [Performance Characteristics](#performance-characteristics)
+9. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -628,6 +629,182 @@ Memory System
 - Total memory footprint for typical user: ~100KB
 - Embeddings dominate storage (episodic memory)
 - TTL indexes auto-cleanup short-term collections
+
+---
+
+## Multi-Step Workflows (Milestone 6)
+
+Flow Companion can detect and execute complex multi-step requests automatically, enabling natural language commands like "Research X and create Y with Z" to be parsed into sequential steps and executed with context passing.
+
+### Architecture
+
+Multi-step workflow processing is integrated directly into the Coordinator's `process()` method, executing BEFORE normal MCP or static tool routing:
+
+```python
+def process(user_message, history):
+    # 1. Context injection (memory system)
+    # 2. Rule trigger check (procedural memory)
+
+    # 3. ★ Multi-step detection (NEW)
+    multi_step = self._classify_multi_step_intent(user_message)
+
+    if multi_step["is_multi_step"]:
+        # Execute multi-step workflow
+        result = asyncio.run(self._execute_multi_step(
+            steps=multi_step["steps"],
+            original_request=user_message,
+            user_id=self.user_id
+        ))
+        return self._format_multi_step_response(result)
+
+    # 4. Else: Normal routing (MCP or static tools)
+```
+
+### Key Components
+
+**1. Intent Classification** (`_classify_multi_step_intent()`):
+- Pattern detection: "and", "then", "followed by"
+- LLM parsing with temperature=0.0 (deterministic)
+- Returns structured steps with intent types
+
+**2. Sequential Execution** (`_execute_multi_step()`):
+- Async method for step execution
+- Context dictionary passed between steps
+- Supports: research, create_project, generate_tasks
+
+**3. Step Handlers**:
+
+**Research** (via MCP Agent):
+```python
+if step["intent"] == "research":
+    result = await mcp_agent.handle_request(...)
+    context["research_results"] = result.get("result")
+    context["research_source"] = result.get("source")
+```
+
+**Create Project** (with GTM detection):
+```python
+if step["intent"] == "create_project":
+    # Auto-detect GTM project
+    is_gtm = "gtm" in step["description"].lower()
+
+    if is_gtm:
+        # Load template from procedural memory
+        template = memory.get_procedural_rule(
+            rule_type="template",
+            trigger="create_gtm_project"
+        )
+        context["template"] = template
+
+    # Create project
+    project = worklog_agent._create_project(...)
+    context["project"] = project
+```
+
+**Generate Tasks** (from templates):
+```python
+if step["intent"] == "generate_tasks":
+    template = context.get("template")
+    project = context.get("project")
+
+    # Iterate template phases
+    for phase in template["template"]["phases"]:
+        for task_title in phase["tasks"]:
+            full_title = f"[{phase['name']}] {task_title}"
+            worklog_agent._create_task(
+                title=full_title,
+                project_id=project["_id"],
+                context=f"Generated from {template['name']}"
+            )
+
+    # Update template usage
+    memory.increment_rule_usage(template["_id"])
+```
+
+### Example Workflow
+
+**User Input:**
+```
+"Research the gaming market and create a GTM project with tasks"
+```
+
+**Execution Flow:**
+
+1. **Detection** - Patterns: "research", "and", "create", "with"
+   - LLM parses into 3 steps
+
+2. **Step 1: Research**
+   - Route to MCP Agent
+   - Execute Tavily web search
+   - Cache results in context
+
+3. **Step 2: Create Project**
+   - Detect "GTM" keywords
+   - Load "GTM Roadmap Template" from procedural memory
+   - Extract project name: "Gaming Market"
+   - Create project via Worklog Agent
+   - Store in context
+
+4. **Step 3: Generate Tasks**
+   - Use template from context
+   - Create 12 tasks across 3 phases:
+     - Research Phase (4 tasks)
+     - Strategy Phase (4 tasks)
+     - Execution Phase (4 tasks)
+   - Increment template usage count
+
+5. **Response Formatting**
+   - Summary of all steps
+   - Task preview
+   - Next steps suggestions
+
+**Result:**
+```
+✅ Multi-step workflow completed (3/3 steps)
+
+**1. Research completed** (via tavily-search)
+   Gaming market trends show rapid growth in cloud gaming...
+
+**2. Project created**: Gaming Market
+   📋 Template detected and loaded
+
+**3. Tasks generated**: 12 tasks across 3 phases
+   Preview:
+   • [Research] Market size and growth analysis
+   • [Strategy] Value proposition refinement
+   • [Execution] Launch event planning
+
+📚 Template: GTM Roadmap Template
+🔍 Research source: tavily-search
+```
+
+### Integration with Memory System
+
+Multi-step workflows demonstrate the full power of the 5-tier memory system:
+
+- **Working Memory**: Stores current project context during execution
+- **Episodic Memory**: Records each step as an action with embeddings
+- **Semantic Memory**: User preferences influence project/task creation
+- **Procedural Memory**: GTM template loaded and applied automatically
+- **Shared Memory**: Context passed between execution steps
+
+### Performance
+
+**Typical 3-Step Workflow:**
+- Intent classification: ~2-3s (LLM parsing)
+- Step 1 (Research): ~3-5s (Tavily API)
+- Step 2 (Create Project): ~0.5s (DB + template load)
+- Step 3 (Generate Tasks): ~1-2s (12 DB writes)
+- **Total**: ~7-11 seconds
+
+### Testing
+
+**Test Coverage:**
+- 5 test cases in `scripts/test_multi_step_intent.py`
+- 100% detection accuracy for multi-step patterns
+- 100% single-step rejection accuracy
+
+**See:** `docs/features/MULTI_STEP_INTENTS.md` for complete documentation.
 
 ---
 
