@@ -8,8 +8,10 @@ from bson import ObjectId
 
 from shared.llm import llm_service
 from shared.logger import get_logger
+from shared.config import settings
 from agents.worklog import worklog_agent
 from agents.retrieval import retrieval_agent
+from agents.mcp_agent import MCPAgent
 from utils.context_engineering import compress_tool_result
 from config.prompts import get_system_prompt, get_prompt_stats
 from memory import MemoryManager
@@ -499,7 +501,7 @@ The selection number is 1-based (1 = first result, 2 = second result, etc.)""",
 class CoordinatorAgent:
     """Coordinator agent that routes user requests to specialized agents using tool use."""
 
-    def __init__(self, memory_manager=None):
+    def __init__(self, memory_manager=None, db=None):
         self.llm = llm_service
         self.worklog_agent = worklog_agent
         self.retrieval_agent = retrieval_agent
@@ -521,6 +523,11 @@ class CoordinatorAgent:
         self.current_chain_id = None
         self.memory_ops = {}  # Track memory operations for debug panel
 
+        # MCP Agent (lazy initialized)
+        self.db = db
+        self.mcp_agent: Optional[MCPAgent] = None
+        self.mcp_mode_enabled = settings.mcp_mode_enabled  # Can be toggled via UI
+
     def set_session(self, session_id: str, user_id: str = None):
         """Set session context for memory isolation.
 
@@ -531,6 +538,34 @@ class CoordinatorAgent:
         self.session_id = session_id
         if user_id:
             self.user_id = user_id
+
+    async def enable_mcp_mode(self):
+        """Initialize and enable MCP mode"""
+        if self.mcp_agent is None:
+            if not self.db:
+                return {
+                    "success": False,
+                    "error": "Database connection not available for MCP Agent"
+                }
+
+            from shared.embeddings import embed_query
+            self.mcp_agent = MCPAgent(
+                db=self.db,
+                memory_manager=self.memory,
+                embedding_fn=embed_query
+            )
+            await self.mcp_agent.initialize()
+
+        self.mcp_mode_enabled = True
+        status = self.mcp_agent.get_status()
+        logger.info(f"🔬 MCP Mode enabled: {status}")
+        return {"success": True, **status}
+
+    def disable_mcp_mode(self):
+        """Disable MCP mode (keep connections for reuse)"""
+        self.mcp_mode_enabled = False
+        logger.info("🔬 MCP Mode disabled (connections preserved)")
+        return {"success": True, "mcp_mode_enabled": False}
 
     def _build_context_injection(self) -> str:
         """
@@ -948,6 +983,119 @@ Use this memory context to:
         self.memory_ops["recorded_action_type"] = action_type
 
         logger.debug(f"Recorded action: {action_type} on {entity_type} (id={action_id})")
+
+    def _can_static_tools_handle(self, intent: str, user_message: str) -> bool:
+        """
+        Returns True if our static tools can handle this request.
+        Returns False if we should try MCP Agent.
+
+        Args:
+            intent: Classified intent
+            user_message: User's message
+
+        Returns:
+            True if static tools can handle, False if MCP Agent should try
+        """
+        # Intents that static tools handle well
+        static_intents = [
+            "create_task", "update_task", "complete_task", "delete_task",
+            "start_task", "stop_task",
+            "create_project", "update_project",
+            "list_tasks", "list_projects", "search_tasks", "search_projects",
+            "get_history", "add_note", "add_context",
+            "get_task", "get_project", "get_tasks_by_time"
+        ]
+
+        if intent in static_intents:
+            return True
+
+        # Intents that need MCP
+        mcp_intents = [
+            "research", "web_search", "find_information",
+            "complex_query", "aggregation", "data_extraction",
+            "unknown"
+        ]
+
+        if intent in mcp_intents:
+            return False
+
+        # Default to static for safety
+        return True
+
+    def _classify_intent(self, user_message: str) -> str:
+        """
+        Classify user intent from message.
+
+        Args:
+            user_message: User's message
+
+        Returns:
+            Intent string
+        """
+        msg_lower = user_message.lower()
+
+        # Task operations
+        if any(word in msg_lower for word in ["create task", "add task", "new task", "make task"]):
+            return "create_task"
+        if any(word in msg_lower for word in ["complete", "done", "finish"]):
+            return "complete_task"
+        if any(word in msg_lower for word in ["start", "begin", "working on"]):
+            return "start_task"
+        if any(word in msg_lower for word in ["stop", "pause"]):
+            return "stop_task"
+
+        # Project operations
+        if any(word in msg_lower for word in ["create project", "new project"]):
+            return "create_project"
+
+        # Queries
+        if any(word in msg_lower for word in ["show me", "list", "get tasks", "what are my tasks"]):
+            return "list_tasks"
+        if any(word in msg_lower for word in ["search for", "find"]):
+            return "search_tasks"
+
+        # Research/web search
+        if any(word in msg_lower for word in ["search the web", "look up", "research", "find information about", "what's the latest"]):
+            return "web_search"
+
+        # Default to unknown (will try MCP if enabled)
+        return "unknown"
+
+    def _format_mcp_response(self, mcp_result: dict) -> dict:
+        """Format MCP Agent result for the user"""
+        if not mcp_result.get("success"):
+            return {
+                "response": f"I tried to figure this out but encountered an error: {mcp_result.get('error', 'Unknown error')}",
+                "debug": mcp_result
+            }
+
+        source_messages = {
+            "knowledge_cache": "📚 Found this in my knowledge cache:",
+            "discovery_reuse": "🔄 I've solved this before:",
+            "new_discovery": "🆕 I figured out how to do this:"
+        }
+
+        prefix = source_messages.get(mcp_result.get("source"), "")
+
+        # Format result content
+        result_content = mcp_result.get("result", "")
+        if isinstance(result_content, list):
+            formatted_result = "\n\n".join(str(item) for item in result_content)
+        else:
+            formatted_result = str(result_content)
+
+        response_text = f"{prefix}\n\n{formatted_result}" if prefix else formatted_result
+
+        return {
+            "response": response_text,
+            "debug": {
+                "source": mcp_result.get("source"),
+                "mcp_server": mcp_result.get("mcp_server"),
+                "tool_used": mcp_result.get("tool_used"),
+                "execution_time_ms": mcp_result.get("execution_time_ms"),
+                "discovery_id": mcp_result.get("discovery_id")
+            }
+        }
 
     def _get_available_tools(self) -> List[Dict]:
         """Get tools available based on current settings.
@@ -1661,6 +1809,96 @@ Execute the rule action: {rule_match['action']}
                 self.memory_ops["rule_triggered"] = rule_match['trigger']
                 logger.info(f"🔔 Rule triggered: '{rule_match['trigger']}' → {rule_match['action']}")
 
+        # ═══════════════════════════════════════════════════════════════
+        # MCP ROUTING: Check if request should be handled by MCP Agent
+        # ═══════════════════════════════════════════════════════════════
+
+        intent = self._classify_intent(user_message)
+        logger.info(f"📊 Classified intent: {intent}")
+
+        # Check if static tools can handle this
+        if not self._can_static_tools_handle(intent, user_message):
+            logger.info(f"📊 Static tools cannot handle intent '{intent}', checking MCP...")
+
+            # MCP mode check
+            if not self.mcp_mode_enabled:
+                logger.warning("📊 MCP mode disabled, suggesting to user")
+                response_text = "I don't have a built-in tool for this request. Enable Experimental MCP Mode to let me try to figure it out."
+
+                if return_debug:
+                    return {
+                        "response": response_text,
+                        "debug": {
+                            "could_use_mcp": True,
+                            "intent": intent,
+                            "mcp_available": settings.mcp_available
+                        }
+                    }
+                else:
+                    return response_text
+
+            # Route to MCP Agent
+            logger.info(f"🔬 Routing to MCP Agent (intent: {intent})")
+
+            try:
+                import asyncio
+                # Ensure MCP agent is initialized
+                if self.mcp_agent is None:
+                    init_result = asyncio.run(self.enable_mcp_mode())
+                    if not init_result.get("success"):
+                        error_response = f"Failed to initialize MCP mode: {init_result.get('error')}"
+                        if return_debug:
+                            return {"response": error_response, "debug": {"error": init_result.get('error')}}
+                        else:
+                            return error_response
+
+                # Get current context for MCP agent
+                context = {}
+                if self.session_id and self.memory:
+                    session_context = self.memory.read_session_context(self.session_id)
+                    if session_context:
+                        context = session_context
+
+                # Call MCP agent
+                mcp_result = asyncio.run(self.mcp_agent.handle_request(
+                    user_request=user_message,
+                    intent=intent,
+                    context=context,
+                    user_id=self.user_id
+                ))
+
+                # Format MCP result for user
+                formatted = self._format_mcp_response(mcp_result)
+
+                logger.info(f"🔬 MCP Agent result: success={mcp_result.get('success')}, source={mcp_result.get('source')}")
+
+                if return_debug:
+                    return {
+                        "response": formatted["response"],
+                        "debug": {
+                            **formatted.get("debug", {}),
+                            "routed_to_mcp": True,
+                            "intent": intent
+                        }
+                    }
+                else:
+                    return formatted["response"]
+
+            except Exception as e:
+                logger.error(f"🔬 MCP Agent error: {e}", exc_info=True)
+                error_response = f"MCP Agent encountered an error: {str(e)}"
+
+                if return_debug:
+                    return {
+                        "response": error_response,
+                        "debug": {
+                            "mcp_error": str(e),
+                            "intent": intent
+                        }
+                    }
+                else:
+                    return error_response
+
         # Get prompt caching setting
         cache_prompts = self.optimizations.get("prompt_caching", True)
 
@@ -1952,10 +2190,11 @@ try:
     retrieval_agent.memory = memory_manager
     worklog_agent.memory = memory_manager
 
-    coordinator = CoordinatorAgent(memory_manager=memory_manager)
-    logger.info("✅ Coordinator initialized with memory manager")
+    coordinator = CoordinatorAgent(memory_manager=memory_manager, db=db)
+    logger.info("✅ Coordinator initialized with memory manager and database")
     logger.info("✅ Retrieval and Worklog agents have shared memory access")
+    logger.info(f"✅ MCP mode available: {settings.mcp_available}")
 except Exception as e:
     logger.warning(f"⚠️  Failed to initialize memory manager: {e}")
     logger.warning("Coordinator running without memory support")
-    coordinator = CoordinatorAgent(memory_manager=None)
+    coordinator = CoordinatorAgent(memory_manager=None, db=None)
