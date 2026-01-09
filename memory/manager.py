@@ -1103,6 +1103,117 @@ class MemoryManager:
         })
         return result.deleted_count > 0
 
+    def get_procedural_rule(
+        self,
+        user_id: str,
+        rule_type: str = None,
+        trigger: str = None,
+        name: str = None
+    ) -> Optional[dict]:
+        """
+        Retrieve a procedural rule (template, checklist, behavior rule).
+
+        Can search by:
+        - rule_type: "template", "checklist", "behavior"
+        - trigger: the trigger keyword (e.g., "create_gtm_project")
+        - name: exact name match
+
+        Args:
+            user_id: User identifier
+            rule_type: Optional filter by rule type
+            trigger: Optional filter by trigger keyword
+            name: Optional filter by exact name match
+
+        Returns:
+            Matching rule document or None
+        """
+        query = {
+            "user_id": user_id,
+            "memory_type": "procedural"
+        }
+
+        if rule_type:
+            query["rule_type"] = rule_type
+        if trigger:
+            query["trigger"] = trigger
+        if name:
+            query["name"] = name
+
+        doc = self.long_term.find_one(query)
+
+        if doc:
+            # Update usage stats
+            self.long_term.update_one(
+                {"_id": doc["_id"]},
+                {
+                    "$inc": {"times_used": 1},
+                    "$set": {"last_used": datetime.utcnow()}
+                }
+            )
+            # Convert ObjectId to string
+            doc["_id"] = str(doc["_id"])
+
+        return doc
+
+    def search_procedural_rules(
+        self,
+        user_id: str,
+        query: str,
+        limit: int = 5
+    ) -> list:
+        """
+        Semantic search over procedural rules using vector embeddings.
+
+        Useful for natural language queries like:
+        - "find a template for go-to-market"
+        - "what checklists do I have?"
+        - "show me project templates"
+
+        Args:
+            user_id: User identifier
+            query: Natural language search query
+            limit: Maximum number of results (default 5)
+
+        Returns:
+            List of matching rule documents with similarity scores
+        """
+        if not self.embedding_fn:
+            # Fallback to text search if no embedding function
+            return []
+
+        # Generate embedding for query
+        query_embedding = self.embedding_fn(query)
+
+        # Vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": limit * 4,  # Search more candidates for better results
+                    "limit": limit,
+                    "filter": {
+                        "user_id": user_id,
+                        "memory_type": "procedural"
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        results = list(self.long_term.aggregate(pipeline))
+
+        # Convert ObjectIds to strings
+        for r in results:
+            r["_id"] = str(r["_id"])
+
+        return results
+
     # ═══════════════════════════════════════════════════════════════════
     # LONG-TERM: COMBINED QUERIES
     # ═══════════════════════════════════════════════════════════════════

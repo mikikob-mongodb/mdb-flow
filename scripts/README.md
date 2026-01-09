@@ -10,6 +10,7 @@ This directory contains consolidated scripts for common operations:
 - **test_memory_system.py** - Memory system testing
 - **load_sample_data.py** - Sample projects and tasks loading
 - **seed_memory_demo_data.py** - Memory collections seeding (action history, session context)
+- **seed_demo_data.py** - ⭐ Presentation-ready demo dataset (complete 5-tier memory showcase)
 - **debug/** - Debug and diagnostic scripts
 
 ## Database Setup
@@ -242,6 +243,58 @@ python scripts/seed_memory_demo_data.py
 python scripts/seed_memory_demo_data.py --with-sample-data
 ```
 
+### seed_demo_data.py
+
+**⭐ Presentation-Ready Demo Dataset** - Seeds a complete, interconnected dataset specifically designed for presenting the 5-tier memory system.
+
+**Usage:**
+```bash
+# Seed all demo data (idempotent)
+python scripts/seed_demo_data.py
+
+# Clear existing demo data and reseed
+python scripts/seed_demo_data.py --clean
+
+# Verify demo data exists
+python scripts/seed_demo_data.py --verify
+
+# Skip embeddings for faster seeding
+python scripts/seed_demo_data.py --skip-embeddings
+```
+
+**Creates:**
+
+1. **Projects (3):**
+   - Project Alpha (active) - Infrastructure modernization with 7 tasks
+   - Q3 Fintech GTM (completed) - Past successful GTM project
+   - AI Developer Outreach (completed) - Another past GTM project
+
+2. **Tasks (7):**
+   - All associated with Project Alpha
+   - Mix of statuses: 2 done, 1 in_progress, 4 todo
+   - Various priorities demonstrating active work
+
+3. **Procedural Memory (2):**
+   - **GTM Roadmap Template** (⭐ key for presentation finale) - 12 tasks across 3 phases
+   - Market Research Questions checklist - 6 standard due diligence questions
+
+4. **Semantic Memory (4):**
+   - User preferences: default_priority, communication_style, focus_area, work_style
+   - Varying confidence levels (0.75-0.9) based on usage frequency
+   - Times_used tracking (8-25 uses)
+
+5. **Episodic Memory (3):**
+   - Created Q3 Fintech GTM using GTM Template (90 days ago)
+   - Completed Q3 Fintech GTM successfully (45 days ago)
+   - Applied GTM Template to AI Developer Outreach (120 days ago)
+
+**Key Feature:**
+The GTM Template is learned from past projects and can be automatically applied to new GTM projects, demonstrating the system's ability to learn and reuse successful patterns.
+
+**Demo User ID:** `demo-user`
+
+**See:** `scripts/README_SEED_DEMO.md` for detailed documentation and presentation flow.
+
 ## Debug Scripts
 
 Located in `scripts/debug/`, these are diagnostic tools for development:
@@ -320,6 +373,19 @@ python scripts/test_memory_system.py
 
 # Or combined (steps 2-3)
 python scripts/seed_memory_demo_data.py --with-sample-data
+```
+
+### Presentation Setup (5-Tier Memory Demo)
+```bash
+# Complete presentation-ready dataset
+python scripts/seed_demo_data.py --clean
+
+# Verify all data loaded correctly
+python scripts/seed_demo_data.py --verify
+
+# Launch the UI
+streamlit run ui/streamlit_app.py
+# Select user: demo-user
 ```
 
 ### Regular Maintenance

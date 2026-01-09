@@ -1061,6 +1061,525 @@ Use this memory context to:
         # Default to unknown (will try MCP if enabled)
         return "unknown"
 
+    def _classify_multi_step_intent(self, user_message: str) -> dict:
+        """
+        Detect if message contains multiple intents that need sequential execution.
+
+        This enables complex requests like:
+        - "Research the gaming market and create a GTM project with tasks"
+        - "Look up MongoDB features then make a project for it"
+        - "Find information about AI trends and then create tasks"
+
+        Args:
+            user_message: User's message
+
+        Returns:
+            {
+                "is_multi_step": bool,
+                "steps": [
+                    {"intent": "research", "description": "Research gaming market"},
+                    {"intent": "create_project", "description": "Create GTM project"},
+                    {"intent": "generate_tasks", "description": "Generate tasks from template"}
+                ]
+            }
+        """
+        msg_lower = user_message.lower()
+
+        # Keywords that indicate multi-step requests
+        multi_step_indicators = [
+            " and ",
+            " then ",
+            ", then ",
+            " and then ",
+            " followed by ",
+            " after that ",
+        ]
+
+        # Check for sequential indicators
+        has_sequential_indicator = any(indicator in msg_lower for indicator in multi_step_indicators)
+
+        # Common multi-step patterns
+        research_create_pattern = any([
+            ("research" in msg_lower or "look up" in msg_lower or "find out" in msg_lower or "find information" in msg_lower)
+            and ("create" in msg_lower or "make" in msg_lower or "add" in msg_lower),
+        ])
+
+        # If no multi-step indicators, return early
+        if not (has_sequential_indicator and research_create_pattern):
+            return {"is_multi_step": False, "steps": []}
+
+        # Use LLM to parse the steps
+        logger.info(f"Detected potential multi-step request: {user_message}")
+
+        prompt = f"""Parse this user request into sequential steps.
+
+User Request: "{user_message}"
+
+Analyze the request and break it into sequential steps. Each step should have:
+- intent: One of [research, create_project, generate_tasks, create_task, update_task, other]
+- description: Clear description of what to do in this step
+
+Respond with ONLY valid JSON in this exact format:
+{{
+    "steps": [
+        {{"intent": "research", "description": "Research gaming market trends and opportunities"}},
+        {{"intent": "create_project", "description": "Create GTM project for gaming market"}},
+        {{"intent": "generate_tasks", "description": "Generate tasks from GTM template"}}
+    ]
+}}
+
+Example inputs and outputs:
+
+Input: "Research gaming market and create a GTM project with tasks"
+Output:
+{{
+    "steps": [
+        {{"intent": "research", "description": "Research gaming market trends and opportunities"}},
+        {{"intent": "create_project", "description": "Create GTM project for gaming vertical"}},
+        {{"intent": "generate_tasks", "description": "Generate tasks from GTM Roadmap Template"}}
+    ]
+}}
+
+Input: "Look up MongoDB features then make a project for it"
+Output:
+{{
+    "steps": [
+        {{"intent": "research", "description": "Research MongoDB features and capabilities"}},
+        {{"intent": "create_project", "description": "Create project for MongoDB integration"}}
+    ]
+}}
+
+Now parse the actual user request above. Respond with ONLY the JSON, no other text."""
+
+        try:
+            # Use LLM to parse steps with low temperature for consistency
+            response = self.llm.generate(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,  # Deterministic parsing
+                max_tokens=1000
+            )
+
+            # Clean the response - remove markdown code blocks if present
+            response_clean = response.strip()
+            if response_clean.startswith("```"):
+                # Remove ```json or ``` markers
+                lines = response_clean.split("\n")
+                response_clean = "\n".join(lines[1:-1] if len(lines) > 2 else lines)
+
+            # Parse JSON
+            parsed = json.loads(response_clean)
+
+            if "steps" in parsed and len(parsed["steps"]) > 1:
+                logger.info(f"Parsed {len(parsed['steps'])} steps from multi-step request")
+                return {
+                    "is_multi_step": True,
+                    "steps": parsed["steps"]
+                }
+            else:
+                logger.info("LLM did not identify multiple steps")
+                return {"is_multi_step": False, "steps": []}
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse multi-step response as JSON: {e}")
+            logger.error(f"Response was: {response}")
+            return {"is_multi_step": False, "steps": []}
+        except Exception as e:
+            logger.error(f"Error parsing multi-step intent: {e}")
+            return {"is_multi_step": False, "steps": []}
+
+    async def _execute_multi_step(
+        self,
+        steps: List[dict],
+        original_request: str,
+        user_id: str
+    ) -> dict:
+        """
+        Execute multiple steps sequentially, passing context between them.
+
+        This enables complex workflows like:
+        1. Research (via MCP)
+        2. Create project
+        3. Generate tasks from procedural memory template
+
+        Args:
+            steps: List of step dicts with "intent" and "description"
+            original_request: Original user request
+            user_id: User identifier
+
+        Returns:
+            Combined results from all steps with success status
+        """
+        results = []
+        context = {
+            "original_request": original_request,
+            "user_id": user_id
+        }
+
+        logger.info(f"Executing {len(steps)} steps for multi-step workflow")
+
+        for i, step in enumerate(steps):
+            step_num = i + 1
+            logger.info(f"Step {step_num}/{len(steps)}: {step['intent']} - {step['description']}")
+
+            try:
+                if step["intent"] == "research":
+                    # Route to MCP Agent for web search
+                    if self.mcp_mode_enabled and self.mcp_agent:
+                        logger.info(f"Routing research to MCP Agent: {step['description']}")
+                        result = await self.mcp_agent.handle_request(
+                            user_request=step["description"],
+                            intent="research",
+                            context=context,
+                            user_id=user_id
+                        )
+
+                        if result.get("success"):
+                            context["research_results"] = result.get("result")
+                            context["research_source"] = result.get("source")
+
+                            results.append({
+                                "step": step_num,
+                                "type": "research",
+                                "success": True,
+                                "source": result.get("source"),
+                                "preview": self._truncate(str(result.get("result")), 200)
+                            })
+                            logger.info(f"✓ Research completed via {result.get('source')}")
+                        else:
+                            results.append({
+                                "step": step_num,
+                                "type": "research",
+                                "success": False,
+                                "error": result.get("error", "Research failed")
+                            })
+                            logger.error(f"✗ Research failed: {result.get('error')}")
+                    else:
+                        error_msg = "MCP mode not enabled - cannot perform research"
+                        results.append({
+                            "step": step_num,
+                            "type": "research",
+                            "success": False,
+                            "error": error_msg
+                        })
+                        logger.warning(f"⚠️  {error_msg}")
+
+                elif step["intent"] == "create_project":
+                    # Check if this is a GTM project
+                    is_gtm = any(word in step["description"].lower()
+                                for word in ["gtm", "go-to-market", "go to market"])
+
+                    # Load GTM template from procedural memory if GTM project
+                    template = None
+                    if is_gtm:
+                        logger.info("Detected GTM project - loading template from procedural memory")
+
+                        # Query for GTM template using specific method
+                        template = self.memory.get_procedural_rule(
+                            user_id=user_id,
+                            rule_type="template",
+                            trigger="create_gtm_project"
+                        )
+
+                        if template:
+                            context["template"] = template
+                            logger.info(f"✓ Found template: {template.get('name')}")
+                        else:
+                            logger.warning("⚠️  GTM template not found in procedural memory")
+
+                    # Extract project name from description or context
+                    project_name = self._extract_project_name(step["description"], context)
+
+                    # Create project via worklog agent
+                    logger.info(f"Creating project: {project_name}")
+                    project_result = self.worklog_agent._create_project(
+                        name=project_name,
+                        description=step["description"],
+                        context=context.get("research_results", "")[:500] if context.get("research_results") else ""
+                    )
+
+                    if project_result.get("success"):
+                        context["project"] = project_result.get("project")
+                        context["project_id"] = project_result.get("project_id")
+
+                        results.append({
+                            "step": step_num,
+                            "type": "create_project",
+                            "success": True,
+                            "project_name": project_name,
+                            "project_id": project_result.get("project_id"),
+                            "template_loaded": template is not None
+                        })
+                        logger.info(f"✓ Project created: {project_name}")
+                    else:
+                        results.append({
+                            "step": step_num,
+                            "type": "create_project",
+                            "success": False,
+                            "error": "Failed to create project"
+                        })
+                        logger.error("✗ Project creation failed")
+
+                elif step["intent"] == "generate_tasks":
+                    # Use template + research to generate tasks
+                    template = context.get("template")
+                    project = context.get("project")
+                    project_id = context.get("project_id")
+
+                    if not template:
+                        error_msg = "No template available from previous steps"
+                        results.append({
+                            "step": step_num,
+                            "type": "generate_tasks",
+                            "success": False,
+                            "error": error_msg
+                        })
+                        logger.warning(f"⚠️  {error_msg}")
+                        continue
+
+                    if not project or not project_id:
+                        error_msg = "No project available from previous steps"
+                        results.append({
+                            "step": step_num,
+                            "type": "generate_tasks",
+                            "success": False,
+                            "error": error_msg
+                        })
+                        logger.warning(f"⚠️  {error_msg}")
+                        continue
+
+                    # Generate tasks from template phases
+                    logger.info(f"Generating tasks from template: {template.get('name')}")
+                    tasks_created = []
+                    phases_data = template.get("template", {}).get("phases", [])
+
+                    for phase in phases_data:
+                        phase_name = phase.get("name", "")
+                        logger.info(f"  Phase: {phase_name}")
+
+                        for task_title in phase.get("tasks", []):
+                            # Add phase prefix to task title for context
+                            full_title = f"[{phase_name}] {task_title}"
+
+                            task_result = self.worklog_agent._create_task(
+                                title=full_title,
+                                project_id=project_id,
+                                priority="medium",
+                                context=f"Generated from {template.get('name')}"
+                            )
+
+                            if task_result.get("success"):
+                                tasks_created.append(task_result["task"]["title"])
+                                logger.debug(f"    ✓ Created: {full_title}")
+                            else:
+                                logger.warning(f"    ✗ Failed to create: {full_title}")
+
+                    # Update template usage count
+                    if tasks_created and template.get("_id"):
+                        try:
+                            from bson import ObjectId
+                            self.memory.long_term.update_one(
+                                {"_id": ObjectId(template["_id"])},
+                                {
+                                    "$inc": {"times_used": 1},
+                                    "$set": {"last_used": datetime.utcnow()}
+                                }
+                            )
+                            logger.debug(f"Incremented usage count for template: {template.get('name')}")
+                        except Exception as e:
+                            logger.warning(f"Failed to update template usage: {e}")
+
+                    results.append({
+                        "step": step_num,
+                        "type": "generate_tasks",
+                        "success": True,
+                        "tasks_created": len(tasks_created),
+                        "template_used": template.get("name"),
+                        "phases": len(phases_data),
+                        "tasks_preview": tasks_created[:5]  # Preview first 5
+                    })
+                    logger.info(f"✓ Generated {len(tasks_created)} tasks across {len(phases_data)} phases")
+
+                else:
+                    # Unknown step type
+                    error_msg = f"Unknown step type: {step['intent']}"
+                    results.append({
+                        "step": step_num,
+                        "type": step["intent"],
+                        "success": False,
+                        "error": error_msg
+                    })
+                    logger.warning(f"⚠️  {error_msg}")
+
+            except Exception as e:
+                logger.error(f"Error executing step {step_num}: {e}", exc_info=True)
+                results.append({
+                    "step": step_num,
+                    "type": step.get("intent", "unknown"),
+                    "success": False,
+                    "error": str(e)
+                })
+
+        # Calculate overall success
+        successful_steps = [r for r in results if r.get("success")]
+        all_success = len(successful_steps) == len(steps)
+
+        logger.info(f"Multi-step execution complete: {len(successful_steps)}/{len(steps)} steps successful")
+
+        return {
+            "success": all_success,
+            "steps_completed": len(successful_steps),
+            "total_steps": len(steps),
+            "results": results,
+            "context": {
+                "project_created": context.get("project", {}).get("name") if context.get("project") else None,
+                "project_id": context.get("project_id"),
+                "research_cached": context.get("research_results") is not None,
+                "research_source": context.get("research_source"),
+                "template_used": context.get("template", {}).get("name") if context.get("template") else None,
+                "tasks_generated": sum(r.get("tasks_created", 0) for r in results)
+            }
+        }
+
+    def _extract_project_name(self, description: str, context: dict) -> str:
+        """
+        Extract or generate project name from description and context.
+
+        Args:
+            description: Step description
+            context: Execution context
+
+        Returns:
+            Project name
+        """
+        # Common patterns to extract from description
+        patterns = [
+            "create project for ",
+            "create ",
+            "make project for ",
+            "make ",
+            "project for ",
+        ]
+
+        desc_lower = description.lower()
+        for pattern in patterns:
+            if pattern in desc_lower:
+                # Extract text after pattern
+                idx = desc_lower.index(pattern) + len(pattern)
+                name = description[idx:].strip()
+                # Clean up
+                name = name.replace(" project", "").replace(" vertical", "")
+                # Capitalize words
+                name = " ".join(word.capitalize() for word in name.split())
+                if name:
+                    return name
+
+        # Fallback: Use keywords from original request
+        original = context.get("original_request", "")
+        keywords = []
+
+        # Extract important words (capitalize nouns/proper nouns)
+        for word in original.split():
+            if len(word) > 3 and word[0].isupper():
+                keywords.append(word)
+
+        if keywords:
+            return " ".join(keywords[:3]) + " Project"
+
+        # Final fallback
+        return "New GTM Project"
+
+    def _truncate(self, text: str, max_length: int) -> str:
+        """Truncate text to max length with ellipsis."""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length - 3] + "..."
+
+    def _format_multi_step_response(self, result: dict) -> dict:
+        """
+        Format multi-step execution results for user display.
+
+        Args:
+            result: Result dict from _execute_multi_step()
+
+        Returns:
+            Dict with "response" and "debug" keys
+        """
+        # Handle failures
+        if not result["success"]:
+            failed = [r for r in result["results"] if not r.get("success")]
+            failed_step = failed[0] if failed else {"error": "Unknown"}
+
+            response_text = (
+                f"⚠️ Workflow partially completed ({result['steps_completed']}/{result['total_steps']} steps successful).\n\n"
+                f"❌ Issue at step {failed_step.get('step', '?')}: {failed_step.get('error', 'Unknown error')}"
+            )
+
+            return {
+                "response": response_text,
+                "debug": result
+            }
+
+        # Build success message
+        parts = []
+        parts.append(f"✅ **Multi-step workflow completed** ({result['steps_completed']}/{result['total_steps']} steps)")
+        parts.append("")  # Blank line
+
+        # Research summary
+        research = next((r for r in result["results"] if r["type"] == "research"), None)
+        if research and research.get("success"):
+            source = research.get("source", "web search")
+            parts.append(f"**1. Research completed** (via {source})")
+            if research.get("preview"):
+                parts.append(f"   {research['preview'][:150]}...")
+            parts.append("")
+
+        # Project created
+        project = next((r for r in result["results"] if r["type"] == "create_project"), None)
+        if project and project.get("success"):
+            project_name = project.get("project_name", "New Project")
+            parts.append(f"**2. Project created**: {project_name}")
+
+            if project.get("template_loaded"):
+                parts.append(f"   📋 Template detected and loaded")
+            parts.append("")
+
+        # Tasks generated
+        tasks = next((r for r in result["results"] if r["type"] == "generate_tasks"), None)
+        if tasks and tasks.get("success"):
+            task_count = tasks.get("tasks_created", 0)
+            phases = tasks.get("phases", 0)
+            parts.append(f"**3. Tasks generated**: {task_count} tasks across {phases} phases")
+
+            # Show preview of tasks
+            if tasks.get("tasks_preview"):
+                parts.append(f"   Preview:")
+                for task in tasks["tasks_preview"][:5]:
+                    parts.append(f"   • {task}")
+                if task_count > 5:
+                    parts.append(f"   ... and {task_count - 5} more")
+            parts.append("")
+
+        # Show context summary
+        context = result.get("context", {})
+
+        if context.get("template_used"):
+            parts.append(f"📚 **Template**: {context['template_used']}")
+
+        if context.get("research_source"):
+            parts.append(f"🔍 **Research source**: {context['research_source']}")
+
+        # Add helpful next steps
+        parts.append("")
+        parts.append("---")
+        parts.append("💡 **Next steps**:")
+        parts.append(f"• View project tasks: Show me tasks for {context.get('project_created', 'the project')}")
+        parts.append("• Start working: Start the first task")
+
+        return {
+            "response": "\n".join(parts),
+            "debug": result
+        }
+
     def _format_mcp_response(self, mcp_result: dict) -> dict:
         """Format MCP Agent result for the user"""
         if not mcp_result.get("success"):
@@ -1808,6 +2327,31 @@ Execute the rule action: {rule_match['action']}
                 system_prompt += rule_directive
                 self.memory_ops["rule_triggered"] = rule_match['trigger']
                 logger.info(f"🔔 Rule triggered: '{rule_match['trigger']}' → {rule_match['action']}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # MULTI-STEP ROUTING: Check if request contains multiple steps
+        # ═══════════════════════════════════════════════════════════════
+
+        multi_step = self._classify_multi_step_intent(user_message)
+
+        if multi_step["is_multi_step"]:
+            logger.info(f"🔄 Detected multi-step request with {len(multi_step['steps'])} steps")
+
+            # Execute multi-step workflow
+            import asyncio
+            result = asyncio.run(self._execute_multi_step(
+                steps=multi_step["steps"],
+                original_request=user_message,
+                user_id=self.user_id
+            ))
+
+            # Format response for user
+            formatted = self._format_multi_step_response(result)
+
+            if return_debug:
+                return formatted
+            else:
+                return formatted["response"]
 
         # ═══════════════════════════════════════════════════════════════
         # MCP ROUTING: Check if request should be handled by MCP Agent
