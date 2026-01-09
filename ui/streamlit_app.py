@@ -9,6 +9,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 import streamlit as st
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -16,6 +17,7 @@ from typing import List, Dict, Any
 from agents.coordinator import coordinator
 from shared.db import get_collection, TASKS_COLLECTION, PROJECTS_COLLECTION
 from shared.models import Task, Project
+from shared.config import settings
 from utils.audio import transcribe_audio
 
 # Import slash command functionality
@@ -408,6 +410,117 @@ def render_context_engineering_toggles():
     if memory_enabled:
         active.append("🧠")
     st.sidebar.caption(f"Active: {' '.join(active) if active else 'None'}")
+
+    st.sidebar.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # EXPERIMENTAL: MCP MODE
+    # ═══════════════════════════════════════════════════════════════════
+
+    st.sidebar.subheader("🧪 Experimental")
+
+    mcp_available = settings.mcp_available
+
+    if not mcp_available:
+        st.sidebar.warning("⚠️ MCP not configured. Set TAVILY_API_KEY in .env")
+        mcp_enabled = False
+        if "mcp_enabled" in st.session_state:
+            st.session_state.mcp_enabled = False
+    else:
+        mcp_enabled = st.sidebar.toggle(
+            "MCP Mode",
+            value=st.session_state.get("mcp_enabled", False),
+            help="Enable experimental MCP mode to handle novel requests via dynamic tool discovery"
+        )
+        st.session_state.mcp_enabled = mcp_enabled
+
+        # Initialize MCP agent when enabled
+        if mcp_enabled and not st.session_state.get("mcp_initialized"):
+            with st.spinner("🔬 Connecting to MCP servers..."):
+                try:
+                    status = asyncio.run(coordinator.enable_mcp_mode())
+                    st.session_state.mcp_initialized = True
+                    st.session_state.mcp_status = status
+                    if status.get("success"):
+                        st.success("✅ MCP Mode enabled!")
+                    else:
+                        st.error(f"❌ Failed: {status.get('error')}")
+                except Exception as e:
+                    st.error(f"❌ MCP init error: {e}")
+                    st.session_state.mcp_enabled = False
+                    mcp_enabled = False
+
+        # Disable MCP agent when toggled off
+        if not mcp_enabled and st.session_state.get("mcp_initialized"):
+            coordinator.disable_mcp_mode()
+            # Keep initialized flag to allow quick re-enable
+
+    # Show MCP status when enabled
+    if mcp_enabled and st.session_state.get("mcp_status"):
+        status = st.session_state.mcp_status
+
+        if status.get("success") and status.get("servers"):
+            with st.sidebar.expander("🔌 MCP Servers", expanded=False):
+                for server, info in status.get("servers", {}).items():
+                    icon = "✅" if info.get("connected") else "❌"
+                    st.write(f"{icon} **{server}**: {info.get('tool_count', 0)} tools")
+
+            # Show discovered tools
+            if coordinator.mcp_agent:
+                tools = coordinator.mcp_agent.get_all_tools()
+                with st.sidebar.expander(f"🛠️ MCP Tools ({len(tools)})", expanded=False):
+                    for tool in tools:
+                        st.write(f"• `{tool['server']}/{tool['name']}`")
+                        if tool.get('description'):
+                            st.caption(tool['description'][:80])
+
+    # ─────────────────────────────────────────────────────────────────
+    # KNOWLEDGE CACHE (when MCP enabled)
+    # ─────────────────────────────────────────────────────────────────
+
+    if mcp_enabled and coordinator.memory:
+        with st.sidebar.expander("🌐 Knowledge Cache", expanded=False):
+            try:
+                stats = coordinator.memory.get_knowledge_stats(st.session_state.user_id)
+                st.write(f"📚 Cached: **{stats['fresh']}** fresh, {stats['expired']} expired")
+
+                if st.button("🗑️ Clear Cache"):
+                    count = coordinator.memory.clear_knowledge_cache(st.session_state.user_id)
+                    st.success(f"Cleared {count} entries")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+    # ─────────────────────────────────────────────────────────────────
+    # TOOL DISCOVERIES (when MCP enabled)
+    # ─────────────────────────────────────────────────────────────────
+
+    if mcp_enabled and coordinator.mcp_agent:
+        with st.sidebar.expander("🔬 Tool Discoveries", expanded=False):
+            try:
+                disc_stats = coordinator.mcp_agent.discovery_store.get_stats()
+                total = disc_stats.get('total_discoveries', 0)
+                successful = disc_stats.get('successful', 0)
+
+                st.write(f"📊 Total: **{total}** discoveries")
+                if total > 0:
+                    success_rate = (successful / total) * 100
+                    st.write(f"✅ Success rate: {success_rate:.1f}% ({successful}/{total})")
+
+                # Show recent discoveries
+                recent = coordinator.mcp_agent.discovery_store.get_popular_discoveries(
+                    min_uses=1, limit=5, exclude_promoted=False
+                )
+                if recent:
+                    st.markdown("**Recent:**")
+                    for disc in recent:
+                        request_preview = disc['user_request'][:40]
+                        if len(disc['user_request']) > 40:
+                            request_preview += "..."
+                        times = disc.get('times_used', 1)
+                        st.write(f"• {request_preview} ({times}x)")
+            except Exception as e:
+                st.error(f"Error: {e}")
 
     st.sidebar.markdown("---")
 
@@ -938,14 +1051,48 @@ def render_chat():
                     # Get optimizations from session state
                     optimizations = st.session_state.get("optimizations", {})
 
-                    # Process message through coordinator
-                    response = st.session_state.coordinator.process(
+                    # Process message through coordinator (may return dict with debug if MCP routed)
+                    result = st.session_state.coordinator.process(
                         prompt, history, input_type="text", turn_number=turn_number,
-                        optimizations=optimizations, session_id=st.session_state.session_id
+                        optimizations=optimizations, session_id=st.session_state.session_id,
+                        return_debug=True
                     )
+
+                    # Handle both dict (with debug) and string responses
+                    if isinstance(result, dict):
+                        response = result.get("response", "")
+                        debug_info = result.get("debug", {})
+                    else:
+                        response = result
+                        debug_info = {}
 
                     # Display response
                     st.markdown(response)
+
+                    # Show MCP hint if applicable
+                    if debug_info.get("could_use_mcp") and not st.session_state.get("mcp_enabled"):
+                        st.info("💡 This request might work better with **MCP Mode** enabled (see sidebar)")
+
+                    # Show MCP routing info if applicable
+                    if debug_info.get("routed_to_mcp"):
+                        source = debug_info.get("source", "")
+                        source_icons = {
+                            "knowledge_cache": "📚",
+                            "discovery_reuse": "🔄",
+                            "new_discovery": "🆕"
+                        }
+                        if source in source_icons:
+                            source_label = source.replace("_", " ").title()
+                            st.caption(f"{source_icons[source]} {source_label}")
+
+                        if debug_info.get("mcp_server"):
+                            server = debug_info.get("mcp_server")
+                            tool = debug_info.get("tool_used")
+                            st.caption(f"🔌 MCP: `{server}/{tool}`")
+
+                        if debug_info.get("discovery_id"):
+                            disc_id = debug_info["discovery_id"][:8]
+                            st.caption(f"📝 Discovery: `{disc_id}...`")
 
                     # Store debug info in session state (backwards compatibility)
                     st.session_state.last_debug_info = st.session_state.coordinator.last_debug_info
@@ -1016,14 +1163,48 @@ def render_chat():
                     # Get optimizations from session state
                     optimizations = st.session_state.get("optimizations", {})
 
-                    # Process message through coordinator with voice flag
-                    response = st.session_state.coordinator.process(
+                    # Process message through coordinator with voice flag (may return dict with debug if MCP routed)
+                    result = st.session_state.coordinator.process(
                         transcript, history, input_type="voice", turn_number=turn_number,
-                        optimizations=optimizations, session_id=st.session_state.session_id
+                        optimizations=optimizations, session_id=st.session_state.session_id,
+                        return_debug=True
                     )
+
+                    # Handle both dict (with debug) and string responses
+                    if isinstance(result, dict):
+                        response = result.get("response", "")
+                        debug_info = result.get("debug", {})
+                    else:
+                        response = result
+                        debug_info = {}
 
                     # Display response
                     st.markdown(response)
+
+                    # Show MCP hint if applicable
+                    if debug_info.get("could_use_mcp") and not st.session_state.get("mcp_enabled"):
+                        st.info("💡 This request might work better with **MCP Mode** enabled (see sidebar)")
+
+                    # Show MCP routing info if applicable
+                    if debug_info.get("routed_to_mcp"):
+                        source = debug_info.get("source", "")
+                        source_icons = {
+                            "knowledge_cache": "📚",
+                            "discovery_reuse": "🔄",
+                            "new_discovery": "🆕"
+                        }
+                        if source in source_icons:
+                            source_label = source.replace("_", " ").title()
+                            st.caption(f"{source_icons[source]} {source_label}")
+
+                        if debug_info.get("mcp_server"):
+                            server = debug_info.get("mcp_server")
+                            tool = debug_info.get("tool_used")
+                            st.caption(f"🔌 MCP: `{server}/{tool}`")
+
+                        if debug_info.get("discovery_id"):
+                            disc_id = debug_info["discovery_id"][:8]
+                            st.caption(f"📝 Discovery: `{disc_id}...`")
 
                     # Store debug info in session state (backwards compatibility)
                     st.session_state.last_debug_info = st.session_state.coordinator.last_debug_info
