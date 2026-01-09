@@ -193,25 +193,59 @@ python scripts/verify_setup.py --verbose
 **Usage:**
 ```bash
 # Full reset (recommended before demos)
-python scripts/reset_demo.py --force
+python scripts/reset_demo.py
 
 # Just verify current state
 python scripts/reset_demo.py --verify-only
 
-# Just clear collections
-python scripts/reset_demo.py --teardown-only
+# Just clear collections (requires --force)
+python scripts/reset_demo.py --teardown-only --force
 
-# Preview what would be deleted
-python scripts/reset_demo.py --dry-run
+# Just seed (no teardown)
+python scripts/reset_demo.py --seed-only
 
 # Skip embeddings (faster)
 python scripts/reset_demo.py --skip-embeddings
 ```
 
 **Phases:**
-1. **TEARDOWN:** Clear 7 collections (projects, tasks, all memories)
-2. **SETUP:** Call seed_demo_data.py to seed fresh data
-3. **VERIFY:** Check GTM template, Project Alpha, Q3 GTM exist
+1. **TEARDOWN:** Clear 6 collections (projects, tasks, all memories, tool_discoveries)
+2. **SETUP:** Calls seed_demo_data.py functions directly to seed fresh data
+3. **VERIFY:** Check GTM template, Project Alpha, Q3 GTM, user preferences exist
+
+**Safety Features:**
+- Detects production URIs (production/prod/live keywords) and requires extra confirmation
+- Requires --force flag for --teardown-only
+- Confirmation prompts for destructive operations
+- Clean output format with counts
+
+**Output Format:**
+```
+🔄 Resetting Flow Companion Demo Data...
+
+🗑️  Teardown:
+  projects: 3 deleted
+  tasks: 7 deleted
+  long_term_memory: 9 deleted
+
+🌱 Seeding:
+  projects: 3 inserted
+  tasks: 7 inserted
+  procedural memory: 2 inserted
+  semantic memory: 4 inserted
+  episodic memory: 3 inserted
+  embeddings: 5 generated
+
+✅ Verification:
+  GTM Roadmap Template: ✅ EXISTS
+  Project Alpha: ✅ EXISTS (7 tasks)
+  Q3 Fintech GTM: ✅ EXISTS (completed)
+  User preferences: ✅ EXISTS (4 preferences)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎬 Ready for demo!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 **⚠️  WARNING:** Deletes all demo data. DO NOT use with production data.
 
