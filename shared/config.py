@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     mongodb_uri: str = Field(..., alias="MONGODB_URI")
     mongodb_database: str = Field(..., alias="MONGODB_DATABASE")
 
+    # Tavily (for MCP Agent)
+    tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
+
     class Config:
         env_file = ".env"
         case_sensitive = False
