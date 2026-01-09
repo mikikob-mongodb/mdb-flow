@@ -72,18 +72,18 @@ COLLECTIONS_TO_CLEAR = [
 ]
 
 # Demo user ID (should match seed_demo_data.py)
-DEMO_USER_ID = "demo_user"
+DEMO_USER_ID = "demo-user"
 
 # =============================================================================
 # TEARDOWN
 # =============================================================================
 
-def clear_collections(db: MongoDB, dry_run: bool = False) -> Dict[str, int]:
+def clear_collections(db_instance, dry_run: bool = False) -> Dict[str, int]:
     """
     Clear all demo-related collections.
 
     Args:
-        db: MongoDB connection
+        db_instance: MongoDB database instance (from get_database())
         dry_run: If True, count but don't delete
 
     Returns:
@@ -95,7 +95,7 @@ def clear_collections(db: MongoDB, dry_run: bool = False) -> Dict[str, int]:
 
     for collection_name in COLLECTIONS_TO_CLEAR:
         try:
-            collection = db.db[collection_name]
+            collection = db_instance[collection_name]
 
             # Count documents
             count = collection.count_documents({})
@@ -179,7 +179,7 @@ def seed_data(skip_embeddings: bool = False) -> bool:
 # VERIFICATION
 # =============================================================================
 
-def verify_state(db: MongoDB) -> bool:
+def verify_state(db_instance) -> bool:
     """
     Verify the demo state is ready.
 
@@ -189,7 +189,7 @@ def verify_state(db: MongoDB) -> bool:
         - Expected collection counts
 
     Args:
-        db: MongoDB connection
+        db_instance: MongoDB database instance (from get_database())
 
     Returns:
         True if verification passed, False otherwise
@@ -200,7 +200,7 @@ def verify_state(db: MongoDB) -> bool:
 
     # Check GTM Roadmap Template
     try:
-        gtm_template = db.db.long_term_memory.find_one({
+        gtm_template = db_instance.long_term_memory.find_one({
             "user_id": DEMO_USER_ID,
             "memory_type": "procedural",
             "rule_type": "template",
@@ -219,14 +219,14 @@ def verify_state(db: MongoDB) -> bool:
 
     # Check Project Alpha
     try:
-        project_alpha = db.db.projects.find_one({
+        project_alpha = db_instance.projects.find_one({
             "user_id": DEMO_USER_ID,
             "name": "Project Alpha"
         })
 
         if project_alpha:
             # Count tasks for Project Alpha
-            task_count = db.db.tasks.count_documents({
+            task_count = db_instance.tasks.count_documents({
                 "user_id": DEMO_USER_ID,
                 "project_id": project_alpha["_id"]
             })
@@ -241,7 +241,7 @@ def verify_state(db: MongoDB) -> bool:
 
     # Check Q3 Fintech GTM (completed demo project)
     try:
-        q3_gtm = db.db.projects.find_one({
+        q3_gtm = db_instance.projects.find_one({
             "user_id": DEMO_USER_ID,
             "name": "Q3 Fintech GTM"
         })
@@ -259,7 +259,7 @@ def verify_state(db: MongoDB) -> bool:
 
     for collection_name in COLLECTIONS_TO_CLEAR:
         try:
-            count = db.db[collection_name].count_documents({})
+            count = db_instance[collection_name].count_documents({})
             if count > 0:
                 print(f"  {collection_name}: {count}")
         except Exception as e:
@@ -331,10 +331,8 @@ Examples:
     # Connect to MongoDB
     try:
         print(f"\n📡 Connecting to MongoDB...")
-        db = MongoDB(
-            uri=settings.mongodb_uri,
-            database=settings.mongodb_database
-        )
+        mongodb = MongoDB()
+        db = mongodb.get_database()
         print(f"✓ Connected to: {settings.mongodb_database}")
     except Exception as e:
         print(f"❌ Failed to connect to MongoDB: {e}")
