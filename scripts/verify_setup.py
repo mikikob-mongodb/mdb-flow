@@ -156,8 +156,10 @@ def verify_environment(results: VerificationResults, verbose: bool = False):
     print("CHECKING ENVIRONMENT VARIABLES")
     print("="*70)
 
-    # Check .env file exists
+    # Load .env file first
+    from dotenv import load_dotenv
     env_file = Path(__file__).parent.parent / ".env"
+    load_dotenv(env_file)
     if env_file.exists():
         print(f"\n✓ .env file found: {env_file}")
         results.add_check("environment", "env_file_exists", True)
@@ -254,7 +256,7 @@ def verify_mongodb(results: VerificationResults, verbose: bool = False):
 
         # Test write permission
         test_collection = db["_setup_test"]
-        test_doc = {"test": True, "timestamp": datetime.utcnow()}
+        test_doc = {"test": True, "timestamp": datetime.now()}
         test_collection.insert_one(test_doc)
         test_collection.delete_many({"test": True})
         print("✓ Write permission verified")
@@ -536,7 +538,7 @@ def verify_operations(db_instance, results: VerificationResults, verbose: bool =
     try:
         test_doc = {
             "test_type": "verification",
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(),
             "data": "test data"
         }
         result = test_collection.insert_one(test_doc)

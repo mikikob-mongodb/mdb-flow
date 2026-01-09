@@ -157,6 +157,11 @@ def check_dependencies() -> bool:
     """Check if required Python packages are installed."""
     print("\n📦 Checking dependencies...")
 
+    # Map package names to their import names (when different)
+    package_import_names = {
+        "python-dotenv": "dotenv"
+    }
+
     required_packages = [
         "anthropic",
         "voyageai",
@@ -170,7 +175,9 @@ def check_dependencies() -> bool:
     missing = []
     for package in required_packages:
         try:
-            __import__(package.replace("-", "_"))
+            # Use mapped import name if exists, otherwise convert dashes to underscores
+            import_name = package_import_names.get(package, package.replace("-", "_"))
+            __import__(import_name)
         except ImportError:
             missing.append(package)
 
