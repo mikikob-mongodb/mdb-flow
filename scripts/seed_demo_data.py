@@ -12,7 +12,7 @@ Seeds a complete demo dataset including:
 This script is designed specifically for presentation demos with realistic,
 interconnected data that showcases the 5-tier memory system.
 
-Usage:
+CLI Usage:
     # Add demo data (idempotent)
     python scripts/seed_demo_data.py
 
@@ -24,6 +24,36 @@ Usage:
 
     # Skip embeddings for faster seeding
     python scripts/seed_demo_data.py --skip-embeddings
+
+Programmatic Usage (from other scripts):
+    from seed_demo_data import seed_all, clear_collections, verify_seed
+
+    # Seed all data
+    results = seed_all(db, clean=True, skip_embeddings=False)
+
+    # Clear collections
+    counts = clear_collections(db)
+
+    # Verify seed data
+    verification = verify_seed(db)
+    if verification["success"]:
+        print("All critical data exists")
+
+Importable Functions:
+    - seed_all(db, clean, skip_embeddings) -> Dict[str, int]
+        Main orchestrator - seeds all demo data
+
+    - clear_collections(db, collections) -> Dict[str, int]
+        Clear specified collections, returns counts deleted
+
+    - verify_seed(db) -> Dict[str, Any]
+        Verify critical data exists, returns structured results
+
+    - seed_projects(db, clean) -> int
+    - seed_tasks(db, clean) -> int
+    - seed_procedural_memory(db, skip_embeddings, clean) -> int
+    - seed_semantic_memory(db, clean) -> int
+    - seed_episodic_memory(db, skip_embeddings, clean) -> int
 
 Requires:
     - .env file with MONGODB_URI, MONGODB_DATABASE, VOYAGE_API_KEY
@@ -668,30 +698,159 @@ def seed_episodic_memory(db, skip_embeddings: bool = False, clean: bool = False)
     return inserted_count
 
 
+def clear_collections(db, collections: List[str] = None) -> Dict[str, int]:
+    """
+    Clear specified collections for demo user.
+
+    Args:
+        db: MongoDB database instance
+        collections: List of collection names to clear (default: all demo collections)
+
+    Returns:
+        Dictionary of collection names to counts deleted
+    """
+    if collections is None:
+        collections = [
+            "projects",
+            "tasks",
+            "short_term_memory",
+            "long_term_memory",
+            "shared_memory",
+            "tool_discoveries"
+        ]
+
+    results = {}
+
+    for collection_name in collections:
+        try:
+            collection = db[collection_name]
+            result = collection.delete_many({"user_id": DEMO_USER_ID})
+            results[collection_name] = result.deleted_count
+        except Exception as e:
+            print(f"  ⚠️  Error clearing {collection_name}: {e}")
+            results[collection_name] = 0
+
+    return results
+
+
+def verify_seed(db) -> Dict[str, Any]:
+    """
+    Verify critical demo data exists.
+
+    Returns structured result (not just print) for use by other scripts.
+
+    Returns:
+        Dictionary with verification results:
+        {
+            "success": bool,
+            "counts": {
+                "projects": int,
+                "tasks": int,
+                "procedural": int,
+                "semantic": int,
+                "episodic": int
+            },
+            "critical_items": {
+                "gtm_template": bool,
+                "project_alpha": bool,
+                "q3_gtm": bool,
+                "user_preferences": bool
+            },
+            "missing": List[str]
+        }
+    """
+    results = {
+        "success": True,
+        "counts": {},
+        "critical_items": {},
+        "missing": []
+    }
+
+    # Count documents
+    results["counts"]["projects"] = db.projects.count_documents({"user_id": DEMO_USER_ID})
+    results["counts"]["tasks"] = db.tasks.count_documents({"user_id": DEMO_USER_ID})
+    results["counts"]["procedural"] = db.long_term_memory.count_documents({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "procedural"
+    })
+    results["counts"]["semantic"] = db.long_term_memory.count_documents({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "semantic"
+    })
+    results["counts"]["episodic"] = db.long_term_memory.count_documents({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "episodic"
+    })
+
+    # Check critical items
+    gtm_template = db.long_term_memory.find_one({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "procedural",
+        "rule_type": "template",
+        "name": "GTM Roadmap Template"
+    })
+    results["critical_items"]["gtm_template"] = gtm_template is not None
+    if not gtm_template:
+        results["missing"].append("GTM Roadmap Template")
+        results["success"] = False
+
+    project_alpha = db.projects.find_one({
+        "user_id": DEMO_USER_ID,
+        "name": "Project Alpha"
+    })
+    results["critical_items"]["project_alpha"] = project_alpha is not None
+    if not project_alpha:
+        results["missing"].append("Project Alpha")
+        results["success"] = False
+
+    q3_gtm = db.projects.find_one({
+        "user_id": DEMO_USER_ID,
+        "name": "Q3 Fintech GTM"
+    })
+    results["critical_items"]["q3_gtm"] = q3_gtm is not None
+    if not q3_gtm:
+        results["missing"].append("Q3 Fintech GTM")
+        results["success"] = False
+
+    user_preferences = db.long_term_memory.count_documents({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "semantic",
+        "semantic_type": "preference"
+    })
+    results["critical_items"]["user_preferences"] = user_preferences > 0
+    if user_preferences == 0:
+        results["missing"].append("User preferences")
+        results["success"] = False
+
+    return results
+
+
 def verify_data(db) -> bool:
-    """Verify that demo data exists."""
+    """
+    Verify that demo data exists (with print output for CLI).
+
+    This is the CLI-friendly version that prints results.
+    For programmatic use, call verify_seed() instead.
+    """
     print("\n" + "=" * 60)
     print("VERIFYING DEMO DATA")
     print("=" * 60)
 
-    all_good = True
+    # Get structured results
+    results = verify_seed(db)
 
-    # Check projects
-    project_count = db.projects.count_documents({"user_id": DEMO_USER_ID})
-    print(f"\n📁 Projects: {project_count}")
-    if project_count == 0:
+    # Print projects
+    print(f"\n📁 Projects: {results['counts']['projects']}")
+    if results['counts']['projects'] == 0:
         print("  ❌ No projects found")
-        all_good = False
     else:
         for project in db.projects.find({"user_id": DEMO_USER_ID}, {"name": 1, "status": 1}):
             print(f"    • {project['name']} ({project['status']})")
 
-    # Check tasks
-    task_count = db.tasks.count_documents({"user_id": DEMO_USER_ID})
-    print(f"\n📋 Tasks: {task_count}")
-    if task_count == 0:
+    # Print tasks
+    print(f"\n📋 Tasks: {results['counts']['tasks']}")
+    if results['counts']['tasks'] == 0:
         print("  ❌ No tasks found")
-        all_good = False
     else:
         status_counts = {}
         for task in db.tasks.find({"user_id": DEMO_USER_ID}, {"status": 1}):
@@ -700,15 +859,10 @@ def verify_data(db) -> bool:
         for status, count in status_counts.items():
             print(f"    • {status}: {count}")
 
-    # Check procedural memory
-    procedural_count = db.long_term_memory.count_documents({
-        "user_id": DEMO_USER_ID,
-        "memory_type": "procedural"
-    })
-    print(f"\n🔧 Procedural Memory: {procedural_count}")
-    if procedural_count == 0:
+    # Print procedural memory
+    print(f"\n🔧 Procedural Memory: {results['counts']['procedural']}")
+    if results['counts']['procedural'] == 0:
         print("  ❌ No procedural memories found")
-        all_good = False
     else:
         for proc in db.long_term_memory.find({
             "user_id": DEMO_USER_ID,
@@ -716,15 +870,10 @@ def verify_data(db) -> bool:
         }, {"name": 1, "rule_type": 1}):
             print(f"    • {proc.get('name', 'N/A')} ({proc.get('rule_type', 'unknown')})")
 
-    # Check semantic memory
-    semantic_count = db.long_term_memory.count_documents({
-        "user_id": DEMO_USER_ID,
-        "memory_type": "semantic"
-    })
-    print(f"\n🧠 Semantic Memory: {semantic_count}")
-    if semantic_count == 0:
+    # Print semantic memory
+    print(f"\n🧠 Semantic Memory: {results['counts']['semantic']}")
+    if results['counts']['semantic'] == 0:
         print("  ❌ No semantic memories found")
-        all_good = False
     else:
         for sem in db.long_term_memory.find({
             "user_id": DEMO_USER_ID,
@@ -732,15 +881,10 @@ def verify_data(db) -> bool:
         }, {"key": 1, "value": 1}):
             print(f"    • {sem.get('key', 'N/A')} = {sem.get('value', 'N/A')}")
 
-    # Check episodic memory
-    episodic_count = db.long_term_memory.count_documents({
-        "user_id": DEMO_USER_ID,
-        "memory_type": "episodic"
-    })
-    print(f"\n📚 Episodic Memory: {episodic_count}")
-    if episodic_count == 0:
+    # Print episodic memory
+    print(f"\n📚 Episodic Memory: {results['counts']['episodic']}")
+    if results['counts']['episodic'] == 0:
         print("  ❌ No episodic memories found")
-        all_good = False
     else:
         for epi in db.long_term_memory.find({
             "user_id": DEMO_USER_ID,
@@ -749,13 +893,65 @@ def verify_data(db) -> bool:
             print(f"    • {epi.get('action_type', 'N/A')} at {epi.get('timestamp', 'N/A')}")
 
     print("\n" + "=" * 60)
-    if all_good:
+    if results["success"]:
         print("✅ ALL DEMO DATA VERIFIED")
     else:
         print("❌ SOME DEMO DATA MISSING")
+        if results["missing"]:
+            print(f"Missing items: {', '.join(results['missing'])}")
     print("=" * 60)
 
-    return all_good
+    return results["success"]
+
+
+def seed_all(db, clean: bool = False, skip_embeddings: bool = False) -> Dict[str, int]:
+    """
+    Main orchestrator function - seed all demo data.
+
+    Args:
+        db: MongoDB database instance
+        clean: If True, clear existing data first
+        skip_embeddings: If True, skip generating embeddings
+
+    Returns:
+        Dictionary of counts:
+        {
+            "projects": int,
+            "tasks": int,
+            "procedural": int,
+            "semantic": int,
+            "episodic": int,
+            "embeddings": int
+        }
+    """
+    results = {}
+
+    # Clear if requested
+    if clean:
+        clear_results = clear_collections(db)
+        print(f"\n🗑️  Cleared collections:")
+        for collection, count in clear_results.items():
+            if count > 0:
+                print(f"    {collection}: {count} deleted")
+
+    # Seed all data types
+    results["projects"] = seed_projects(db, clean=False)  # Already cleared if clean=True
+    results["tasks"] = seed_tasks(db, clean=False)
+    results["procedural"] = seed_procedural_memory(db, skip_embeddings=skip_embeddings, clean=False)
+    results["semantic"] = seed_semantic_memory(db, clean=False)
+    results["episodic"] = seed_episodic_memory(db, skip_embeddings=skip_embeddings, clean=False)
+
+    # Count embeddings
+    if not skip_embeddings:
+        embeddings_count = db.long_term_memory.count_documents({
+            "user_id": DEMO_USER_ID,
+            "embedding": {"$exists": True}
+        })
+        results["embeddings"] = embeddings_count
+    else:
+        results["embeddings"] = 0
+
+    return results
 
 
 # =============================================================================
@@ -817,30 +1013,8 @@ def main():
 
     # Seeding mode
     try:
-        results = {}
-
-        # 1. Seed Projects
-        results["projects"] = seed_projects(db, clean=args.clean)
-
-        # 2. Seed Tasks
-        results["tasks"] = seed_tasks(db, clean=args.clean)
-
-        # 3. Seed Procedural Memory
-        results["procedural"] = seed_procedural_memory(
-            db,
-            skip_embeddings=args.skip_embeddings,
-            clean=args.clean
-        )
-
-        # 4. Seed Semantic Memory
-        results["semantic"] = seed_semantic_memory(db, clean=args.clean)
-
-        # 5. Seed Episodic Memory
-        results["episodic"] = seed_episodic_memory(
-            db,
-            skip_embeddings=args.skip_embeddings,
-            clean=args.clean
-        )
+        # Use seed_all() orchestrator
+        results = seed_all(db, clean=args.clean, skip_embeddings=args.skip_embeddings)
 
         # Final summary
         print("\n" + "=" * 60)
@@ -853,29 +1027,16 @@ def main():
         print(f"  Procedural memories inserted: {results['procedural']}")
         print(f"  Semantic memories inserted: {results['semantic']}")
         print(f"  Episodic memories inserted: {results['episodic']}")
+        print(f"  Embeddings generated: {results['embeddings']}")
 
         # Check embeddings status
-        if not args.skip_embeddings:
-            # Count documents with embeddings
-            procedural_with_emb = db.long_term_memory.count_documents({
-                "user_id": DEMO_USER_ID,
-                "memory_type": "procedural",
-                "embedding": {"$exists": True}
-            })
-            episodic_with_emb = db.long_term_memory.count_documents({
-                "user_id": DEMO_USER_ID,
-                "memory_type": "episodic",
-                "embedding": {"$exists": True}
-            })
-
+        if not args.skip_embeddings and results['embeddings'] > 0:
             print(f"\n🔍 Vector Search Enabled:")
-            print(f"  Procedural memories with embeddings: {procedural_with_emb}")
-            print(f"  Episodic memories with embeddings: {episodic_with_emb}")
             print(f"  Embedding dimension: 1024 (Voyage AI)")
             print(f"\n  ✓ Semantic search queries will work:")
             print(f"    • 'find template for go-to-market' → GTM Roadmap Template")
             print(f"    • 'what GTM projects have I done?' → Past GTM actions")
-        else:
+        elif args.skip_embeddings:
             print(f"\n⚠️  Embeddings skipped - semantic search will not work")
 
         print(f"\n✨ Demo data ready for presentation!")
