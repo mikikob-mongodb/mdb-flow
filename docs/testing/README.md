@@ -39,12 +39,21 @@ This directory contains comprehensive testing guides for Flow Companion, coverin
 
 ## Quick Start
 
+### For First-Time Setup
+
+```bash
+# One-command setup (new developers)
+python scripts/setup.py
+
+# This handles: environment check → DB init → seed data → verification
+```
+
 ### For Demo Preparation (Night Before)
 
 ```bash
 # 1. Environment setup
 source venv/bin/activate
-python scripts/seed_demo_data.py  # Seed database with demo data
+python scripts/reset_demo.py --force  # Full reset (clear + seed + verify)
 
 # 2. Verify .env configuration
 TAVILY_API_KEY=tvly-xxxxx  # Required for MCP demos

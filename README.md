@@ -167,14 +167,49 @@ mdb-flow/
 
 ## Setup Instructions
 
-### 1. Prerequisites
+### 🚀 Quick Start (Recommended for New Developers)
 
-- Python 3.9 or higher
-- MongoDB Atlas account (free tier works)
-- Anthropic API key (for Claude)
-- Voyage AI API key (for embeddings)
+**One-command setup** that handles everything for you:
 
-### 2. Clone and Install
+```bash
+# 1. Clone and install dependencies
+git clone <repository-url>
+cd mdb-flow
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# 2. Create .env file with your API keys
+cp .env.example .env
+# Edit .env and add your API keys (see below)
+
+# 3. Run the all-in-one setup script
+python scripts/setup.py
+```
+
+The setup script will:
+- ✅ Check Python version and dependencies
+- ✅ Validate environment variables
+- ✅ Initialize MongoDB (8 collections + 68 indexes)
+- ✅ Seed demo data (projects, tasks, memories)
+- ✅ Verify everything works (database, APIs)
+- ✅ Display clear next steps
+
+---
+
+### 📋 Detailed Setup (Step-by-Step)
+
+#### 1. Prerequisites
+
+- **Python 3.9+** - [Download Python](https://www.python.org/downloads/)
+- **MongoDB Atlas Account** - [Free tier](https://cloud.mongodb.com) (M0 cluster works)
+- **API Keys** (get these before starting):
+  - [Anthropic API key](https://console.anthropic.com/) (for Claude)
+  - [Voyage AI API key](https://dash.voyageai.com/) (for embeddings)
+  - [OpenAI API key](https://platform.openai.com/api-keys) (for Whisper voice transcription)
+  - [Tavily API key](https://tavily.com/) (optional - for web search via MCP)
+
+#### 2. Clone and Install
 
 ```bash
 git clone <repository-url>
@@ -184,143 +219,117 @@ cd mdb-flow
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Upgrade pip
-pip install --upgrade pip
-
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-⚠️ **Important**: Always activate the virtual environment before running the app or installing packages:
+⚠️ **Important**: Always activate the virtual environment before running the app:
 ```bash
 source venv/bin/activate  # On macOS/Linux
 # OR
 venv\Scripts\activate  # On Windows
 ```
 
-### 3. Configure Environment Variables
+#### 3. Configure Environment Variables
+
+Create `.env` file with your API keys:
 
 ```bash
-# Copy example env file
-cp .env.example .env
+# Required
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+VOYAGE_API_KEY=pa-xxxxx
+OPENAI_API_KEY=sk-xxxxx
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/
+MONGODB_DATABASE=flow_companion
 
-# Edit .env with your API keys
-# ANTHROPIC_API_KEY=your_anthropic_api_key_here
-# VOYAGE_API_KEY=your_voyage_api_key_here
-# MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/
-# MONGODB_DATABASE=flow_companion
+# Optional (for MCP features)
+TAVILY_API_KEY=tvly-xxxxx
+MCP_MODE_ENABLED=false
+LOG_LEVEL=INFO
+DEBUG=false
 ```
 
-### 4. Set Up MongoDB Atlas
-
-#### Create a Cluster
+#### 4. Set Up MongoDB Atlas
 
 1. Go to [MongoDB Atlas](https://cloud.mongodb.com)
 2. Create a free M0 cluster
-3. Set up database access (create a user)
-4. Set up network access (add your IP or allow all: 0.0.0.0/0)
-5. Get your connection string and add it to `.env`
+3. **Database Access**: Create a user with read/write permissions
+4. **Network Access**: Add your IP (or `0.0.0.0/0` for any IP)
+5. **Get Connection String**: Copy it to `MONGODB_URI` in `.env`
 
-#### Create Database Indexes
+#### 5. Initialize Database
 
-Run the setup script to create standard, text search, and memory indexes:
-
-```bash
-# Make sure virtual environment is activated
-source venv/bin/activate
-
-# Run setup script (creates all indexes)
-python scripts/setup_database.py
-
-# Or setup specific index types
-python scripts/setup_database.py --standard  # Standard indexes only
-python scripts/setup_database.py --memory    # Memory indexes only
-python scripts/setup_database.py --list      # List existing indexes
-```
-
-#### Create Vector Search Indexes (Manual)
-
-Vector search indexes must be created in the Atlas UI:
-
-1. Go to your cluster in Atlas
-2. Navigate to: **Database → Browse Collections → Search Indexes**
-3. Click **"Create Index"** → **"JSON Editor"**
-4. Create two indexes with these configurations:
-
-**Tasks Vector Index:**
-```json
-{
-  "name": "task_embedding_index",
-  "type": "vectorSearch",
-  "definition": {
-    "fields": [
-      {
-        "path": "embedding",
-        "type": "vector",
-        "numDimensions": 1024,
-        "similarity": "cosine"
-      }
-    ]
-  }
-}
-```
-
-**Projects Vector Index:**
-```json
-{
-  "name": "project_embedding_index",
-  "type": "vectorSearch",
-  "definition": {
-    "fields": [
-      {
-        "path": "embedding",
-        "type": "vector",
-        "numDimensions": 1024,
-        "similarity": "cosine"
-      }
-    ]
-  }
-}
-```
-
-⚠️ **Important**: Index names must match exactly as shown above.
-
-### 5. Load Sample Data (Optional but Recommended)
-
-To get started quickly with realistic sample data:
+Run the all-in-one setup script:
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Load sample data (10 projects with 44 tasks)
-python scripts/load_sample_data.py
+python scripts/setup.py
 ```
 
-This will:
-- Clear any existing data
-- Load 10 realistic projects (AgentOps, Memory Engineering, Voice Agents, etc.)
-- Create 44 tasks across projects with various statuses
-- Generate embeddings for semantic search
-- Set up realistic activity logs and timestamps
+**Or run individual scripts:**
 
-**Options:**
 ```bash
-# Skip embeddings for faster loading (semantic search won't work)
-python scripts/load_sample_data.py --skip-embeddings
+# Initialize database (collections + indexes)
+python scripts/init_db.py
+
+# Seed demo data
+python scripts/reset_demo.py
+
+# Verify setup
+python scripts/verify_setup.py
 ```
 
-**Sample Projects Included:**
-- AgentOps Framework (5 tasks)
-- Memory Engineering Content (4 tasks)
-- LangGraph Integration (4 tasks)
-- Voice Agent Architecture (5 tasks)
-- Gaming NPC Demo (6 tasks)
-- AWS re:Invent Prep (4 tasks)
-- CrewAI Memory Patterns (3 tasks)
-- Education Adaptive Tutoring Demo (4 tasks)
-- Q4 FY25 Deliverables (4 tasks - archived)
-- Developer Webinar Series (5 tasks)
+#### 6. Create Vector Search Indexes (Manual - Required)
+
+Vector search indexes must be created in the Atlas UI. Get the exact JSON definitions:
+
+```bash
+python scripts/init_db.py --vector-instructions
+```
+
+Then in MongoDB Atlas:
+1. Navigate to: **Database → Browse Collections → Search Indexes**
+2. Click **"Create Index"** → **"JSON Editor"**
+3. Create 5 vector indexes using the JSON definitions shown by the script:
+   - `tasks.vector_index` (1024 dims, cosine)
+   - `projects.vector_index` (1024 dims, cosine)
+   - `long_term_memory.memory_embeddings` (1024 dims, cosine)
+   - `long_term_memory.vector_index` (1024 dims, cosine)
+   - `tool_discoveries.discovery_vector_index` (1024 dims, cosine)
+
+⚠️ **Important**: Index names must match exactly. All use 1024 dimensions with cosine similarity.
+
+---
+
+### 🛠️ Available Setup Scripts
+
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| **setup.py** | All-in-one first-time setup | New developer onboarding |
+| **init_db.py** | Initialize database only | Schema updates, re-index |
+| **reset_demo.py** | Reset to clean demo state | Before demos/presentations |
+| **verify_setup.py** | Health check all components | Troubleshooting |
+| **seed_demo_data.py** | Seed demo data only | Testing memory system |
+
+See `scripts/README.md` for detailed script documentation.
+
+---
+
+### 📚 Demo Data
+
+The setup script seeds realistic demo data including:
+
+- **Projects**: Project Alpha (active), Q3 Fintech GTM (completed), AI Developer Outreach (completed)
+- **Tasks**: 7 tasks across projects with various statuses
+- **Procedural Memory**: GTM Roadmap Template, Market Research Questions
+- **Semantic Memory**: User preferences (priority, communication style, focus areas)
+- **Episodic Memory**: Past project actions with embeddings for semantic search
+
+**Demo User ID**: `demo-user`
+
+To reset demo data later:
+```bash
+python scripts/reset_demo.py --force
+```
 
 ### 6. Run the Applications
 

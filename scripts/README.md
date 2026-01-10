@@ -67,6 +67,11 @@ python scripts/reset_demo.py --verify-only
 | **debug/test_tool_coordinator.py** | Test coordinator | Coordinator debugging |
 | **debug/test_voice_flow.py** | Test voice processing | Voice feature debugging |
 
+### 🔧 Utilities
+| Module | Purpose | When to Use |
+|--------|---------|-------------|
+| **utils.py** | Shared utilities for setup scripts | Import in other scripts for common functionality |
+
 ---
 
 ## 📖 Detailed Documentation
@@ -494,6 +499,88 @@ DEBUG=false                          # Debug mode
 | Interactive | ✓ | - | - | - | ✓ (confirm) |
 | Idempotent | ✓ | ✓ | ✓ | ✓ | - |
 | **Use for** | First-time | DB setup | Verify | Demos | Before demos |
+
+---
+
+## utils.py - Shared Utilities Module
+
+**Purpose:** Common functionality for all setup scripts including database helpers, pretty output, verification, and API testing.
+
+**Usage:**
+```python
+# Import utilities in your setup script
+from utils import (
+    print_success, print_error, print_warning,
+    test_connection, check_env_var, test_all_apis
+)
+
+# Database connection
+success, error = test_connection()
+if success:
+    print_success("MongoDB connected")
+else:
+    print_error(f"Connection failed: {error}")
+
+# Environment variable check
+exists, preview = check_env_var("ANTHROPIC_API_KEY")
+if exists:
+    print_success(f"API key: {preview}")  # Shows: "sk-ant..."
+
+# Test all APIs
+results = test_all_apis()
+for api, (success, details) in results.items():
+    if success:
+        print_success(f"{api}: {details}")
+```
+
+**Available Functions:**
+
+**1. Database Connection:**
+- `get_database()` - Get MongoDB connection
+- `test_connection()` → `(success, error_message)`
+
+**2. Pretty Output (with colorama):**
+- `print_header(text)` - Formatted header with separators
+- `print_success(text)` - Green ✅ + message
+- `print_warning(text)` - Yellow ⚠️ + message
+- `print_error(text)` - Red ❌ + message
+- `print_info(text)` - Blue ℹ️ + message
+- `print_step(num, total, text)` - Step 1/4 format
+- `print_separator(length)` - Visual separator line
+
+**3. Verification:**
+- `check_env_var(name, required)` → `(exists, preview)`
+- `check_collection_exists(db, name)` → `bool`
+- `check_index_exists(db, collection, index)` → `bool`
+- `get_collection_count(db, collection, filter)` → `int`
+
+**4. API Testing:**
+- `test_voyage_api()` → `(success, details)`
+- `test_anthropic_api()` → `(success, details)`
+- `test_tavily_mcp()` → `(success, details)`
+
+**5. Convenience Functions:**
+- `check_all_env_vars()` → `Dict[str, (exists, preview)]`
+- `check_all_collections(db)` → `Dict[str, bool]`
+- `test_all_apis()` → `Dict[str, (success, details)]`
+
+**Features:**
+- Auto-loads `.env` file on import
+- Cross-platform colored output with colorama
+- Graceful fallback if colorama not installed
+- Masked env var previews for security (first 6 chars + ...)
+- Can be run standalone for testing: `python scripts/utils.py`
+
+**Example Output:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Flow Companion Setup
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1/4: Checking environment...
+✅ ANTHROPIC_API_KEY: sk-ant... (in green)
+✅ MongoDB connection successful (in green)
+⚠️  Tavily API key not set (optional) (in yellow)
+```
 
 ---
 

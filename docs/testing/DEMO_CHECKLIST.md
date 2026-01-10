@@ -20,6 +20,8 @@
   □ MONGODB_URI
   □ MONGODB_DATABASE
   □ TAVILY_API_KEY (for MCP demos)
+□ Verify setup (optional):
+  python scripts/verify_setup.py
 □ Test MongoDB connection
 □ Test Tavily MCP connection (toggle MCP Mode ON)
 ```

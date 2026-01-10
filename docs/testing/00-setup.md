@@ -6,6 +6,24 @@
 
 ---
 
+## 0. First-Time Setup (New Developers)
+
+If this is your first time setting up Flow Companion, use the comprehensive setup script:
+
+```bash
+# One-command setup (checks environment, initializes DB, seeds data, verifies)
+python scripts/setup.py
+
+# Alternative: Run individual setup steps
+python scripts/verify_setup.py  # Check environment and dependencies
+python scripts/init_db.py       # Initialize database collections and indexes
+python scripts/seed_demo_data.py # Seed demo data
+```
+
+**For existing setups**, skip to section 1 below.
+
+---
+
 ## 1. Environment Configuration
 
 ### 1.1 Required Environment Variables
@@ -41,6 +59,9 @@ source venv/bin/activate
 
 # RECOMMENDED: Full reset (clear + seed + verify)
 python scripts/reset_demo.py --force
+
+# Alternative: Just seed without clearing
+python scripts/reset_demo.py --seed-only
 
 # Alternative: Just seed (if already clean)
 python scripts/seed_demo_data.py
