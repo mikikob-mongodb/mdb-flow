@@ -407,7 +407,7 @@ def render_context_engineering_toggles():
         active.append("⚡")
     if cache_prompts:
         active.append("💾")
-    if memory_enabled:
+    if enable_memory:
         active.append("🧠")
     st.sidebar.caption(f"Active: {' '.join(active) if active else 'None'}")
 
