@@ -169,7 +169,25 @@ mdb-flow/
 
 ### 🚀 Quick Start (Recommended for New Developers)
 
-**One-command setup** that handles everything for you:
+**Option 1: Using Makefile** (simplest):
+
+```bash
+# 1. Clone repository
+git clone <repository-url>
+cd mdb-flow
+
+# 2. Create .env file with your API keys
+cp .env.example .env
+# Edit .env and add your API keys (see below)
+
+# 3. One command does everything!
+make setup
+
+# Or for complete first-run with app startup:
+make first-run
+```
+
+**Option 2: Using Python scripts directly**:
 
 ```bash
 # 1. Clone and install dependencies
@@ -187,13 +205,15 @@ cp .env.example .env
 python scripts/setup/setup.py
 ```
 
-The setup script will:
+**What the setup does:**
 - ✅ Check Python version and dependencies
 - ✅ Validate environment variables
 - ✅ Initialize MongoDB (8 collections + 68 indexes)
 - ✅ Seed demo data (projects, tasks, memories)
 - ✅ Verify everything works (database, APIs)
 - ✅ Display clear next steps
+
+**💡 Tip:** Run `make help` to see all available commands!
 
 ---
 
@@ -328,8 +348,64 @@ The setup script seeds realistic demo data including:
 
 To reset demo data later:
 ```bash
+# Using Makefile
+make reset-demo
+
+# Or using Python directly
 python scripts/demo/reset_demo.py --force
 ```
+
+---
+
+### 🛠️ Common Workflows (Makefile)
+
+The Makefile provides convenient shortcuts for common tasks:
+
+**Setup & Installation:**
+```bash
+make install      # Install dependencies only
+make setup        # Complete first-time setup
+make dev-setup    # Setup without demo data (for development)
+```
+
+**Demo Preparation:**
+```bash
+make reset-demo   # Reset demo data (before presentations)
+make demo-prep    # Reset + verify (comprehensive)
+make demo-verify  # Check demo data is ready
+```
+
+**Verification & Testing:**
+```bash
+make verify       # Full verification (environment + DB + APIs)
+make verify-quick # Quick check (skip API tests)
+make test         # Run full test suite
+make test-unit    # Unit tests only
+```
+
+**Running Applications:**
+```bash
+make run          # Start main Streamlit app
+make start-app    # Same as run
+make run-evals    # Start evals comparison app
+```
+
+**Cleanup:**
+```bash
+make clean        # Remove __pycache__ and artifacts
+make clean-all    # Remove venv too (fresh start)
+```
+
+**Quick Workflows:**
+```bash
+make first-run    # install + setup + verify + start app
+make quick-start  # install + db-init + seed + start app
+make fresh-start  # clean-all + install + setup
+```
+
+Run `make help` to see all available commands!
+
+---
 
 ### 6. Run the Applications
 
