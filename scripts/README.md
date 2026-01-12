@@ -626,7 +626,7 @@ python scripts/setup.py
 - **Main README:** `/README.md`
 - **Architecture Docs:** `/docs/architecture/`
 - **Testing Guide:** `/docs/testing/`
-- **Demo Checklist:** `/docs/testing/DEMO_CHECKLIST.md`
+- **Demo Checklist:** `/docs/DEMO_CHECKLIST.md`
 - **Test Coverage:** `/docs/testing/TEST_COVERAGE.md`
 
 ---

@@ -68,7 +68,7 @@ Demo documentation expects 15 tasks, but seed data only creates 7 tasks
 
 **Evidence:**
 - `docs/testing/09-demo-dry-run.md:266` - "Shows all 15 tasks (<200ms)"
-- `docs/testing/DEMO_CHECKLIST.md:37` - "Seeded data (3 projects, 15 tasks, memories)"
+- `docs/DEMO_CHECKLIST.md:37` - "Seeded data (3 projects, 15 tasks, memories)"
 - `scripts/seed_demo_data.py` - `get_tasks_data()` function only creates 7 tasks
 
 **Actual Seed Data:**
