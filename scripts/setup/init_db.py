@@ -88,8 +88,9 @@ def create_tasks_indexes(db, verify_only: bool = False) -> List[str]:
         # Standard indexes
         IndexModel([("user_id", ASCENDING)], name="user_id_1"),
         IndexModel([("project_id", ASCENDING)], name="project_id_1"),
-        IndexModel([("status", ASCENDING)], name="status_1"),
-        IndexModel([("priority", ASCENDING)], name="priority_1"),
+        # Note: status_1 and priority_1 removed in Phase 2 cleanup (low cardinality, covered by compounds)
+        # IndexModel([("status", ASCENDING)], name="status_1"),
+        # IndexModel([("priority", ASCENDING)], name="priority_1"),
         IndexModel([("created_at", DESCENDING)], name="created_at_-1"),
         IndexModel([("last_worked_on", DESCENDING)], name="last_worked_on_-1"),
         IndexModel([("activity_log.timestamp", DESCENDING)], name="activity_log.timestamp_-1"),
@@ -129,7 +130,8 @@ def create_projects_indexes(db, verify_only: bool = False) -> List[str]:
 
     indexes = [
         IndexModel([("user_id", ASCENDING)], name="user_id_1"),
-        IndexModel([("status", ASCENDING)], name="status_1"),
+        # Note: status_1 removed in Phase 2 cleanup (low cardinality, covered by user_id_1_status_1)
+        # IndexModel([("status", ASCENDING)], name="status_1"),
         IndexModel([("created_at", DESCENDING)], name="created_at_-1"),
         IndexModel([("last_activity", DESCENDING)], name="last_activity_-1"),
         IndexModel([("user_id", ASCENDING), ("status", ASCENDING)], name="user_id_1_status_1"),
@@ -202,25 +204,32 @@ def create_memory_indexes(db, verify_only: bool = False) -> Dict[str, List[str]]
     results["short_term_memory"] = stm_created
 
     # LONG-TERM MEMORY
+    # Note: Optimized index set after cleanup (see docs/architecture/index-dependency-analysis.md)
+    # Removed 8 redundant single-field indexes covered by compounds
     long_term = db["long_term_memory"]
     ltm_created = []
 
     ltm_indexes = [
+        # Optional: Keep user_id for fallback queries (can be removed if all queries use compounds)
         IndexModel([("user_id", ASCENDING)], name="user_id_1"),
-        IndexModel([("memory_type", ASCENDING)], name="memory_type_1"),
-        IndexModel([("timestamp", DESCENDING)], name="timestamp_-1"),
-        IndexModel([("action_type", ASCENDING)], name="action_type_1"),
-        IndexModel([("source_agent", ASCENDING)], name="source_agent_1"),
-        IndexModel([("semantic_type", ASCENDING)], name="semantic_type_1"),
-        IndexModel([("key", ASCENDING)], name="key_1"),
-        IndexModel([("rule_type", ASCENDING)], name="rule_type_1"),
-        IndexModel([("trigger_pattern", ASCENDING)], name="trigger_pattern_1"),
+
+        # Essential compound indexes (cover all query patterns)
         IndexModel([("user_id", ASCENDING), ("memory_type", ASCENDING)], name="user_id_1_memory_type_1"),
         IndexModel([("user_id", ASCENDING), ("timestamp", DESCENDING)], name="user_id_1_timestamp_-1"),
         IndexModel([("user_id", ASCENDING), ("action_type", ASCENDING)], name="user_id_1_action_type_1"),
         IndexModel([("user_id", ASCENDING), ("source_agent", ASCENDING)], name="user_id_1_source_agent_1"),
         IndexModel([("user_id", ASCENDING), ("memory_type", ASCENDING), ("semantic_type", ASCENDING), ("key", ASCENDING)], name="semantic_lookup"),
         IndexModel([("user_id", ASCENDING), ("memory_type", ASCENDING), ("trigger_pattern", ASCENDING)], name="procedural_lookup"),
+
+        # Removed (redundant - covered by compounds above):
+        # - memory_type_1 (covered by user_id_1_memory_type_1)
+        # - timestamp_-1 (covered by user_id_1_timestamp_-1)
+        # - action_type_1 (covered by user_id_1_action_type_1)
+        # - source_agent_1 (covered by user_id_1_source_agent_1)
+        # - semantic_type_1 (covered by semantic_lookup)
+        # - key_1 (covered by semantic_lookup)
+        # - rule_type_1 (never used in any query)
+        # - trigger_pattern_1 (covered by procedural_lookup)
     ]
 
     if not verify_only:
