@@ -11,6 +11,7 @@ Skip if no key: pytest tests/integration/test_mcp_agent.py -v --skipif-no-tavily
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 import os
 from datetime import datetime, timezone
@@ -57,7 +58,7 @@ def memory_manager(mock_db, mock_embedding_fn):
     return MemoryManager(mock_db, embedding_fn=mock_embedding_fn)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mcp_agent(mock_db, memory_manager, mock_embedding_fn):
     """Create and initialize MCP Agent"""
     agent = MCPAgent(
