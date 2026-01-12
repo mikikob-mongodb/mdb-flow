@@ -216,8 +216,10 @@ See: [tests/README_MCP_TESTS.md](../../tests/README_MCP_TESTS.md) for complete t
 ```
 docs/testing/
 ├── README.md                    ← You are here (index + quick reference)
-├── DEMO_CHECKLIST.md           ← Pre-demo + day-of checklists
 ├── TEST_COVERAGE.md            ← Coverage stats, what's tested
+├── MCP_AGENT_TEST_SUMMARY.md   ← Detailed MCP test coverage
+├── demo-data.md                ← Demo data documentation
+├── voice-testing.md            ← Voice test scripts
 │
 ├── 00-setup.md                 ← Environment setup
 ├── 01-slash-commands.md        ← Direct DB commands
@@ -229,6 +231,8 @@ docs/testing/
 ├── 07-multi-turn.md            ← Multi-step workflows
 ├── 08-error-handling.md        ← Error scenarios
 └── 09-demo-dry-run.md          ← Full demo rehearsal
+
+../DEMO_CHECKLIST.md            ← Pre-demo + day-of checklists (moved to docs/)
 ```
 
 ---
