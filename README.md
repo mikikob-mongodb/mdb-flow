@@ -184,7 +184,7 @@ cp .env.example .env
 # Edit .env and add your API keys (see below)
 
 # 3. Run the all-in-one setup script
-python scripts/setup.py
+python scripts/setup/setup.py
 ```
 
 The setup script will:
@@ -262,20 +262,20 @@ DEBUG=false
 Run the all-in-one setup script:
 
 ```bash
-python scripts/setup.py
+python scripts/setup/setup.py
 ```
 
 **Or run individual scripts:**
 
 ```bash
 # Initialize database (collections + indexes)
-python scripts/init_db.py
+python scripts/setup/init_db.py
 
 # Seed demo data
-python scripts/reset_demo.py
+python scripts/demo/reset_demo.py
 
 # Verify setup
-python scripts/verify_setup.py
+python scripts/setup/verify_setup.py
 ```
 
 #### 6. Create Vector Search Indexes (Manual - Required)
@@ -283,7 +283,7 @@ python scripts/verify_setup.py
 Vector search indexes must be created in the Atlas UI. Get the exact JSON definitions:
 
 ```bash
-python scripts/init_db.py --vector-instructions
+python scripts/setup/init_db.py --vector-instructions
 ```
 
 Then in MongoDB Atlas:
@@ -328,7 +328,7 @@ The setup script seeds realistic demo data including:
 
 To reset demo data later:
 ```bash
-python scripts/reset_demo.py --force
+python scripts/demo/reset_demo.py --force
 ```
 
 ### 6. Run the Applications

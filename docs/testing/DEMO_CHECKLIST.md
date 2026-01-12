@@ -21,7 +21,7 @@
   □ MONGODB_DATABASE
   □ TAVILY_API_KEY (for MCP demos)
 □ Verify setup (optional):
-  python scripts/verify_setup.py
+  python scripts/setup/verify_setup.py
 □ Test MongoDB connection
 □ Test Tavily MCP connection (toggle MCP Mode ON)
 ```
@@ -30,7 +30,7 @@
 
 ```
 □ Run demo reset script (clears + seeds + verifies):
-  python scripts/reset_demo.py --force
+  python scripts/demo/reset_demo.py --force
 
 □ Verify output shows:
   ✓ Cleared 6-7 collections
@@ -40,7 +40,7 @@
   🎬 Ready for demo!
 
 □ Alternative: Just verify current state:
-  python scripts/reset_demo.py --verify-only
+  python scripts/demo/reset_demo.py --verify-only
 
 □ If verification fails:
   □ Re-run reset script
