@@ -216,23 +216,23 @@ See: [tests/README_MCP_TESTS.md](../../tests/README_MCP_TESTS.md) for complete t
 ```
 docs/testing/
 ├── README.md                    ← You are here (index + quick reference)
-├── TEST_COVERAGE.md            ← Coverage stats, what's tested
-├── MCP_AGENT_TEST_SUMMARY.md   ← Detailed MCP test coverage
-├── demo-data.md                ← Demo data documentation
-├── voice-testing.md            ← Voice test scripts
 │
 ├── 00-setup.md                 ← Environment setup
 ├── 01-slash-commands.md        ← Direct DB commands
 ├── 02-text-queries.md          ← LLM queries
 ├── 03-text-actions.md          ← LLM actions
-├── 04-voice-input.md           ← Voice integration
+├── 04-voice-input.md           ← Voice integration (includes 25 test scripts)
 ├── 05-context-engineering.md   ← Optimizations
 ├── 06-memory-engineering.md    ← 5 memory types (CORE)
 ├── 07-multi-turn.md            ← Multi-step workflows
 ├── 08-error-handling.md        ← Error scenarios
 └── 09-demo-dry-run.md          ← Full demo rehearsal
 
-../DEMO_CHECKLIST.md            ← Pre-demo + day-of checklists (moved to docs/)
+Related files (moved):
+├── ../DEMO_CHECKLIST.md        ← Pre-demo + day-of checklists
+├── ../../tests/MCP_TEST_SUMMARY.md     ← Detailed MCP test coverage
+├── ../../tests/COVERAGE.md             ← Overall test coverage
+└── ../../scripts/demo/README.md        ← Demo data documentation
 ```
 
 ---
@@ -249,9 +249,13 @@ docs/testing/
 - [docs/features/MCP_AGENT.md](../features/MCP_AGENT.md) - MCP Agent documentation
 - [docs/features/MULTI_STEP_INTENTS.md](../features/MULTI_STEP_INTENTS.md) - Multi-step workflows
 
-### Testing
-- [tests/README_MCP_TESTS.md](../../tests/README_MCP_TESTS.md) - MCP test quick reference
-- [docs/testing/MCP_AGENT_TEST_SUMMARY.md](MCP_AGENT_TEST_SUMMARY.md) - Detailed test coverage
+### Testing & Coverage
+- [tests/MCP_TEST_SUMMARY.md](../../tests/MCP_TEST_SUMMARY.md) - Detailed MCP test coverage
+- [tests/COVERAGE.md](../../tests/COVERAGE.md) - Overall test coverage summary
+
+### Demo & Scripts
+- [scripts/demo/README.md](../../scripts/demo/README.md) - Demo data documentation
+- [docs/DEMO_CHECKLIST.md](../DEMO_CHECKLIST.md) - Pre-demo and day-of checklists
 
 ---
 
