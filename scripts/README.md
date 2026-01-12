@@ -2,6 +2,38 @@
 
 Comprehensive collection of setup, maintenance, and demo preparation scripts for Flow Companion.
 
+**Reorganized:** January 12, 2026 - Scripts now organized by category in subdirectories.
+
+---
+
+## 📁 Directory Structure
+
+```
+scripts/
+├── setup/           # First-time setup & verification
+│   ├── setup.py
+│   ├── init_db.py
+│   ├── verify_setup.py
+│   └── utils.py
+├── demo/            # Demo preparation & data
+│   ├── seed_demo_data.py
+│   └── reset_demo.py
+├── maintenance/     # Database cleanup & utilities
+│   └── cleanup_database.py
+├── dev/             # Development & debug tools
+│   ├── test_memory_system.py
+│   ├── test_multi_step_intent.py
+│   └── debug/
+│       ├── debug_agent.py
+│       ├── test_hybrid_search.py
+│       ├── test_tool_coordinator.py
+│       └── test_voice_flow.py
+└── deprecated/      # Old scripts (see deprecated/README.md)
+    ├── setup_database.py
+    ├── load_sample_data.py
+    └── seed_memory_demo_data.py
+```
+
 ---
 
 ## 🚀 Quick Start (New Developer)
@@ -15,62 +47,65 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 2. Run all-in-one setup (creates .env, initializes DB, verifies)
-python scripts/setup.py
+python scripts/setup/setup.py
 
 # 3. Create vector search indexes in Atlas UI (see output for instructions)
 
 # 4. Start the app
-streamlit run streamlit_app.py
+streamlit run ui/streamlit_app.py
 ```
 
 **If preparing for a demo:**
 
 ```bash
 # Reset to clean demo state
-python scripts/reset_demo.py --force
+python scripts/demo/reset_demo.py
 
 # Verify ready
-python scripts/reset_demo.py --verify-only
+python scripts/demo/reset_demo.py --verify-only
 ```
 
 ---
 
 ## 📚 Script Categories
 
-### 🎯 First-Time Setup
+### 🎯 First-Time Setup (`scripts/setup/`)
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
 | **setup.py** | All-in-one initialization | First time setup, new developers |
 | **init_db.py** | Create collections + indexes | Database initialization, schema updates |
 | **verify_setup.py** | Health check all components | After setup, before demos, troubleshooting |
+| **utils.py** | Shared utilities module | Import in other scripts for common functionality |
 
-### 🎬 Demo & Data
+### 🎬 Demo & Data (`scripts/demo/`)
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
 | **reset_demo.py** | Complete demo reset (clear + seed + verify) | Before demos, presentations |
 | **seed_demo_data.py** | Seed presentation-ready demo data | Demo preparation, testing memory system |
-| **seed_memory_demo_data.py** | Seed memory collections only | Memory-specific demos |
-| **load_sample_data.py** | Load sample tasks/projects | General testing, development |
 
-### 🔧 Maintenance & Testing
+### 🔧 Maintenance (`scripts/maintenance/`)
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
-| **setup_database.py** | Create indexes (legacy, use init_db.py instead) | Manual index creation |
 | **cleanup_database.py** | Clean test data, duplicates, orphans | Regular maintenance |
-| **test_memory_system.py** | Test 5-tier memory system | Development, verification |
 
-### 🐛 Debug Tools
+### 🛠️ Development Tools (`scripts/dev/`)
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
+| **test_memory_system.py** | Test 5-tier memory system | Development, verification |
+| **test_multi_step_intent.py** | Test multi-step intent classification | Coordinator debugging |
 | **debug/debug_agent.py** | Test agent vs direct DB queries | Debugging agent behavior |
 | **debug/test_hybrid_search.py** | Test hybrid search | Search debugging |
 | **debug/test_tool_coordinator.py** | Test coordinator | Coordinator debugging |
 | **debug/test_voice_flow.py** | Test voice processing | Voice feature debugging |
 
-### 🔧 Utilities
-| Module | Purpose | When to Use |
-|--------|---------|-------------|
-| **utils.py** | Shared utilities for setup scripts | Import in other scripts for common functionality |
+### 🗑️ Deprecated (`scripts/deprecated/`)
+| Script | Status | Replacement |
+|--------|--------|-------------|
+| ~~setup_database.py~~ | Deprecated | Use `scripts/setup/init_db.py` |
+| ~~load_sample_data.py~~ | Deprecated | Use `scripts/demo/seed_demo_data.py` |
+| ~~seed_memory_demo_data.py~~ | Deprecated | Use `scripts/demo/seed_demo_data.py` |
+
+**Note:** See `scripts/deprecated/README.md` for migration guide.
 
 ---
 
@@ -78,24 +113,20 @@ python scripts/reset_demo.py --verify-only
 
 ### setup.py - All-in-One Setup ⭐
 
+**Location:** `scripts/setup/setup.py`
+
 **Purpose:** Complete first-time setup for new developers. Orchestrates all setup steps.
 
 **Usage:**
 ```bash
 # Interactive setup (recommended)
-python scripts/setup.py
+python scripts/setup/setup.py
 
-# Non-interactive (requires existing .env)
-python scripts/setup.py --non-interactive
+# Skip demo data seeding
+python scripts/setup/setup.py --skip-seed
 
-# Skip demo data
-python scripts/setup.py --no-demo-data
-
-# Quick verification only
-python scripts/setup.py --quick
-
-# Full reset (DANGEROUS)
-python scripts/setup.py --reset
+# Force re-run even if already set up
+python scripts/setup/setup.py --force
 ```
 
 **What it does:**
@@ -111,27 +142,20 @@ python scripts/setup.py --reset
 
 ### init_db.py - Database Initialization
 
+**Location:** `scripts/setup/init_db.py`
+
 **Purpose:** Create all MongoDB collections and indexes. Foundation for database setup.
 
 **Usage:**
 ```bash
 # Initialize everything
-python scripts/init_db.py
+python scripts/setup/init_db.py
 
-# Collections only
-python scripts/init_db.py --collections-only
+# Verify existing setup
+python scripts/setup/init_db.py --verify
 
-# Indexes only
-python scripts/init_db.py --indexes-only
-
-# Check existing setup
-python scripts/init_db.py --check
-
-# Show vector index instructions
-python scripts/init_db.py --vector-instructions
-
-# Force recreate (DANGEROUS - drops data!)
-python scripts/init_db.py --force
+# Drop and recreate (DANGEROUS!)
+python scripts/setup/init_db.py --drop-first
 ```
 
 **Creates:**
@@ -162,21 +186,20 @@ Run `--vector-instructions` for full JSON definitions.
 
 ### verify_setup.py - Health Check
 
+**Location:** `scripts/setup/verify_setup.py`
+
 **Purpose:** Comprehensive verification that everything is configured correctly.
 
 **Usage:**
 ```bash
 # Full verification
-python scripts/verify_setup.py
+python scripts/setup/verify_setup.py
 
 # Quick check (env + MongoDB only)
-python scripts/verify_setup.py --quick
+python scripts/setup/verify_setup.py --quick
 
-# Skip API tests (faster)
-python scripts/verify_setup.py --skip-api
-
-# Verbose output
-python scripts/verify_setup.py --verbose
+# Verbose output with detailed diagnostics
+python scripts/setup/verify_setup.py --verbose
 ```
 
 **Checks:**
@@ -193,24 +216,26 @@ python scripts/verify_setup.py --verbose
 
 ### reset_demo.py - Demo Reset
 
+**Location:** `scripts/demo/reset_demo.py`
+
 **Purpose:** Complete demo preparation (teardown + seed + verify). Use before presentations.
 
 **Usage:**
 ```bash
 # Full reset (recommended before demos)
-python scripts/reset_demo.py
+python scripts/demo/reset_demo.py
 
 # Just verify current state
-python scripts/reset_demo.py --verify-only
+python scripts/demo/reset_demo.py --verify-only
 
 # Just clear collections (requires --force)
-python scripts/reset_demo.py --teardown-only --force
+python scripts/demo/reset_demo.py --teardown-only --force
 
 # Just seed (no teardown)
-python scripts/reset_demo.py --seed-only
+python scripts/demo/reset_demo.py --seed-only
 
 # Skip embeddings (faster)
-python scripts/reset_demo.py --skip-embeddings
+python scripts/demo/reset_demo.py --skip-embeddings
 ```
 
 **Phases:**
@@ -260,21 +285,23 @@ python scripts/reset_demo.py --skip-embeddings
 
 ### seed_demo_data.py - Presentation Demo Data ⭐
 
+**Location:** `scripts/demo/seed_demo_data.py`
+
 **Purpose:** Seed realistic, interconnected data for showcasing 5-tier memory system.
 
 **Usage:**
 ```bash
 # Seed demo data (idempotent)
-python scripts/seed_demo_data.py
+python scripts/demo/seed_demo_data.py
 
 # Clear and reseed
-python scripts/seed_demo_data.py --clean
+python scripts/demo/seed_demo_data.py --clean
 
 # Verify data exists
-python scripts/seed_demo_data.py --verify
+python scripts/demo/seed_demo_data.py --verify
 
 # Skip embeddings (faster, but no semantic search)
-python scripts/seed_demo_data.py --skip-embeddings
+python scripts/demo/seed_demo_data.py --skip-embeddings
 ```
 
 **Creates:**
@@ -307,56 +334,30 @@ python scripts/seed_demo_data.py --skip-embeddings
 
 ---
 
-### Other Scripts (Existing)
-
-#### setup_database.py (Legacy - Use init_db.py instead)
-
-Creates indexes for tasks, projects, memory collections.
-
-```bash
-python scripts/setup_database.py
-python scripts/setup_database.py --standard  # Standard indexes only
-python scripts/setup_database.py --memory    # Memory indexes only
-python scripts/setup_database.py --list      # List existing
-```
+### Other Scripts
 
 #### cleanup_database.py
+
+**Location:** `scripts/maintenance/cleanup_database.py`
 
 Remove test data, duplicates, orphaned records.
 
 ```bash
-python scripts/cleanup_database.py --status          # Show status
-python scripts/cleanup_database.py --mark --delete   # Clean test data
-python scripts/cleanup_database.py --full            # Full cleanup
+python scripts/maintenance/cleanup_database.py --status          # Show status
+python scripts/maintenance/cleanup_database.py --mark --delete   # Clean test data
+python scripts/maintenance/cleanup_database.py --full            # Full cleanup
 ```
 
 #### test_memory_system.py
 
+**Location:** `scripts/dev/test_memory_system.py`
+
 Test 5-tier memory system.
 
 ```bash
-python scripts/test_memory_system.py                # All tests
-python scripts/test_memory_system.py --long-term    # Long-term only
-python scripts/test_memory_system.py --performance  # Performance tests
-```
-
-#### load_sample_data.py
-
-Load sample tasks/projects for general development.
-
-```bash
-python scripts/load_sample_data.py
-python scripts/load_sample_data.py --skip-embeddings
-```
-
-#### seed_memory_demo_data.py
-
-Seed memory collections (separate from seed_demo_data.py).
-
-```bash
-python scripts/seed_memory_demo_data.py
-python scripts/seed_memory_demo_data.py --with-sample-data
-python scripts/seed_memory_demo_data.py --skip-embeddings
+python scripts/dev/test_memory_system.py                # All tests
+python scripts/dev/test_memory_system.py --long-term    # Long-term only
+python scripts/dev/test_memory_system.py --performance  # Performance tests
 ```
 
 ---
@@ -374,28 +375,24 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 2. Run all-in-one setup
-python scripts/setup.py
+python scripts/setup/setup.py
 
-# 3. Create vector search indexes in Atlas UI
-python scripts/init_db.py --vector-instructions
-# Then create indexes manually in Atlas
+# 3. Verify everything works
+python scripts/setup/verify_setup.py
 
-# 4. Verify everything works
-python scripts/verify_setup.py
-
-# 5. Start app
-streamlit run streamlit_app.py
+# 4. Start app
+streamlit run ui/streamlit_app.py
 ```
 
 ### Demo Preparation
 
 ```bash
 # Night before
-python scripts/reset_demo.py --force
+python scripts/demo/reset_demo.py
 
 # Morning of demo (15 min before)
-python scripts/reset_demo.py --verify-only
-streamlit run streamlit_app.py
+python scripts/demo/reset_demo.py --verify-only
+streamlit run ui/streamlit_app.py
 # Use demo user: demo-user
 ```
 
@@ -405,33 +402,33 @@ streamlit run streamlit_app.py
 # After pulling new code
 git pull
 
-# Update indexes
-python scripts/init_db.py --indexes-only
+# Re-initialize database
+python scripts/setup/init_db.py
 
 # Verify
-python scripts/verify_setup.py
+python scripts/setup/verify_setup.py
 
 # Optionally reseed demo data
-python scripts/seed_demo_data.py --clean
+python scripts/demo/seed_demo_data.py --clean
 ```
 
 ### Troubleshooting
 
 ```bash
 # 1. Quick health check
-python scripts/verify_setup.py --quick
+python scripts/setup/verify_setup.py --quick
 
 # 2. Full verification
-python scripts/verify_setup.py --verbose
+python scripts/setup/verify_setup.py --verbose
 
 # 3. If database issues
-python scripts/init_db.py
+python scripts/setup/init_db.py
 
 # 4. If data issues
-python scripts/seed_demo_data.py --clean
+python scripts/demo/seed_demo_data.py --clean
 
-# 5. Full reset (last resort)
-python scripts/setup.py --reset
+# 5. Full reset (re-run setup)
+python scripts/setup/setup.py --force
 ```
 
 ---
@@ -504,12 +501,14 @@ DEBUG=false                          # Debug mode
 
 ## utils.py - Shared Utilities Module
 
+**Location:** `scripts/setup/utils.py`
+
 **Purpose:** Common functionality for all setup scripts including database helpers, pretty output, verification, and API testing.
 
 **Usage:**
 ```python
 # Import utilities in your setup script
-from utils import (
+from scripts.setup.utils import (
     print_success, print_error, print_warning,
     test_connection, check_env_var, test_all_apis
 )
@@ -632,5 +631,5 @@ python scripts/setup.py
 
 ---
 
-**Last Updated:** January 9, 2026
-**Version:** 3.0 (Milestone 6 - MCP Agent)
+**Last Updated:** January 12, 2026
+**Version:** 3.1 (Reorganized structure - setup/, demo/, maintenance/, dev/, deprecated/)

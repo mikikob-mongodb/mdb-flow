@@ -50,12 +50,13 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from shared.db import MongoDB
 from shared.config import settings
 
-# Import seeding functions directly
+# Import seeding functions from same directory
+sys.path.insert(0, str(Path(__file__).parent))
 import seed_demo_data
 
 # =============================================================================

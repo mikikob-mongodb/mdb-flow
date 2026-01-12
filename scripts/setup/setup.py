@@ -194,7 +194,7 @@ def seed_demo_data(skip: bool = False) -> bool:
 
     try:
         from shared.db import MongoDB
-        import seed_demo_data
+        from scripts.demo import seed_demo_data
 
         # Suppress verbose output
         import io
