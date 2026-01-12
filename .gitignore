@@ -208,3 +208,4 @@ __marimo__/
 
 # Log files
 logs/
+scripts/maintenance/index_backup.json
