@@ -343,8 +343,9 @@ def render_sidebar():
 
         # Legend
         with st.expander("ℹ️ Legend", expanded=False):
-            st.caption("**Status:** ○ Todo  •  ◐ In Progress  •  ✓ Done")
-            st.caption("**Priority:** 🔴 High  •  🟡 Medium  •  🟢 Low")
+            st.caption("**Task Status:** ○ Todo  •  ◐ In Progress  •  ✓ Done")
+            st.caption("**Task Priority:** 🔴 High  •  🟡 Medium  •  🟢 Low")
+            st.caption("**Project Status:** 📁 Active  •  📋 Planned  •  ✅ Completed")
 
         projects_with_tasks = get_all_projects_with_tasks()
 
