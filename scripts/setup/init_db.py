@@ -41,7 +41,6 @@ COLLECTIONS = {
     # Main application collections
     "tasks": "User tasks with activity logging",
     "projects": "User projects with activity tracking",
-    "settings": "User settings and current context",
 
     # Memory system collections
     "short_term_memory": "Session context (2-hour TTL)",
@@ -50,9 +49,6 @@ COLLECTIONS = {
 
     # MCP Agent collections
     "tool_discoveries": "MCP tool usage learning and reuse",
-
-    # Evaluation collections
-    "eval_comparison_runs": "Evaluation comparison run results"
 }
 
 # =============================================================================
@@ -154,24 +150,6 @@ def create_projects_indexes(db, verify_only: bool = False) -> List[str]:
                 weights={"name": 10, "description": 7, "context": 5, "decisions": 4, "methods": 3, "notes": 2}
             )
             created.append("name_text")
-        except OperationFailure:
-            pass
-
-    return created
-
-def create_settings_indexes(db, verify_only: bool = False) -> List[str]:
-    """Create indexes for settings collection."""
-    settings_col = db["settings"]
-    created = []
-
-    indexes = [
-        IndexModel([("user_id", ASCENDING)], name="user_id_1", unique=True),
-    ]
-
-    if not verify_only:
-        try:
-            result = settings_col.create_indexes(indexes)
-            created.extend(result)
         except OperationFailure:
             pass
 
@@ -286,25 +264,6 @@ def create_tool_discoveries_indexes(db, verify_only: bool = False) -> List[str]:
     if not verify_only:
         try:
             result = tool_discoveries.create_indexes(indexes)
-            created.extend(result)
-        except OperationFailure:
-            pass
-
-    return created
-
-def create_eval_indexes(db, verify_only: bool = False) -> List[str]:
-    """Create indexes for eval_comparison_runs collection."""
-    eval_runs = db["eval_comparison_runs"]
-    created = []
-
-    indexes = [
-        IndexModel([("timestamp", DESCENDING)], name="timestamp_-1"),
-        IndexModel([("run_name", ASCENDING)], name="run_name_1"),
-    ]
-
-    if not verify_only:
-        try:
-            result = eval_runs.create_indexes(indexes)
             created.extend(result)
         except OperationFailure:
             pass
@@ -557,21 +516,6 @@ def main():
     else:
         logger.info(f"    ✅ {len(existing_projects)} indexes exist")
 
-    # Settings indexes
-    logger.info("  settings:")
-    settings_indexes = create_settings_indexes(db, verify_only=args.verify)
-    existing_settings = existing_before.get("settings", set())
-
-    if not args.verify:
-        newly_created = [idx for idx in settings_indexes if idx not in existing_settings]
-        if newly_created:
-            for idx_name in newly_created:
-                logger.info(f"    🆕 {idx_name} (created)")
-        if existing_settings:
-            logger.info(f"    ✅ {len(existing_settings)} indexes already exist")
-    else:
-        logger.info(f"    ✅ {len(existing_settings)} indexes exist")
-
     # Memory indexes
     logger.info("  short_term_memory:")
     memory_results = create_memory_indexes(db, verify_only=args.verify)
@@ -638,21 +582,6 @@ def main():
     else:
         logger.info(f"    ✅ {len(existing_tool)} indexes exist")
 
-    # Eval indexes
-    logger.info("  eval_comparison_runs:")
-    eval_indexes = create_eval_indexes(db, verify_only=args.verify)
-    existing_eval = existing_before.get("eval_comparison_runs", set())
-
-    if not args.verify:
-        newly_created = [idx for idx in eval_indexes if idx not in existing_eval]
-        if newly_created:
-            for idx_name in newly_created:
-                logger.info(f"    🆕 {idx_name} (created)")
-        if existing_eval:
-            logger.info(f"    ✅ {len(existing_eval)} indexes already exist")
-    else:
-        logger.info(f"    ✅ {len(existing_eval)} indexes exist")
-
     # Vector search indexes (Atlas Search)
     logger.info("")
     logger.info("🔍 Vector Search Indexes (Atlas Search):")
@@ -689,11 +618,11 @@ def main():
         logger.info(f"✅ Verification complete! ({len(COLLECTIONS)} collections)")
     else:
         collections_created = sum(1 for v in collection_results.values() if v == "created")
-        total_indexes = (len(tasks_indexes) + len(projects_indexes) + len(settings_indexes) +
+        total_indexes = (len(tasks_indexes) + len(projects_indexes) +
                         len(memory_results.get("short_term_memory", [])) +
                         len(memory_results.get("long_term_memory", [])) +
                         len(memory_results.get("shared_memory", [])) +
-                        len(tool_indexes) + len(eval_indexes))
+                        len(tool_indexes))
 
         if args.drop_first:
             logger.info(f"✅ Database reinitialized! ({len(COLLECTIONS)} collections, {total_indexes} indexes)")

@@ -101,7 +101,7 @@ def backup_indexes(db, output_file="index_backup.json"):
         "collections": {}
     }
 
-    collections = ["long_term_memory", "tasks", "projects", "short_term_memory", "shared_memory", "settings", "tool_discoveries", "eval_comparison_runs"]
+    collections = ["long_term_memory", "tasks", "projects", "short_term_memory", "shared_memory", "tool_discoveries"]
 
     for coll_name in collections:
         try:

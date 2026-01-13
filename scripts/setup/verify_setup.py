@@ -61,12 +61,10 @@ OPTIONAL_ENV_VARS = {
 REQUIRED_COLLECTIONS = [
     "tasks",
     "projects",
-    "settings",
     "short_term_memory",
     "long_term_memory",
     "shared_memory",
     "tool_discoveries",
-    "eval_comparison_runs"
 ]
 
 REQUIRED_DIRECTORIES = [

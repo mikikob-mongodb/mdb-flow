@@ -418,12 +418,10 @@ def check_all_collections(db) -> Dict[str, bool]:
     required_collections = [
         "tasks",
         "projects",
-        "settings",
         "short_term_memory",
         "long_term_memory",
         "shared_memory",
         "tool_discoveries",
-        "eval_comparison_runs"
     ]
 
     results = {}
