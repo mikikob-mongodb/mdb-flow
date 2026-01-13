@@ -214,7 +214,7 @@ def test_semantic_search_history():
         session_id=session_id,
         turn_number=1,
         optimizations={
-            "long_term_memory": True,
+            "memory_long_term": True,
             "context_injection": True
         },
         return_debug=True

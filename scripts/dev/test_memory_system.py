@@ -34,7 +34,7 @@ from agents.retrieval import retrieval_agent
 from agents.worklog import worklog_agent
 
 
-def test_short_term_memory(memory, session_id="test_session_123"):
+def test_memory_short_term(memory, session_id="test_session_123"):
     """Test short-term memory operations."""
 
     print("\n" + "=" * 60)
@@ -70,7 +70,7 @@ def test_short_term_memory(memory, session_id="test_session_123"):
     return context is not None
 
 
-def test_long_term_memory(memory, user_id="test_user"):
+def test_memory_long_term(memory, user_id="test_user"):
     """Test long-term memory operations."""
 
     print("\n" + "=" * 60)
@@ -122,7 +122,7 @@ def test_long_term_memory(memory, user_id="test_user"):
     return len(results) > 0 if results else False
 
 
-def test_shared_memory(memory, session_id="test_session_456"):
+def test_memory_shared(memory, session_id="test_session_456"):
     """Test shared memory (agent handoff) operations."""
 
     print("\n" + "=" * 60)
@@ -332,13 +332,13 @@ def main():
 
     # Run tests
     if test_all or args.short_term:
-        results.append(("Short-term Memory", test_short_term_memory(memory)))
+        results.append(("Short-term Memory", test_memory_short_term(memory)))
 
     if test_all or args.long_term:
-        results.append(("Long-term Memory", test_long_term_memory(memory)))
+        results.append(("Long-term Memory", test_memory_long_term(memory)))
 
     if test_all or args.shared:
-        results.append(("Shared Memory", test_shared_memory(memory)))
+        results.append(("Shared Memory", test_memory_shared(memory)))
 
     if test_all or args.coordinator:
         results.append(("Coordinator Integration", test_coordinator_integration()))

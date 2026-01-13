@@ -166,7 +166,7 @@ def get_memory_stats() -> Dict[str, int]:
                 "episodic": by_type.get("episodic_memory", 0),
                 "semantic": by_type.get("semantic_memory", 0),
                 "procedural": by_type.get("procedural_memory", 0),
-                "shared": by_type.get("shared_memory", 0),
+                "shared": by_type.get("memory_shared", 0),
             }
         except Exception:
             pass

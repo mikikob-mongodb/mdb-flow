@@ -218,7 +218,7 @@ def seed_demo_data(skip: bool = False) -> bool:
         logger.info(f"✅ Memory entries: {procedural + semantic + episodic}")
 
         # Count embeddings
-        embeddings_count = db.long_term_memory.count_documents({
+        embeddings_count = db.memory_long_term.count_documents({
             "user_id": "demo-user",
             "embedding": {"$exists": True}
         })

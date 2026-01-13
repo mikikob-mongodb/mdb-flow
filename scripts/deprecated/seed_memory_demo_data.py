@@ -555,8 +555,8 @@ def seed_memory_data(
     # Clear existing memory data
     print("\n🗑️  Clearing existing memory data...")
     db.memory_short_term.delete_many({"user_id": DEMO_USER_ID})
-    db.long_term_memory.delete_many({"user_id": DEMO_USER_ID})
-    db.shared_memory.delete_many({"user_id": DEMO_USER_ID})
+    db.memory_long_term.delete_many({"user_id": DEMO_USER_ID})
+    db.memory_shared.delete_many({"user_id": DEMO_USER_ID})
     print("✓ Existing demo user memory cleared")
 
     results = {}

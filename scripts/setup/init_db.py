@@ -43,9 +43,9 @@ COLLECTIONS = {
     "projects": "User projects with activity tracking",
 
     # Memory system collections
-    "short_term_memory": "Session context (2-hour TTL)",
-    "long_term_memory": "Persistent memory (episodic, semantic, procedural)",
-    "shared_memory": "Agent handoffs (5-minute TTL)",
+    "memory_short_term": "Session context (2-hour TTL)",
+    "memory_long_term": "Persistent memory (episodic, semantic, procedural)",
+    "memory_shared": "Agent handoffs (5-minute TTL)",
 
     # MCP Agent collections
     "tool_discoveries": "MCP tool usage learning and reuse",
@@ -160,7 +160,7 @@ def create_memory_indexes(db, verify_only: bool = False) -> Dict[str, List[str]]
     results = {}
 
     # SHORT-TERM MEMORY
-    short_term = db["short_term_memory"]
+    short_term = db["memory_short_term"]
     stm_created = []
 
     stm_indexes = [
@@ -179,12 +179,12 @@ def create_memory_indexes(db, verify_only: bool = False) -> Dict[str, List[str]]
         except OperationFailure:
             pass
 
-    results["short_term_memory"] = stm_created
+    results["memory_short_term"] = stm_created
 
     # LONG-TERM MEMORY
     # Note: Optimized index set after cleanup (see docs/architecture/index-dependency-analysis.md)
     # Removed 8 redundant single-field indexes covered by compounds
-    long_term = db["long_term_memory"]
+    long_term = db["memory_long_term"]
     ltm_created = []
 
     ltm_indexes = [
@@ -217,10 +217,10 @@ def create_memory_indexes(db, verify_only: bool = False) -> Dict[str, List[str]]
         except OperationFailure:
             pass
 
-    results["long_term_memory"] = ltm_created
+    results["memory_long_term"] = ltm_created
 
     # SHARED MEMORY
-    shared = db["shared_memory"]
+    shared = db["memory_shared"]
     sm_created = []
 
     sm_indexes = [
@@ -241,7 +241,7 @@ def create_memory_indexes(db, verify_only: bool = False) -> Dict[str, List[str]]
         except OperationFailure:
             pass
 
-    results["shared_memory"] = sm_created
+    results["memory_shared"] = sm_created
 
     return results
 
@@ -298,7 +298,7 @@ def create_vector_indexes(db, verify_only: bool = False) -> Dict[str, str]:
     vector_indexes = {
         "tasks": ("embedding", "vector_index", "Task semantic search"),
         "projects": ("embedding", "vector_index", "Project semantic search"),
-        "long_term_memory": ("embedding", "vector_index", "Memory semantic search"),
+        "memory_long_term": ("embedding", "vector_index", "Memory semantic search"),
         "tool_discoveries": ("request_embedding", "vector_index", "Tool discovery semantic search"),
     }
 
@@ -370,7 +370,7 @@ def print_vector_index_warning():
     logger.info("The following vector indexes should be created manually in MongoDB Atlas:")
     logger.info("  1. tasks.vector_index (1024 dimensions, cosine similarity)")
     logger.info("  2. projects.vector_index (1024 dimensions, cosine similarity)")
-    logger.info("  3. long_term_memory.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("  3. memory_long_term.vector_index (1024 dimensions, cosine similarity)")
     logger.info("  4. tool_discoveries.vector_index (1024 dimensions, cosine similarity)")
     logger.info("")
     logger.info("IMPORTANT: Index name MUST be 'vector_index' to match retrieval code expectations")
@@ -378,7 +378,7 @@ def print_vector_index_warning():
     logger.info("To create these indexes:")
     logger.info("  1. Go to MongoDB Atlas → Database → Search Indexes")
     logger.info("  2. Create Search Index → JSON Editor")
-    logger.info("  3. Select the collection (tasks, projects, long_term_memory, or tool_discoveries)")
+    logger.info("  3. Select the collection (tasks, projects, memory_long_term, or tool_discoveries)")
     logger.info("  4. Set Index Name to: vector_index")
     logger.info("  5. Use the following JSON definition:")
     logger.info("")
@@ -517,12 +517,12 @@ def main():
         logger.info(f"    ✅ {len(existing_projects)} indexes exist")
 
     # Memory indexes
-    logger.info("  short_term_memory:")
+    logger.info("  memory_short_term:")
     memory_results = create_memory_indexes(db, verify_only=args.verify)
-    existing_stm = existing_before.get("short_term_memory", set())
+    existing_stm = existing_before.get("memory_short_term", set())
 
     if not args.verify:
-        newly_created = [idx for idx in memory_results.get("short_term_memory", []) if idx not in existing_stm]
+        newly_created = [idx for idx in memory_results.get("memory_short_term", []) if idx not in existing_stm]
         for idx_name in newly_created:
             if "ttl" in idx_name.lower():
                 logger.info(f"    🆕 {idx_name} (created, TTL: 7200s)")
@@ -536,11 +536,11 @@ def main():
         if ttl_indexes:
             logger.info(f"    ✅ TTL indexes: {', '.join(ttl_indexes)}")
 
-    logger.info("  long_term_memory:")
-    existing_ltm = existing_before.get("long_term_memory", set())
+    logger.info("  memory_long_term:")
+    existing_ltm = existing_before.get("memory_long_term", set())
 
     if not args.verify:
-        newly_created = [idx for idx in memory_results.get("long_term_memory", []) if idx not in existing_ltm]
+        newly_created = [idx for idx in memory_results.get("memory_long_term", []) if idx not in existing_ltm]
         if newly_created:
             for idx_name in newly_created:
                 logger.info(f"    🆕 {idx_name} (created)")
@@ -549,11 +549,11 @@ def main():
     else:
         logger.info(f"    ✅ {len(existing_ltm)} indexes exist")
 
-    logger.info("  shared_memory:")
-    existing_sm = existing_before.get("shared_memory", set())
+    logger.info("  memory_shared:")
+    existing_sm = existing_before.get("memory_shared", set())
 
     if not args.verify:
-        newly_created = [idx for idx in memory_results.get("shared_memory", []) if idx not in existing_sm]
+        newly_created = [idx for idx in memory_results.get("memory_shared", []) if idx not in existing_sm]
         for idx_name in newly_created:
             if "ttl" in idx_name.lower():
                 logger.info(f"    🆕 {idx_name} (created, TTL: 300s)")
@@ -619,9 +619,9 @@ def main():
     else:
         collections_created = sum(1 for v in collection_results.values() if v == "created")
         total_indexes = (len(tasks_indexes) + len(projects_indexes) +
-                        len(memory_results.get("short_term_memory", [])) +
-                        len(memory_results.get("long_term_memory", [])) +
-                        len(memory_results.get("shared_memory", [])) +
+                        len(memory_results.get("memory_short_term", [])) +
+                        len(memory_results.get("memory_long_term", [])) +
+                        len(memory_results.get("memory_shared", [])) +
                         len(tool_indexes))
 
         if args.drop_first:

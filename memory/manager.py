@@ -48,7 +48,7 @@ class MemoryManager:
         # ═══════════════════════════════════════════════════════════════
         # SHORT-TERM MEMORY (TTL: 2 hours)
         # ═══════════════════════════════════════════════════════════════
-        self.short_term = self.db.short_term_memory
+        self.short_term = self.db.memory_short_term
 
         # Indexes (silently ignore if already exist with different options)
         try:
@@ -67,7 +67,7 @@ class MemoryManager:
         # ═══════════════════════════════════════════════════════════════
         # LONG-TERM MEMORY (persistent)
         # ═══════════════════════════════════════════════════════════════
-        self.long_term = self.db.long_term_memory
+        self.long_term = self.db.memory_long_term
 
         # Indexes
         try:
@@ -111,7 +111,7 @@ class MemoryManager:
         # ═══════════════════════════════════════════════════════════════
         # SHARED MEMORY (TTL: 5 minutes)
         # ═══════════════════════════════════════════════════════════════
-        self.shared = self.db.shared_memory
+        self.shared = self.db.memory_shared
 
         # Indexes
         try:
@@ -1250,7 +1250,7 @@ class MemoryManager:
         """
         Cache search/research results as knowledge.
 
-        Stored in long_term_memory with:
+        Stored in memory_long_term with:
         - memory_type: "semantic"
         - semantic_type: "knowledge"
 
@@ -1534,7 +1534,7 @@ class MemoryManager:
                 "episodic_memory": episodic_count,
                 "semantic_memory": semantic_count,
                 "procedural_memory": procedural_count,
-                "shared_memory": shared_pending
+                "memory_shared": shared_pending
             },
             "knowledge_cache": knowledge_stats,
             "action_counts": action_counts

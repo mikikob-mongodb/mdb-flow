@@ -1626,7 +1626,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         tools = [t for t in COORDINATOR_TOOLS if t["name"] != "get_action_history"]
 
         # Only include history tool if long-term memory is enabled
-        if self.optimizations.get("long_term_memory") and self.memory:
+        if self.optimizations.get("memory_long_term") and self.memory:
             # Find the history tool definition
             history_tool = next((t for t in COORDINATOR_TOOLS if t["name"] == "get_action_history"), None)
             if history_tool:
@@ -2290,7 +2290,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         self.current_chain_id = str(uuid.uuid4())
 
         # Set session on agents if session_id provided and shared memory enabled
-        if session_id and self.optimizations.get("shared_memory"):
+        if session_id and self.optimizations.get("memory_shared"):
             retrieval_agent.set_session(session_id)
             worklog_agent.set_session(session_id)
 

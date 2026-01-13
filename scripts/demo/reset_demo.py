@@ -67,9 +67,9 @@ import seed_demo_data
 COLLECTIONS_TO_CLEAR = [
     "projects",
     "tasks",
-    "short_term_memory",
-    "long_term_memory",
-    "shared_memory",
+    "memory_short_term",
+    "memory_long_term",
+    "memory_shared",
     "tool_discoveries",
 ]
 
@@ -235,7 +235,7 @@ def setup(db_instance, skip_embeddings: bool = False) -> Dict[str, int]:
 
         # Count embeddings generated
         if not skip_embeddings:
-            embeddings_count = db_instance.long_term_memory.count_documents({
+            embeddings_count = db_instance.memory_long_term.count_documents({
                 "user_id": DEMO_USER_ID,
                 "embedding": {"$exists": True}
             })
@@ -282,7 +282,7 @@ def verify(db_instance) -> bool:
 
     # Check GTM Roadmap Template
     try:
-        gtm_template = db_instance.long_term_memory.find_one({
+        gtm_template = db_instance.memory_long_term.find_one({
             "user_id": DEMO_USER_ID,
             "memory_type": "procedural",
             "rule_type": "template",
@@ -341,7 +341,7 @@ def verify(db_instance) -> bool:
 
     # Check User preferences in semantic memory
     try:
-        preferences_count = db_instance.long_term_memory.count_documents({
+        preferences_count = db_instance.memory_long_term.count_documents({
             "user_id": DEMO_USER_ID,
             "memory_type": "semantic",
             "semantic_type": "preference"

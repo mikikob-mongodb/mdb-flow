@@ -59,7 +59,7 @@ def test_disambiguation_flow():
         session_id=session_id,
         turn_number=1,
         optimizations={
-            "short_term_memory": True,
+            "memory_short_term": True,
             "context_injection": True
         },
         return_debug=True
@@ -117,9 +117,9 @@ def test_disambiguation_flow():
         session_id=session_id,
         turn_number=2,
         optimizations={
-            "short_term_memory": True,
+            "memory_short_term": True,
             "context_injection": True,
-            "long_term_memory": True
+            "memory_long_term": True
         },
         return_debug=True
     )
@@ -211,7 +211,7 @@ def test_disambiguation_flow():
         session_id=session_id,
         turn_number=3,
         optimizations={
-            "short_term_memory": True,
+            "memory_short_term": True,
             "context_injection": True
         },
         return_debug=True
@@ -251,7 +251,7 @@ def test_disambiguation_flow():
         session_id=session_id,
         turn_number=4,
         optimizations={
-            "short_term_memory": True,
+            "memory_short_term": True,
             "context_injection": True
         },
         return_debug=True

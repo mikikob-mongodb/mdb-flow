@@ -61,9 +61,9 @@ OPTIONAL_ENV_VARS = {
 REQUIRED_COLLECTIONS = [
     "tasks",
     "projects",
-    "short_term_memory",
-    "long_term_memory",
-    "shared_memory",
+    "memory_short_term",
+    "memory_long_term",
+    "memory_shared",
     "tool_discoveries",
 ]
 
@@ -225,7 +225,7 @@ def verify_database(tracker: VerificationTracker, quick: bool = False, verbose: 
 
         # Check if data exists
         total_docs = 0
-        for collection in ["projects", "tasks", "long_term_memory"]:
+        for collection in ["projects", "tasks", "memory_long_term"]:
             if collection in existing_collections:
                 total_docs += db[collection].count_documents({})
 

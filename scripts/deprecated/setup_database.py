@@ -189,19 +189,19 @@ def create_memory_indexes(db, verbose=True):
     if verbose:
         print("\n✅ All memory indexes created successfully!")
         print("\nMemory Collections:")
-        print("  - short_term_memory: Session context (2-hour TTL)")
-        print("  - long_term_memory: Action history (persistent, with vector search)")
-        print("  - shared_memory: Agent handoffs (5-minute TTL)")
+        print("  - memory_short_term: Session context (2-hour TTL)")
+        print("  - memory_long_term: Action history (persistent, with vector search)")
+        print("  - memory_shared: Agent handoffs (5-minute TTL)")
 
         # Show index summary
-        short_term = db["short_term_memory"]
-        long_term = db["long_term_memory"]
-        shared = db["shared_memory"]
+        short_term = db["memory_short_term"]
+        long_term = db["memory_long_term"]
+        shared = db["memory_shared"]
 
         print("\n📊 Memory Index Summary:")
-        print(f"  short_term_memory: {len(list(short_term.list_indexes()))} indexes")
-        print(f"  long_term_memory: {len(list(long_term.list_indexes()))} indexes")
-        print(f"  shared_memory: {len(list(shared.list_indexes()))} indexes")
+        print(f"  memory_short_term: {len(list(short_term.list_indexes()))} indexes")
+        print(f"  memory_long_term: {len(list(long_term.list_indexes()))} indexes")
+        print(f"  memory_shared: {len(list(shared.list_indexes()))} indexes")
 
 
 def print_vector_index_instructions():
@@ -283,7 +283,7 @@ def print_vector_index_instructions():
     print("  - Index names MUST match exactly:")
     print("    * 'task_embedding_index' (tasks collection)")
     print("    * 'project_embedding_index' (projects collection)")
-    print("    * 'memory_embeddings' (long_term_memory collection)")
+    print("    * 'memory_embeddings' (memory_long_term collection)")
     print("  - These names are used in the RetrievalAgent and MemoryManager code")
     print("  - numDimensions: 1024 (for Voyage AI voyage-3 model)")
     print("  - similarity: cosine (recommended for text embeddings)")
@@ -317,21 +317,21 @@ def list_existing_indexes(db):
         print(f"  - {index['name']}: {index.get('key', {})}")
 
     # Memory collection indexes
-    if "short_term_memory" in db.list_collection_names():
+    if "memory_short_term" in db.list_collection_names():
         print("\n🧠 Short-term Memory indexes:")
-        short_term = db["short_term_memory"]
+        short_term = db["memory_short_term"]
         for index in short_term.list_indexes():
             print(f"  - {index['name']}: {index.get('key', {})}")
 
-    if "long_term_memory" in db.list_collection_names():
+    if "memory_long_term" in db.list_collection_names():
         print("\n🧠 Long-term Memory indexes:")
-        long_term = db["long_term_memory"]
+        long_term = db["memory_long_term"]
         for index in long_term.list_indexes():
             print(f"  - {index['name']}: {index.get('key', {})}")
 
-    if "shared_memory" in db.list_collection_names():
+    if "memory_shared" in db.list_collection_names():
         print("\n🧠 Shared Memory indexes:")
-        shared = db["shared_memory"]
+        shared = db["memory_shared"]
         for index in shared.list_indexes():
             print(f"  - {index['name']}: {index.get('key', {})}")
 

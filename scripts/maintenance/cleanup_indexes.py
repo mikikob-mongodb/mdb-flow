@@ -7,7 +7,7 @@ Supports dry-run mode and phased cleanup.
 
 Usage:
     python scripts/maintenance/cleanup_indexes.py --dry-run              # Show what would be removed
-    python scripts/maintenance/cleanup_indexes.py --phase 1              # Remove Phase 1 indexes (long_term_memory)
+    python scripts/maintenance/cleanup_indexes.py --phase 1              # Remove Phase 1 indexes (memory_long_term)
     python scripts/maintenance/cleanup_indexes.py --phase 2              # Remove Phase 1 + Phase 2 indexes
     python scripts/maintenance/cleanup_indexes.py --phase 1 --force      # Skip confirmations
 """
@@ -36,7 +36,7 @@ load_dotenv()
 # =============================================================================
 
 PHASE_1_REMOVALS = {
-    "long_term_memory": [
+    "memory_long_term": [
         "type_1",                           # Covered by compounds (memory_type)
         "user_timestamp_index",             # Redundant - basic user+timestamp
         "user_category_timestamp_index",    # Redundant - rarely used
@@ -52,7 +52,7 @@ PHASE_2_REMOVALS = {
     "projects": [
         "idx_status",                       # Low cardinality, covered by idx_user_status
     ],
-    "shared_memory": [
+    "memory_shared": [
         "from_agent_1",                     # Covered by compounds
         "to_agent_1",                       # Covered by compounds
         "status_1",                         # Covered by session_id_1_target_agent_1_status_1
@@ -101,7 +101,7 @@ def backup_indexes(db, output_file="index_backup.json"):
         "collections": {}
     }
 
-    collections = ["long_term_memory", "tasks", "projects", "short_term_memory", "shared_memory", "tool_discoveries"]
+    collections = ["memory_long_term", "tasks", "projects", "memory_short_term", "memory_shared", "tool_discoveries"]
 
     for coll_name in collections:
         try:
@@ -201,7 +201,7 @@ def run_cleanup(db, phase, dry_run=False, force=False):
             "user_id_1_memory_type_1_semantic_type_1_key_1",  # semantic_lookup
             "user_id_1_memory_type_1_trigger_pattern_1",      # procedural_lookup
         ]
-        if not verify_compounds_exist(db, "long_term_memory", required_long_term):
+        if not verify_compounds_exist(db, "memory_long_term", required_long_term):
             logger.error("❌ Required compound indexes not found!")
             logger.error("   Run 'python scripts/setup/init_db.py' to create missing indexes.")
             if not force:
@@ -216,7 +216,7 @@ def run_cleanup(db, phase, dry_run=False, force=False):
         all_ok = True
         all_ok &= verify_compounds_exist(db, "tasks", required_tasks)
         all_ok &= verify_compounds_exist(db, "projects", required_projects)
-        all_ok &= verify_compounds_exist(db, "shared_memory", required_shared)
+        all_ok &= verify_compounds_exist(db, "memory_shared", required_shared)
 
         if not all_ok and not force:
             logger.error("❌ Required compound indexes not found!")
@@ -274,7 +274,7 @@ def run_cleanup(db, phase, dry_run=False, force=False):
 
 def list_current_indexes(db):
     """List all current indexes."""
-    collections = ["long_term_memory", "tasks", "projects", "short_term_memory", "shared_memory"]
+    collections = ["memory_long_term", "tasks", "projects", "memory_short_term", "memory_shared"]
 
     logger.info("")
     logger.info(f"{'='*70}")
@@ -306,7 +306,7 @@ Examples:
   # Show what would be removed (Phase 1)
   python scripts/maintenance/cleanup_indexes.py --dry-run --phase 1
 
-  # Remove Phase 1 indexes (long_term_memory only)
+  # Remove Phase 1 indexes (memory_long_term only)
   python scripts/maintenance/cleanup_indexes.py --phase 1
 
   # Remove Phase 1 + Phase 2 indexes
@@ -318,7 +318,7 @@ Examples:
   # List current indexes
   python scripts/maintenance/cleanup_indexes.py --list
 
-Phase 1 (8 indexes from long_term_memory):
+Phase 1 (8 indexes from memory_long_term):
   - Removes single-field indexes covered by compounds
   - Recommended first step
 
@@ -329,7 +329,7 @@ Phase 2 (3 additional indexes from tasks and projects):
     )
 
     parser.add_argument("--phase", type=int, choices=[1, 2], default=1,
-                       help="Cleanup phase (1=long_term_memory, 2=all)")
+                       help="Cleanup phase (1=memory_long_term, 2=all)")
     parser.add_argument("--dry-run", action="store_true",
                        help="Show what would be removed without executing")
     parser.add_argument("--force", action="store_true",
