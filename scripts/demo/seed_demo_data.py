@@ -3,14 +3,15 @@
 Demo Data Seeder for Flow Companion Presentation
 
 Seeds a complete demo dataset including:
-- Projects (2-3 realistic projects)
-- Tasks (5-8 tasks across projects)
-- Procedural Memory (GTM Template + Due Diligence Questions)
+- Projects (8 realistic projects: 4 active, 2 completed, 2 planned)
+- Tasks (38 tasks across all projects with varied status/priority)
+- Procedural Memory (GTM, Reference Architecture, Blog Post templates + Checklists)
 - Semantic Memory (User Preferences)
-- Episodic Memory (Past Actions)
+- Episodic Memory (12+ past actions spanning completed projects and tasks)
 
 This script is designed specifically for presentation demos with realistic,
-interconnected data that showcases the 5-tier memory system.
+interconnected data that showcases the 5-tier memory system and supports
+varied demo queries.
 
 CLI Usage:
     # Add demo data (idempotent)
@@ -91,141 +92,636 @@ def get_projects_data() -> List[Dict[str, Any]]:
     now = datetime.utcnow()
 
     return [
+        # In Progress Projects
         {
             "_id": ObjectId(),
             "name": "Project Alpha",
-            "description": "Q4 infrastructure modernization initiative",
+            "description": "Q4 infrastructure modernization initiative focusing on cloud migration and cost optimization",
             "status": "active",
             "created_at": now - timedelta(days=30),
+            "last_activity": now - timedelta(days=1),
             "user_id": DEMO_USER_ID,
-            "tags": ["infrastructure", "modernization"],
+            "tags": ["infrastructure", "modernization", "cloud"],
             "priority": "high"
         },
         {
             "_id": ObjectId(),
-            "name": "Q3 Fintech GTM",
-            "description": "Go-to-market strategy for fintech vertical",
-            "status": "completed",
-            "created_at": now - timedelta(days=90),
-            "completed_at": now - timedelta(days=45),
+            "name": "Voice Agent Architecture",
+            "description": "Real-time audio processing demo with streaming TTS and STT integration",
+            "status": "active",
+            "created_at": now - timedelta(days=5),
+            "last_activity": now - timedelta(hours=12),
             "user_id": DEMO_USER_ID,
-            "tags": ["gtm", "fintech", "strategy"],
+            "tags": ["voice", "real-time", "demo", "audio"],
             "priority": "high"
         },
         {
             "_id": ObjectId(),
-            "name": "AI Developer Outreach",
-            "description": "Developer engagement campaign for AI tools",
-            "status": "completed",
-            "created_at": now - timedelta(days=120),
-            "completed_at": now - timedelta(days=60),
+            "name": "LangGraph Integration",
+            "description": "Contributing MongoDB checkpointing backend to LangGraph ecosystem",
+            "status": "active",
+            "created_at": now - timedelta(days=20),
+            "last_activity": now - timedelta(days=2),
             "user_id": DEMO_USER_ID,
-            "tags": ["ai", "developer-relations", "outreach"],
+            "tags": ["open-source", "langgraph", "integration"],
             "priority": "medium"
+        },
+        {
+            "_id": ObjectId(),
+            "name": "Developer Day Presentation",
+            "description": "MongoDB Developer Day talk on agentic memory systems and retrieval patterns",
+            "status": "active",
+            "created_at": now - timedelta(days=15),
+            "last_activity": now,
+            "user_id": DEMO_USER_ID,
+            "tags": ["presentation", "speaking", "mongodb"],
+            "priority": "high"
+        },
+
+        # Recently Completed Projects
+        {
+            "_id": ObjectId(),
+            "name": "AgentOps Starter Kit",
+            "description": "Reference implementation for agent observability with OpenTelemetry and LangSmith",
+            "status": "completed",
+            "created_at": now - timedelta(days=35),
+            "completed_at": now - timedelta(days=7),
+            "last_activity": now - timedelta(days=7),
+            "user_id": DEMO_USER_ID,
+            "tags": ["observability", "agentops", "reference-architecture"],
+            "priority": "high"
+        },
+        {
+            "_id": ObjectId(),
+            "name": "Memory Engineering Blog Series",
+            "description": "Thought leadership content on context engineering and memory patterns for AI agents",
+            "status": "completed",
+            "created_at": now - timedelta(days=60),
+            "completed_at": now - timedelta(days=25),
+            "last_activity": now - timedelta(days=25),
+            "user_id": DEMO_USER_ID,
+            "tags": ["content", "blog", "memory", "thought-leadership"],
+            "priority": "medium"
+        },
+
+        # Planned Projects
+        {
+            "_id": ObjectId(),
+            "name": "Gaming NPC Memory Demo",
+            "description": "Domain-specific hero demo showcasing persistent NPC memory and relationship tracking for gaming vertical",
+            "status": "planned",
+            "created_at": now - timedelta(days=3),
+            "last_activity": now - timedelta(days=3),
+            "user_id": DEMO_USER_ID,
+            "tags": ["gaming", "demo", "vertical", "npc"],
+            "priority": "medium"
+        },
+        {
+            "_id": ObjectId(),
+            "name": "Education Tutor Demo",
+            "description": "Adaptive tutoring reference app with student knowledge tracking and personalized learning paths",
+            "status": "planned",
+            "created_at": now - timedelta(days=1),
+            "last_activity": now - timedelta(days=1),
+            "user_id": DEMO_USER_ID,
+            "tags": ["education", "demo", "adaptive-learning"],
+            "priority": "low"
         }
     ]
 
 
 def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Get task data for seeding."""
+    """Get task data for seeding - 35+ tasks across 8 projects."""
     now = datetime.utcnow()
 
-    # Find Project Alpha
-    project_alpha = next((p for p in projects if p["name"] == "Project Alpha"), None)
+    # Create project lookup
+    project_lookup = {p["name"]: p for p in projects}
 
-    if not project_alpha:
-        return []
+    tasks = []
 
-    return [
-        # Project Alpha tasks
-        {
-            "_id": ObjectId(),
-            "title": "Review infrastructure audit report",
-            "project": "Project Alpha",
-            "project_id": project_alpha["_id"],
-            "status": "done",
-            "priority": "high",
-            "created_at": now - timedelta(days=25),
-            "completed_at": now - timedelta(days=20),
-            "user_id": DEMO_USER_ID,
-            "description": "Analyze findings from Q3 infrastructure audit",
-            "tags": ["audit", "review"]
-        },
-        {
-            "_id": ObjectId(),
-            "title": "Schedule stakeholder alignment meeting",
-            "project": "Project Alpha",
-            "project_id": project_alpha["_id"],
-            "status": "done",
-            "priority": "medium",
-            "created_at": now - timedelta(days=20),
-            "completed_at": now - timedelta(days=15),
-            "user_id": DEMO_USER_ID,
-            "description": "Align key stakeholders on modernization approach",
-            "tags": ["meeting", "stakeholders"]
-        },
-        {
-            "_id": ObjectId(),
-            "title": "Draft migration timeline",
-            "project": "Project Alpha",
-            "project_id": project_alpha["_id"],
-            "status": "in_progress",
-            "priority": "high",
-            "created_at": now - timedelta(days=10),
-            "started_at": now - timedelta(days=8),
-            "user_id": DEMO_USER_ID,
-            "description": "Create phased migration timeline with dependencies",
-            "tags": ["planning", "timeline"]
-        },
-        {
-            "_id": ObjectId(),
-            "title": "Identify vendor dependencies",
-            "project": "Project Alpha",
-            "project_id": project_alpha["_id"],
-            "status": "todo",
-            "priority": "medium",
-            "created_at": now - timedelta(days=5),
-            "user_id": DEMO_USER_ID,
-            "description": "Map all third-party vendor dependencies",
-            "tags": ["vendors", "dependencies"]
-        },
-        {
-            "_id": ObjectId(),
-            "title": "Cost-benefit analysis",
-            "project": "Project Alpha",
-            "project_id": project_alpha["_id"],
-            "status": "todo",
-            "priority": "high",
-            "created_at": now - timedelta(days=3),
-            "user_id": DEMO_USER_ID,
-            "description": "Quantify expected ROI and TCO reduction",
-            "tags": ["analysis", "roi"]
-        },
-        {
-            "_id": ObjectId(),
-            "title": "Security compliance review",
-            "project": "Project Alpha",
-            "project_id": project_alpha["_id"],
-            "status": "todo",
-            "priority": "high",
-            "created_at": now - timedelta(days=2),
-            "user_id": DEMO_USER_ID,
-            "description": "Ensure modernization meets SOC2 requirements",
-            "tags": ["security", "compliance"]
-        },
-        {
-            "_id": ObjectId(),
-            "title": "Draft communication plan",
-            "project": "Project Alpha",
-            "project_id": project_alpha["_id"],
-            "status": "todo",
-            "priority": "low",
-            "created_at": now - timedelta(days=1),
-            "user_id": DEMO_USER_ID,
-            "description": "Create internal communication strategy for rollout",
-            "tags": ["communication", "planning"]
-        }
-    ]
+    # ==================== Project Alpha (6 tasks) ====================
+    if "Project Alpha" in project_lookup:
+        p = project_lookup["Project Alpha"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Review infrastructure audit report",
+                "project": "Project Alpha",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "high",
+                "created_at": now - timedelta(days=25),
+                "completed_at": now - timedelta(days=20),
+                "user_id": DEMO_USER_ID,
+                "description": "Analyze findings from Q3 infrastructure audit",
+                "tags": ["audit", "review"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Schedule stakeholder alignment meeting",
+                "project": "Project Alpha",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "medium",
+                "created_at": now - timedelta(days=20),
+                "completed_at": now - timedelta(days=15),
+                "user_id": DEMO_USER_ID,
+                "description": "Align key stakeholders on modernization approach",
+                "tags": ["meeting", "stakeholders"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Draft migration timeline",
+                "project": "Project Alpha",
+                "project_id": p["_id"],
+                "status": "in_progress",
+                "priority": "high",
+                "created_at": now - timedelta(days=10),
+                "started_at": now - timedelta(days=8),
+                "user_id": DEMO_USER_ID,
+                "description": "Create phased migration timeline with dependencies",
+                "tags": ["planning", "timeline"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Cost-benefit analysis",
+                "project": "Project Alpha",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "high",
+                "created_at": now - timedelta(days=3),
+                "user_id": DEMO_USER_ID,
+                "description": "Quantify expected ROI and TCO reduction",
+                "tags": ["analysis", "roi"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Security compliance review",
+                "project": "Project Alpha",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "high",
+                "created_at": now - timedelta(days=2),
+                "user_id": DEMO_USER_ID,
+                "description": "Ensure modernization meets SOC2 requirements",
+                "tags": ["security", "compliance"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Draft communication plan",
+                "project": "Project Alpha",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "low",
+                "created_at": now - timedelta(days=1),
+                "user_id": DEMO_USER_ID,
+                "description": "Create internal communication strategy for rollout",
+                "tags": ["communication", "planning"]
+            }
+        ])
+
+    # ==================== Voice Agent Architecture (7 tasks) ====================
+    if "Voice Agent Architecture" in project_lookup:
+        p = project_lookup["Voice Agent Architecture"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Build voice agent reference architecture",
+                "project": "Voice Agent Architecture",
+                "project_id": p["_id"],
+                "status": "in_progress",
+                "priority": "high",
+                "created_at": now - timedelta(days=5),
+                "started_at": now - timedelta(days=4),
+                "user_id": DEMO_USER_ID,
+                "description": "Design streaming architecture with WebSocket integration",
+                "tags": ["architecture", "websocket", "streaming"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Integrate Deepgram STT",
+                "project": "Voice Agent Architecture",
+                "project_id": p["_id"],
+                "status": "in_progress",
+                "priority": "high",
+                "created_at": now - timedelta(days=4),
+                "started_at": now - timedelta(days=3),
+                "user_id": DEMO_USER_ID,
+                "description": "Set up real-time speech-to-text with Deepgram API",
+                "tags": ["stt", "deepgram", "integration"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Implement ElevenLabs TTS streaming",
+                "project": "Voice Agent Architecture",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "high",
+                "created_at": now - timedelta(days=3),
+                "user_id": DEMO_USER_ID,
+                "description": "Integrate ElevenLabs streaming TTS for voice responses",
+                "tags": ["tts", "elevenlabs", "audio"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Build conversation state management",
+                "project": "Voice Agent Architecture",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=2),
+                "user_id": DEMO_USER_ID,
+                "description": "Track turn-taking, interruptions, and conversation context",
+                "tags": ["state-management", "conversation"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Add voice activity detection",
+                "project": "Voice Agent Architecture",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=1),
+                "user_id": DEMO_USER_ID,
+                "description": "Implement VAD for better turn-taking detection",
+                "tags": ["vad", "audio-processing"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Create demo web interface",
+                "project": "Voice Agent Architecture",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "low",
+                "created_at": now - timedelta(days=1),
+                "user_id": DEMO_USER_ID,
+                "description": "Build simple web UI for voice demo",
+                "tags": ["frontend", "demo"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Write architecture documentation",
+                "project": "Voice Agent Architecture",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "low",
+                "created_at": now - timedelta(hours=12),
+                "user_id": DEMO_USER_ID,
+                "description": "Document architecture patterns and integration guide",
+                "tags": ["documentation"]
+            }
+        ])
+
+    # ==================== LangGraph Integration (5 tasks) ====================
+    if "LangGraph Integration" in project_lookup:
+        p = project_lookup["LangGraph Integration"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Submit PR to LangGraph checkpointing",
+                "project": "LangGraph Integration",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "high",
+                "created_at": now - timedelta(days=15),
+                "completed_at": now - timedelta(days=1),
+                "user_id": DEMO_USER_ID,
+                "description": "Submitted MongoDB checkpointer implementation to LangGraph",
+                "tags": ["open-source", "pr", "code"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Implement CrewAI memory patterns",
+                "project": "LangGraph Integration",
+                "project_id": p["_id"],
+                "status": "in_progress",
+                "priority": "medium",
+                "created_at": now - timedelta(days=10),
+                "started_at": now - timedelta(days=8),
+                "user_id": DEMO_USER_ID,
+                "description": "Add MongoDB support to CrewAI memory system",
+                "tags": ["crewai", "memory", "integration"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Write integration examples",
+                "project": "LangGraph Integration",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=5),
+                "user_id": DEMO_USER_ID,
+                "description": "Create code examples for MongoDB + LangGraph usage",
+                "tags": ["examples", "documentation"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Add unit tests for checkpointer",
+                "project": "LangGraph Integration",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "high",
+                "created_at": now - timedelta(days=3),
+                "user_id": DEMO_USER_ID,
+                "description": "Comprehensive test coverage for MongoDB checkpointer",
+                "tags": ["testing", "quality"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Review PR feedback",
+                "project": "LangGraph Integration",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=2),
+                "user_id": DEMO_USER_ID,
+                "description": "Address reviewer comments on PR",
+                "tags": ["code-review", "collaboration"]
+            }
+        ])
+
+    # ==================== Developer Day Presentation (5 tasks) ====================
+    if "Developer Day Presentation" in project_lookup:
+        p = project_lookup["Developer Day Presentation"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Draft Developer Day presentation slides",
+                "project": "Developer Day Presentation",
+                "project_id": p["_id"],
+                "status": "in_progress",
+                "priority": "high",
+                "created_at": now - timedelta(days=12),
+                "started_at": now - timedelta(days=10),
+                "user_id": DEMO_USER_ID,
+                "description": "Create slide deck covering memory systems and retrieval patterns",
+                "tags": ["presentation", "slides", "speaking"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Prepare live demo script",
+                "project": "Developer Day Presentation",
+                "project_id": p["_id"],
+                "status": "in_progress",
+                "priority": "high",
+                "created_at": now - timedelta(days=8),
+                "started_at": now - timedelta(days=6),
+                "user_id": DEMO_USER_ID,
+                "description": "Write and practice 7-command demo sequence",
+                "tags": ["demo", "script", "practice"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Create code examples repository",
+                "project": "Developer Day Presentation",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=5),
+                "user_id": DEMO_USER_ID,
+                "description": "Set up GitHub repo with demo code for attendees",
+                "tags": ["code", "github", "examples"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Schedule dry-run with team",
+                "project": "Developer Day Presentation",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "high",
+                "created_at": now - timedelta(days=2),
+                "user_id": DEMO_USER_ID,
+                "description": "Practice full presentation with internal team",
+                "tags": ["practice", "rehearsal"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Prepare Q&A talking points",
+                "project": "Developer Day Presentation",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=1),
+                "user_id": DEMO_USER_ID,
+                "description": "Anticipate questions and prepare answers",
+                "tags": ["qa", "preparation"]
+            }
+        ])
+
+    # ==================== AgentOps Starter Kit (5 tasks - all done) ====================
+    if "AgentOps Starter Kit" in project_lookup:
+        p = project_lookup["AgentOps Starter Kit"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Record AgentOps webinar",
+                "project": "AgentOps Starter Kit",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "high",
+                "created_at": now - timedelta(days=30),
+                "completed_at": now - timedelta(days=3),
+                "user_id": DEMO_USER_ID,
+                "description": "Record technical webinar on agent observability patterns",
+                "tags": ["webinar", "video", "content"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Publish 'What Is AgentOps?' article",
+                "project": "AgentOps Starter Kit",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "medium",
+                "created_at": now - timedelta(days=28),
+                "completed_at": now - timedelta(days=14),
+                "user_id": DEMO_USER_ID,
+                "description": "Educational article explaining agent operations fundamentals",
+                "tags": ["article", "content", "education"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Implement OpenTelemetry tracing",
+                "project": "AgentOps Starter Kit",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "high",
+                "created_at": now - timedelta(days=25),
+                "completed_at": now - timedelta(days=10),
+                "user_id": DEMO_USER_ID,
+                "description": "Add distributed tracing with OpenTelemetry",
+                "tags": ["observability", "tracing", "code"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Integrate LangSmith for evaluation",
+                "project": "AgentOps Starter Kit",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "medium",
+                "created_at": now - timedelta(days=20),
+                "completed_at": now - timedelta(days=8),
+                "user_id": DEMO_USER_ID,
+                "description": "Set up LangSmith for agent evaluation and debugging",
+                "tags": ["langsmith", "evaluation", "debugging"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Write reference architecture docs",
+                "project": "AgentOps Starter Kit",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "medium",
+                "created_at": now - timedelta(days=15),
+                "completed_at": now - timedelta(days=7),
+                "user_id": DEMO_USER_ID,
+                "description": "Comprehensive architecture guide with best practices",
+                "tags": ["documentation", "architecture"]
+            }
+        ])
+
+    # ==================== Memory Engineering Blog Series (4 tasks - all done) ====================
+    if "Memory Engineering Blog Series" in project_lookup:
+        p = project_lookup["Memory Engineering Blog Series"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Write Memory Engineering blog post",
+                "project": "Memory Engineering Blog Series",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "high",
+                "created_at": now - timedelta(days=55),
+                "completed_at": now - timedelta(days=30),
+                "user_id": DEMO_USER_ID,
+                "description": "Foundational post on memory patterns for AI agents",
+                "tags": ["blog", "writing", "content"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Write multimodal AI tutorial",
+                "project": "Memory Engineering Blog Series",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "medium",
+                "created_at": now - timedelta(days=50),
+                "completed_at": now - timedelta(days=28),
+                "user_id": DEMO_USER_ID,
+                "description": "Tutorial on building multimodal AI applications",
+                "tags": ["tutorial", "multimodal", "ai"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Publish vector search patterns article",
+                "project": "Memory Engineering Blog Series",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "medium",
+                "created_at": now - timedelta(days=45),
+                "completed_at": now - timedelta(days=26),
+                "user_id": DEMO_USER_ID,
+                "description": "Deep dive on vector search and hybrid retrieval",
+                "tags": ["vector-search", "rag", "article"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Create context engineering guide",
+                "project": "Memory Engineering Blog Series",
+                "project_id": p["_id"],
+                "status": "done",
+                "priority": "high",
+                "created_at": now - timedelta(days=40),
+                "completed_at": now - timedelta(days=25),
+                "user_id": DEMO_USER_ID,
+                "description": "Comprehensive guide on prompt and context optimization",
+                "tags": ["context", "prompting", "guide"]
+            }
+        ])
+
+    # ==================== Gaming NPC Memory Demo (3 tasks - planned) ====================
+    if "Gaming NPC Memory Demo" in project_lookup:
+        p = project_lookup["Gaming NPC Memory Demo"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Create gaming NPC memory schema",
+                "project": "Gaming NPC Memory Demo",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=3),
+                "user_id": DEMO_USER_ID,
+                "description": "Design schema for NPC relationships and memory",
+                "tags": ["schema", "design", "gaming"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Build NPC dialogue system",
+                "project": "Gaming NPC Memory Demo",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "medium",
+                "created_at": now - timedelta(days=2),
+                "user_id": DEMO_USER_ID,
+                "description": "Implement context-aware NPC conversations",
+                "tags": ["dialogue", "llm", "gaming"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Demo at gaming conference",
+                "project": "Gaming NPC Memory Demo",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "low",
+                "created_at": now - timedelta(days=1),
+                "user_id": DEMO_USER_ID,
+                "description": "Present NPC memory demo at industry event",
+                "tags": ["demo", "conference", "speaking"]
+            }
+        ])
+
+    # ==================== Education Tutor Demo (3 tasks - planned) ====================
+    if "Education Tutor Demo" in project_lookup:
+        p = project_lookup["Education Tutor Demo"]
+        tasks.extend([
+            {
+                "_id": ObjectId(),
+                "title": "Design student knowledge tracking",
+                "project": "Education Tutor Demo",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "low",
+                "created_at": now - timedelta(days=1),
+                "user_id": DEMO_USER_ID,
+                "description": "Schema for tracking student understanding and progress",
+                "tags": ["education", "schema", "tracking"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Build adaptive learning algorithm",
+                "project": "Education Tutor Demo",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "low",
+                "created_at": now - timedelta(hours=20),
+                "user_id": DEMO_USER_ID,
+                "description": "Algorithm for personalized learning path generation",
+                "tags": ["algorithm", "adaptive", "ai"]
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Schedule quarterly product feedback session",
+                "project": "Education Tutor Demo",
+                "project_id": p["_id"],
+                "status": "todo",
+                "priority": "low",
+                "created_at": now - timedelta(hours=12),
+                "user_id": DEMO_USER_ID,
+                "description": "Gather feedback from educators on demo",
+                "tags": ["feedback", "research", "planning"]
+            }
+        ])
+
+    return tasks
 
 
 def get_procedural_memory_data() -> List[Dict[str, Any]]:
@@ -240,7 +736,7 @@ def get_procedural_memory_data() -> List[Dict[str, Any]]:
             "rule_type": "template",
             "name": "GTM Roadmap Template",
             "description": "Standard go-to-market project template with research-backed task generation",
-            "trigger": "create_gtm_project",
+            "trigger_pattern": "create.*gtm|go.to.market.*project",
             "template": {
                 "phases": [
                     {
@@ -275,8 +771,118 @@ def get_procedural_memory_data() -> List[Dict[str, Any]]:
             "times_used": 3,
             "success_rate": 1.0,
             "created_at": now - timedelta(days=180),
-            "last_used": now - timedelta(days=45),
-            "updated_at": now - timedelta(days=45)
+            "last_used": now - timedelta(days=90),
+            "updated_at": now - timedelta(days=90)
+        },
+
+        # Reference Architecture Template
+        {
+            "user_id": DEMO_USER_ID,
+            "memory_type": "procedural",
+            "rule_type": "template",
+            "name": "Reference Architecture Template",
+            "description": "Standard template for building technical reference implementations and demos",
+            "trigger_pattern": "reference.*architecture|demo.*project|starter.*kit",
+            "template": {
+                "phases": [
+                    {
+                        "name": "Design",
+                        "tasks": [
+                            "Define architecture patterns and components",
+                            "Create system design diagrams",
+                            "Identify key technologies and dependencies",
+                            "Document technical requirements"
+                        ]
+                    },
+                    {
+                        "name": "Implement",
+                        "tasks": [
+                            "Build core functionality",
+                            "Integrate third-party services",
+                            "Add observability and logging",
+                            "Implement error handling and validation"
+                        ]
+                    },
+                    {
+                        "name": "Document",
+                        "tasks": [
+                            "Write comprehensive README",
+                            "Create architecture decision records",
+                            "Document API endpoints and usage",
+                            "Add code comments and examples"
+                        ]
+                    },
+                    {
+                        "name": "Demo",
+                        "tasks": [
+                            "Create demo scenarios and scripts",
+                            "Build sample applications",
+                            "Record walkthrough videos",
+                            "Prepare presentation materials"
+                        ]
+                    }
+                ]
+            },
+            "times_used": 2,
+            "success_rate": 1.0,
+            "created_at": now - timedelta(days=150),
+            "last_used": now - timedelta(days=35),
+            "updated_at": now - timedelta(days=35)
+        },
+
+        # Blog Post Template
+        {
+            "user_id": DEMO_USER_ID,
+            "memory_type": "procedural",
+            "rule_type": "template",
+            "name": "Blog Post Template",
+            "description": "Standard workflow for creating technical blog posts and articles",
+            "trigger_pattern": "blog.*post|write.*article|content.*creation",
+            "template": {
+                "phases": [
+                    {
+                        "name": "Outline",
+                        "tasks": [
+                            "Define target audience and learning objectives",
+                            "Research topic and gather technical details",
+                            "Create content outline with key sections",
+                            "Identify code examples and diagrams needed"
+                        ]
+                    },
+                    {
+                        "name": "Draft",
+                        "tasks": [
+                            "Write introduction and hook",
+                            "Develop main content sections",
+                            "Add code examples and screenshots",
+                            "Write conclusion and call-to-action"
+                        ]
+                    },
+                    {
+                        "name": "Review",
+                        "tasks": [
+                            "Technical accuracy review",
+                            "Editorial and style review",
+                            "Test all code examples",
+                            "Optimize for SEO and readability"
+                        ]
+                    },
+                    {
+                        "name": "Publish",
+                        "tasks": [
+                            "Final formatting and layout",
+                            "Add images and metadata",
+                            "Publish to blog platform",
+                            "Promote on social channels"
+                        ]
+                    }
+                ]
+            },
+            "times_used": 5,
+            "success_rate": 0.95,
+            "created_at": now - timedelta(days=200),
+            "last_used": now - timedelta(days=30),
+            "updated_at": now - timedelta(days=30)
         },
 
         # Market Research Questions Checklist
@@ -286,7 +892,7 @@ def get_procedural_memory_data() -> List[Dict[str, Any]]:
             "rule_type": "checklist",
             "name": "Market Research Questions",
             "description": "Standard questions to answer when researching a new market",
-            "trigger": "market_research",
+            "trigger_pattern": "market.*research|competitive.*analysis",
             "questions": [
                 "What is the total addressable market (TAM)?",
                 "Who are the top 3-5 competitors?",
@@ -360,84 +966,288 @@ def get_semantic_memory_data() -> List[Dict[str, Any]]:
 
 
 def get_episodic_memory_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Get episodic memory (past actions) for seeding."""
+    """Get episodic memory (past actions) for seeding - 10+ varied actions."""
     now = datetime.utcnow()
 
-    # Find Q3 Fintech GTM project
-    fintech_project = next((p for p in projects if p["name"] == "Q3 Fintech GTM"), None)
+    # Create project lookup
+    project_lookup = {p["name"]: p for p in projects}
 
-    actions = [
-        {
+    actions = []
+
+    # ==================== AgentOps Starter Kit Actions ====================
+    if "AgentOps Starter Kit" in project_lookup:
+        p = project_lookup["AgentOps Starter Kit"]
+        actions.extend([
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-agentops-1",
+                "memory_type": "episodic",
+                "action_type": "created_project",
+                "entity_type": "project",
+                "entity": {
+                    "project_name": "AgentOps Starter Kit",
+                    "project_id": str(p["_id"]),
+                    "used_template": "Reference Architecture Template",
+                    "tasks_generated": 5
+                },
+                "metadata": {
+                    "template_used": True,
+                    "phases_created": ["Design", "Implement", "Document", "Demo"],
+                    "duration_ms": 1500
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=35),
+                "created_at": now - timedelta(days=35)
+            },
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-agentops-2",
+                "memory_type": "episodic",
+                "action_type": "completed_task",
+                "entity_type": "task",
+                "entity": {
+                    "task_title": "Record AgentOps webinar",
+                    "project_name": "AgentOps Starter Kit",
+                    "priority": "high"
+                },
+                "metadata": {
+                    "duration_days": 27,
+                    "content_type": "video",
+                    "reach": "500+ views"
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=3),
+                "created_at": now - timedelta(days=3)
+            },
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-agentops-3",
+                "memory_type": "episodic",
+                "action_type": "completed_project",
+                "entity_type": "project",
+                "entity": {
+                    "project_name": "AgentOps Starter Kit",
+                    "project_id": str(p["_id"]),
+                    "duration_days": 28,
+                    "tasks_completed": 5
+                },
+                "metadata": {
+                    "completion_rate": 1.0,
+                    "on_schedule": True,
+                    "key_outcomes": [
+                        "Published reference architecture",
+                        "Recorded educational webinar",
+                        "Integrated OpenTelemetry tracing"
+                    ]
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=7),
+                "created_at": now - timedelta(days=7)
+            }
+        ])
+
+    # ==================== Memory Engineering Blog Series Actions ====================
+    if "Memory Engineering Blog Series" in project_lookup:
+        p = project_lookup["Memory Engineering Blog Series"]
+        actions.extend([
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-blog-1",
+                "memory_type": "episodic",
+                "action_type": "created_project",
+                "entity_type": "project",
+                "entity": {
+                    "project_name": "Memory Engineering Blog Series",
+                    "project_id": str(p["_id"]),
+                    "used_template": "Blog Post Template",
+                    "tasks_generated": 4
+                },
+                "metadata": {
+                    "template_used": True,
+                    "phases_created": ["Outline", "Draft", "Review", "Publish"],
+                    "series": True
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=60),
+                "created_at": now - timedelta(days=60)
+            },
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-blog-2",
+                "memory_type": "episodic",
+                "action_type": "completed_task",
+                "entity_type": "task",
+                "entity": {
+                    "task_title": "Write Memory Engineering blog post",
+                    "project_name": "Memory Engineering Blog Series",
+                    "priority": "high"
+                },
+                "metadata": {
+                    "word_count": 2500,
+                    "content_type": "blog",
+                    "topic": "memory patterns for AI agents"
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=30),
+                "created_at": now - timedelta(days=30)
+            },
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-blog-3",
+                "memory_type": "episodic",
+                "action_type": "completed_project",
+                "entity_type": "project",
+                "entity": {
+                    "project_name": "Memory Engineering Blog Series",
+                    "project_id": str(p["_id"]),
+                    "duration_days": 35,
+                    "tasks_completed": 4
+                },
+                "metadata": {
+                    "completion_rate": 1.0,
+                    "posts_published": 4,
+                    "total_views": "5000+",
+                    "key_topics": ["memory patterns", "multimodal AI", "vector search", "context engineering"]
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=25),
+                "created_at": now - timedelta(days=25)
+            }
+        ])
+
+    # ==================== LangGraph Integration Actions ====================
+    if "LangGraph Integration" in project_lookup:
+        p = project_lookup["LangGraph Integration"]
+        actions.append({
             "user_id": DEMO_USER_ID,
-            "session_id": f"{DEMO_SESSION_PREFIX}-1",
+            "session_id": f"{DEMO_SESSION_PREFIX}-langgraph-1",
             "memory_type": "episodic",
-            "action_type": "created_project",
-            "entity_type": "project",
+            "action_type": "completed_task",
+            "entity_type": "task",
             "entity": {
-                "project_name": "Q3 Fintech GTM",
-                "project_id": str(fintech_project["_id"]) if fintech_project else None,
-                "used_template": "GTM Roadmap Template",
-                "tasks_generated": 12
+                "task_title": "Submit PR to LangGraph checkpointing",
+                "project_name": "LangGraph Integration",
+                "priority": "high"
             },
             "metadata": {
-                "template_used": True,
-                "phases_created": ["Research", "Strategy", "Execution"],
-                "duration_ms": 1200
+                "pr_url": "github.com/langchain-ai/langgraph/pull/xxx",
+                "lines_changed": 450,
+                "contribution_type": "feature"
             },
             "outcome": "success",
             "source_agent": "coordinator",
             "triggered_by": "user",
-            "timestamp": now - timedelta(days=90),
-            "created_at": now - timedelta(days=90)
-        },
+            "timestamp": now - timedelta(days=1),
+            "created_at": now - timedelta(days=1)
+        })
+
+    # ==================== Project Alpha Actions ====================
+    if "Project Alpha" in project_lookup:
+        p = project_lookup["Project Alpha"]
+        actions.extend([
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-alpha-1",
+                "memory_type": "episodic",
+                "action_type": "completed_task",
+                "entity_type": "task",
+                "entity": {
+                    "task_title": "Review infrastructure audit report",
+                    "project_name": "Project Alpha",
+                    "priority": "high"
+                },
+                "metadata": {
+                    "findings_count": 12,
+                    "critical_issues": 3,
+                    "review_duration_hours": 4
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=20),
+                "created_at": now - timedelta(days=20)
+            },
+            {
+                "user_id": DEMO_USER_ID,
+                "session_id": f"{DEMO_SESSION_PREFIX}-alpha-2",
+                "memory_type": "episodic",
+                "action_type": "completed_task",
+                "entity_type": "task",
+                "entity": {
+                    "task_title": "Schedule stakeholder alignment meeting",
+                    "project_name": "Project Alpha",
+                    "priority": "medium"
+                },
+                "metadata": {
+                    "attendees_count": 8,
+                    "stakeholder_groups": ["engineering", "product", "finance"],
+                    "alignment_achieved": True
+                },
+                "outcome": "success",
+                "source_agent": "coordinator",
+                "triggered_by": "user",
+                "timestamp": now - timedelta(days=15),
+                "created_at": now - timedelta(days=15)
+            }
+        ])
+
+    # ==================== Template Usage Actions ====================
+    actions.extend([
         {
             "user_id": DEMO_USER_ID,
-            "session_id": f"{DEMO_SESSION_PREFIX}-2",
-            "memory_type": "episodic",
-            "action_type": "completed_project",
-            "entity_type": "project",
-            "entity": {
-                "project_name": "Q3 Fintech GTM",
-                "project_id": str(fintech_project["_id"]) if fintech_project else None,
-                "duration_days": 45,
-                "tasks_completed": 12
-            },
-            "metadata": {
-                "completion_rate": 1.0,
-                "on_schedule": True,
-                "key_outcomes": [
-                    "Identified $50M TAM",
-                    "Secured 3 launch partners",
-                    "Published 5 case studies"
-                ]
-            },
-            "outcome": "success",
-            "source_agent": "coordinator",
-            "triggered_by": "user",
-            "timestamp": now - timedelta(days=45),
-            "created_at": now - timedelta(days=45)
-        },
-        {
-            "user_id": DEMO_USER_ID,
-            "session_id": f"{DEMO_SESSION_PREFIX}-3",
+            "session_id": f"{DEMO_SESSION_PREFIX}-template-1",
             "memory_type": "episodic",
             "action_type": "template_applied",
             "entity_type": "template",
             "entity": {
-                "template_name": "GTM Roadmap Template",
-                "applied_to_project": "AI Developer Outreach"
+                "template_name": "Reference Architecture Template",
+                "applied_to_project": "AgentOps Starter Kit"
             },
             "metadata": {
-                "tasks_generated": 11,
-                "customizations": ["Added developer-specific channels", "Included technical content phase"]
+                "tasks_generated": 16,
+                "phases_used": ["Design", "Implement", "Document", "Demo"],
+                "customizations": ["Added OpenTelemetry integration", "Included LangSmith setup"]
             },
             "outcome": "success",
             "source_agent": "coordinator",
             "triggered_by": "user",
-            "timestamp": now - timedelta(days=120),
-            "created_at": now - timedelta(days=120)
+            "timestamp": now - timedelta(days=35),
+            "created_at": now - timedelta(days=35)
+        },
+        {
+            "user_id": DEMO_USER_ID,
+            "session_id": f"{DEMO_SESSION_PREFIX}-template-2",
+            "memory_type": "episodic",
+            "action_type": "template_applied",
+            "entity_type": "template",
+            "entity": {
+                "template_name": "Blog Post Template",
+                "applied_to_project": "Memory Engineering Blog Series"
+            },
+            "metadata": {
+                "tasks_generated": 16,
+                "posts_planned": 4,
+                "phases_used": ["Outline", "Draft", "Review", "Publish"]
+            },
+            "outcome": "success",
+            "source_agent": "coordinator",
+            "triggered_by": "user",
+            "timestamp": now - timedelta(days=60),
+            "created_at": now - timedelta(days=60)
         }
-    ]
+    ])
 
     return actions
 
@@ -820,7 +1630,7 @@ def verify_seed(db) -> Dict[str, Any]:
         "memory_type": "episodic"
     })
 
-    # Check critical items
+    # Check critical items for expanded demo data
     gtm_template = db.long_term_memory.find_one({
         "user_id": DEMO_USER_ID,
         "memory_type": "procedural",
@@ -832,6 +1642,17 @@ def verify_seed(db) -> Dict[str, Any]:
         results["missing"].append("GTM Roadmap Template")
         results["success"] = False
 
+    ref_arch_template = db.long_term_memory.find_one({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "procedural",
+        "rule_type": "template",
+        "name": "Reference Architecture Template"
+    })
+    results["critical_items"]["ref_arch_template"] = ref_arch_template is not None
+    if not ref_arch_template:
+        results["missing"].append("Reference Architecture Template")
+        results["success"] = False
+
     project_alpha = db.projects.find_one({
         "user_id": DEMO_USER_ID,
         "name": "Project Alpha"
@@ -841,14 +1662,26 @@ def verify_seed(db) -> Dict[str, Any]:
         results["missing"].append("Project Alpha")
         results["success"] = False
 
-    q3_gtm = db.projects.find_one({
+    # Check for at least one completed project
+    completed_projects = db.projects.count_documents({
         "user_id": DEMO_USER_ID,
-        "name": "Q3 Fintech GTM"
+        "status": "completed"
     })
-    results["critical_items"]["q3_gtm"] = q3_gtm is not None
-    if not q3_gtm:
-        results["missing"].append("Q3 Fintech GTM")
+    results["critical_items"]["completed_projects"] = completed_projects > 0
+    if completed_projects == 0:
+        results["missing"].append("Completed projects")
         results["success"] = False
+
+    # Check for varied task statuses
+    task_statuses = ["todo", "in_progress", "done"]
+    for status in task_statuses:
+        count = db.tasks.count_documents({
+            "user_id": DEMO_USER_ID,
+            "status": status
+        })
+        if count == 0:
+            results["missing"].append(f"Tasks with status: {status}")
+            results["success"] = False
 
     user_preferences = db.long_term_memory.count_documents({
         "user_id": DEMO_USER_ID,
