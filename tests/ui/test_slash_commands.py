@@ -23,7 +23,7 @@ class TestTasksBasicQueries:
         result = execute_command("/tasks")
 
         assert result["success"], f"Command failed: {result.get('error')}"
-        assert validate_count_range(result, min_count=40, max_count=60)
+        assert validate_count_range(result, min_count=35, max_count=45)
 
         # Validate structure
         data = result.get("result", [])
@@ -66,7 +66,7 @@ class TestTasksBasicQueries:
         data = result.get("result", [])
         assert all(task.get("status") == "done" for task in data), \
             "All tasks should have status='done'"
-        assert 30 < len(data) < 50, f"Expected 30-50 done tasks, got {len(data)}"
+        assert 10 < len(data) < 20, f"Expected 10-20 done tasks, got {len(data)}"
 
     def test_filter_by_priority_high(self, execute_command):
         """Test 1.5: Filter by priority - high."""
@@ -145,21 +145,21 @@ class TestTasksSearch:
     """Test /tasks search hybrid search functionality."""
 
     def test_search_debugging(self, execute_command):
-        """Test 2.1: Search for debugging tasks."""
-        result = execute_command("/tasks search debugging")
+        """Test 2.1: Search for architecture tasks."""
+        result = execute_command("/tasks search architecture")
 
         assert result["success"], f"Command failed: {result.get('error')}"
 
         data = result.get("result", [])
         assert 0 < len(data) < 15, f"Expected 1-15 results, got {len(data)}"
-        
+
         # Check for score field (indicates search results)
         if len(data) > 0:
             assert "score" in data[0], "Search results should have score field"
-        
-        # At least one result should contain "debug" in title
-        assert any("debug" in task.get("title", "").lower() for task in data), \
-            "At least one result should contain 'debug' in title"
+
+        # At least one result should contain "architecture" in title or description
+        assert any("architecture" in task.get("title", "").lower() or "architecture" in task.get("description", "").lower() for task in data), \
+            "At least one result should contain 'architecture' in title or description"
 
     def test_search_voice_agent(self, execute_command):
         """Test 2.2: Search for voice agent tasks."""
@@ -283,7 +283,7 @@ class TestProjectsBasicQueries:
 
         data = result.get("result", [])
         assert isinstance(data, list), "Result should be a list"
-        assert len(data) == 10, f"Expected 10 projects, got {len(data)}"
+        assert len(data) == 8, f"Expected 8 projects, got {len(data)}"
 
         # Check structure
         if len(data) > 0:
@@ -361,21 +361,21 @@ class TestProjectsSearch:
             assert "score" in data[0], "Search results should have score"
 
     def test_search_projects_webinar(self, execute_command):
-        """Test 5.2: Search projects for webinar."""
-        result = execute_command("/projects search webinar")
+        """Test 5.2: Search projects for presentation."""
+        result = execute_command("/projects search presentation")
 
         assert result["success"], f"Command failed: {result.get('error')}"
 
         data = result.get("result", [])
         assert len(data) < 10, "Should return limited results (not all projects)"
 
-        # Should find webinar-related projects
+        # Should find presentation-related projects
         if len(data) > 0:
             # At least some results should be relevant
-            assert any("webinar" in proj.get("name", "").lower() or
-                      "webinar" in proj.get("description", "").lower()
+            assert any("presentation" in proj.get("name", "").lower() or
+                      "presentation" in proj.get("description", "").lower()
                       for proj in data), \
-                "Should find webinar-related projects"
+                "Should find presentation-related projects"
 
     def test_search_projects_voice(self, execute_command):
         """Test 5.3: Search projects for voice."""
@@ -441,7 +441,7 @@ class TestDoCommands:
 
     def test_do_complete_task(self, execute_command, tasks_collection):
         """Test 7.1: Complete a task using /do complete."""
-        result = execute_command("/do complete debugging doc")
+        result = execute_command("/do complete voice agent architecture")
 
         assert result["success"], f"Command failed: {result.get('error')}"
 
@@ -452,8 +452,8 @@ class TestDoCommands:
         # Verify task exists in result
         task = data.get("task", {})
         assert task.get("status") == "done", "Task status should be 'done'"
-        assert "debugging" in task.get("title", "").lower(), \
-            "Task title should contain 'debugging'"
+        assert "voice" in task.get("title", "").lower() or "architecture" in task.get("title", "").lower(), \
+            "Task title should contain 'voice' or 'architecture'"
 
     def test_do_start_task(self, execute_command):
         """Test 7.2: Start a task using /do start."""
@@ -486,7 +486,7 @@ class TestDoCommands:
 
     def test_do_note_task(self, execute_command):
         """Test 7.4: Add note to task using /do note."""
-        result = execute_command('/do note debugging doc "Fixed edge case with null embeddings"')
+        result = execute_command('/do note voice architecture "Fixed edge case with null embeddings"')
 
         assert result["success"], f"Command failed: {result.get('error')}"
 

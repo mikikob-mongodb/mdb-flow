@@ -66,6 +66,60 @@ Examples:
 }
 
 
+def detect_natural_language_query(user_input: str) -> Optional[str]:
+    """
+    Detect natural language queries that map to slash commands.
+
+    Returns the equivalent slash command string, or None if no match.
+    """
+    import re
+
+    query_lower = user_input.lower().strip()
+
+    # Status queries
+    if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(in progress|in-progress|ongoing|current|working on)\b', query_lower):
+        return "/tasks status:in_progress"
+
+    if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(done|completed|finished)\b', query_lower):
+        return "/tasks status:done"
+
+    if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(todo|to do|pending|upcoming)\b', query_lower):
+        return "/tasks status:todo"
+
+    # Priority queries
+    if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(high priority|urgent|important)\b', query_lower):
+        return "/tasks priority:high"
+
+    if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(medium priority|normal)\b', query_lower):
+        return "/tasks priority:medium"
+
+    if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(low priority)\b', query_lower):
+        return "/tasks priority:low"
+
+    # Project-specific queries
+    # Extract project name from queries like "What's in the Voice Agent project?"
+    project_match = re.search(r'\b(?:in|for|on)\s+(?:the\s+)?([A-Z][A-Za-z\s]+?)\s+(?:project|tasks?)\b', user_input)
+    if project_match:
+        project_name = project_match.group(1).strip()
+        return f"/tasks project:{project_name}"
+
+    # General "what's going on" queries
+    if re.search(r'\b(what[\'s\s]+going on|what[\'s\s]+happening|status update|current status)\b', query_lower):
+        return "/tasks"
+
+    # Search queries
+    if re.search(r'\b(find|search for|look for|show me).*\b(tasks?|work)\b', query_lower):
+        # Extract search term
+        search_match = re.search(r'\b(?:find|search for|look for|show me)\s+(?:tasks?\s+)?(?:about\s+)?(.+?)(?:\s+tasks?)?$', query_lower)
+        if search_match:
+            search_term = search_match.group(1).strip()
+            # Remove common trailing words
+            search_term = re.sub(r'\s+(tasks?|work)$', '', search_term)
+            return f"/search {search_term}"
+
+    return None
+
+
 def parse_slash_command(user_input: str) -> Optional[Dict[str, Any]]:
     """Parse slash commands, return None if not a command."""
     if not user_input.startswith("/"):

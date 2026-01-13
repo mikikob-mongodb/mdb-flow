@@ -22,7 +22,7 @@ from agents.coordinator import coordinator
 from shared.db import get_collection, TASKS_COLLECTION, PROJECTS_COLLECTION
 from shared.models import Task, Project
 from shared.config import settings
-from ui.slash_commands import parse_slash_command, SlashCommandExecutor
+from ui.slash_commands import parse_slash_command, detect_natural_language_query, SlashCommandExecutor
 from ui.formatters import render_command_result
 
 
@@ -529,8 +529,18 @@ def render_chat():
 
 
 def handle_input(prompt: str):
-    """Handle user input - auto-detect slash vs agent."""
-    parsed_command = parse_slash_command(prompt)
+    """Handle user input - auto-detect natural language queries, slash commands, or use agent."""
+    # First, try to detect natural language queries that map to slash commands
+    nl_command = detect_natural_language_query(prompt)
+    if nl_command:
+        # Convert natural language to slash command
+        parsed_command = parse_slash_command(nl_command)
+        original_prompt = prompt  # Save original for display
+        prompt = nl_command  # Use slash command for execution
+    else:
+        # Try parsing as explicit slash command
+        parsed_command = parse_slash_command(prompt)
+        original_prompt = prompt
 
     if parsed_command:
         # ═════════════════════════════════════════════════════════════════
