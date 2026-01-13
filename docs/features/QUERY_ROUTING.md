@@ -10,19 +10,19 @@ The Flow Companion demo app uses a **4-tier routing system** that intelligently 
 User Input: "What's in progress?"
     ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ TIER 1: Natural Language Pattern Detection                 │
+│ TIER 1: Explicit Slash Commands                            │
+│ - Direct MongoDB queries                                   │
+│ - Most explicit user control                               │
+│ - Latency: ~0ms | Cost: $0 | Success Rate: 100%           │
+└─────────────────────────────────────────────────────────────┘
+    ↓ (if no slash command detected)
+┌─────────────────────────────────────────────────────────────┐
+│ TIER 2: Natural Language Pattern Detection                 │
 │ - Regex pattern matching                                   │
 │ - Converts to slash commands                               │
 │ - Latency: ~0ms | Cost: $0 | Success Rate: High           │
 └─────────────────────────────────────────────────────────────┘
-    ↓ (if no match)
-┌─────────────────────────────────────────────────────────────┐
-│ TIER 2: Explicit Slash Commands                            │
-│ - Direct MongoDB queries                                   │
-│ - Power user syntax                                        │
-│ - Latency: ~0ms | Cost: $0 | Success Rate: 100%           │
-└─────────────────────────────────────────────────────────────┘
-    ↓ (if no match)
+    ↓ (if no pattern match)
 ┌─────────────────────────────────────────────────────────────┐
 │ TIER 3: LLM Agent with Built-in Tools (ALWAYS AVAILABLE)  │
 │ - Claude-powered coordinator                               │
@@ -42,55 +42,10 @@ User Input: "What's in progress?"
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Tier 1: Natural Language Pattern Detection
+## Tier 1: Explicit Slash Commands
 
 ### Purpose
-Catch common natural language queries and convert them to slash commands for instant execution.
-
-### How It Works
-The `detect_natural_language_query()` function uses regex patterns to match common query patterns:
-
-**Pattern Categories**:
-1. **Status Queries**: "What's in progress?", "What's done?"
-2. **Priority Queries**: "What's high priority?", "What's urgent?"
-3. **Project Detail**: "Show me the AgentOps project"
-4. **Project Tasks**: "What's in the Voice Agent project?"
-5. **General Status**: "What's going on?", "Status update"
-6. **Search**: "Find tasks about debugging"
-
-### Examples
-
-| User Input | Detected Pattern | Converted Command |
-|------------|------------------|-------------------|
-| "What's in progress?" | Status query | `/tasks status:in_progress` |
-| "What's high priority?" | Priority query | `/tasks priority:high` |
-| "Show me the AgentOps project" | Project detail | `/projects AgentOps` |
-| "What's in the Voice Agent project?" | Project tasks | `/tasks project:Voice Agent` |
-| "What's going on?" | General status | `/tasks` |
-| "Find tasks about debugging" | Search | `/search debugging` |
-
-### Characteristics
-- **Speed**: Instant (~0ms)
-- **Cost**: Free ($0)
-- **User Experience**: Natural language "just works"
-- **Limitations**: Only handles predefined patterns
-- **Flexibility**: Low (deterministic pattern matching)
-
-### When This Tier Catches Queries
-- Simple, well-defined queries
-- Common patterns with clear intent
-- Queries that map cleanly to slash commands
-
-### When Queries Fall Through
-- Novel phrasing not matching any pattern
-- Ambiguous or complex questions
-- Multi-step requests
-- Questions requiring reasoning
-
-## Tier 2: Explicit Slash Commands
-
-### Purpose
-Provide power users with direct control over MongoDB queries using command-line style syntax.
+Provide users with direct control over MongoDB queries using command-line style syntax.
 
 ### How It Works
 The `parse_slash_command()` function checks if input starts with `/` and parses the command syntax.
@@ -163,6 +118,53 @@ The `parse_slash_command()` function checks if input starts with `/` and parses 
 ### When Queries Fall Through
 - Never (slash commands are terminal - either execute or error)
 
+## Tier 2: Natural Language Pattern Detection
+
+### Purpose
+Catch common natural language queries and convert them to slash commands for instant execution.
+
+### How It Works
+The `detect_natural_language_query()` function uses regex patterns to match common query patterns:
+
+**Pattern Categories**:
+1. **Status Queries**: "What's in progress?", "What's done?"
+2. **Priority Queries**: "What's high priority?", "What's urgent?"
+3. **Project Detail**: "Show me the AgentOps project"
+4. **Project Tasks**: "What's in the Voice Agent project?"
+5. **General Status**: "What's going on?", "Status update"
+6. **Search**: "Find tasks about debugging"
+
+### Examples
+
+| User Input | Detected Pattern | Converted Command |
+|------------|------------------|-------------------|
+| "What's in progress?" | Status query | `/tasks status:in_progress` |
+| "What's urgent?" | Priority query | `/tasks priority:high status:todo,in_progress` |
+| "What's high priority?" | Priority query | `/tasks priority:high status:todo,in_progress` |
+| "Show me the AgentOps project" | Project detail | `/projects AgentOps` |
+| "What's in the Voice Agent project?" | Project tasks | `/tasks project:Voice Agent` |
+| "What's going on?" | General status | `/tasks` |
+| "Find tasks about debugging" | Search | `/search debugging` |
+
+### Characteristics
+- **Speed**: Instant (~0ms)
+- **Cost**: Free ($0)
+- **User Experience**: Natural language "just works"
+- **Limitations**: Only handles predefined patterns
+- **Flexibility**: Low (deterministic pattern matching)
+
+### When This Tier Catches Queries
+- Simple, well-defined queries
+- Common patterns with clear intent
+- Queries that map cleanly to slash commands
+
+### When Queries Fall Through
+- Novel phrasing not matching any pattern
+- Input starts with `/` (routes to Tier 1 instead)
+- Ambiguous or complex questions
+- Multi-step requests
+- Questions requiring reasoning
+
 ## Tier 3: LLM Agent with Built-in Tools
 
 ### Purpose
@@ -231,8 +233,8 @@ The coordinator agent receives the query and:
 - **Availability**: **ALWAYS ON** - no toggle required
 
 ### When This Tier Catches Queries
-- No pattern match in Tier 1
-- Doesn't start with `/` (Tier 2)
+- Doesn't start with `/` (Tier 1)
+- No pattern match in Tier 2
 - Doesn't require external tools (Tier 4)
 - This is the DEFAULT fallback for unmatched queries
 
@@ -359,11 +361,11 @@ def handle_input(prompt: str):
 ```
 User Input
     │
-    ├─ Matches NL pattern? ──YES──> Tier 1: Convert to slash → Execute → DONE
+    ├─ Starts with "/"? ──YES──> Tier 1: Parse slash → Execute → DONE
     │
     NO
     │
-    ├─ Starts with "/"? ──YES──> Tier 2: Parse slash → Execute → DONE
+    ├─ Matches NL pattern? ──YES──> Tier 2: Convert to slash → Execute → DONE
     │
     NO
     │
@@ -383,23 +385,23 @@ User Input
 
 ## Examples By Tier
 
-### Tier 1 Catches (Natural Language → Slash Command)
+### Tier 1 Catches (Explicit Slash Commands)
 
 | Query | Why Tier 1? | Result |
-|-------|-------------|--------|
-| "What's in progress?" | Status pattern match | `/tasks status:in_progress` |
-| "Show me the AgentOps project" | Project detail pattern | `/projects AgentOps` |
-| "Find tasks about memory" | Search pattern | `/search memory` |
-| "What's urgent?" | Priority pattern | `/tasks priority:high` |
-
-### Tier 2 Catches (Explicit Slash Commands)
-
-| Query | Why Tier 2? | Result |
 |-------|-------------|--------|
 | `/tasks` | Starts with `/` | Direct execution |
 | `/projects AgentOps` | Starts with `/` | Direct execution |
 | `/do complete voice app` | Starts with `/` | Direct execution |
 | `/search:vector memory` | Starts with `/` | Direct execution |
+
+### Tier 2 Catches (Natural Language → Slash Command)
+
+| Query | Why Tier 2? | Result |
+|-------|-------------|--------|
+| "What's in progress?" | Status pattern match | `/tasks status:in_progress` |
+| "Show me the AgentOps project" | Project detail pattern | `/projects AgentOps` |
+| "Find tasks about memory" | Search pattern | `/search memory` |
+| "What's urgent?" | Priority pattern | `/tasks priority:high status:todo,in_progress` |
 
 ### Tier 3 Catches (LLM Agent with Built-in Tools - Always Available)
 
@@ -435,8 +437,8 @@ User Input
 
 | Tier | Avg Latency | Cost Per Query | Success Rate | Availability | Use Case |
 |------|-------------|----------------|--------------|--------------|----------|
-| Tier 1 | ~0ms | $0 | ~40-60% of common queries | Always | Natural language patterns |
-| Tier 2 | ~0ms | $0 | 100% (valid syntax) | Always | Power user commands |
+| Tier 1 | ~0ms | $0 | 100% (valid syntax) | Always | Power user commands (slash commands) |
+| Tier 2 | ~0ms | $0 | ~40-60% of common queries | Always | Natural language patterns |
 | Tier 3 | 500-2000ms | $0.001-0.01 | ~90% (with built-in tools) | **Always** | Complex queries, reasoning |
 | Tier 4 | 1000-3000ms | $0.01-0.05 | ~85% (depends on external APIs) | Requires toggle | Research, web search, external data |
 
@@ -444,17 +446,18 @@ User Input
 
 ### Why This Architecture?
 
-**Tier 1 (Pattern Matching) First**:
-- Catches majority of common queries instantly
-- No LLM cost for routine questions
-- Better UX than requiring slash command syntax
-- 40-60% of queries handled at zero cost
-
-**Tier 2 (Slash Commands) Second**:
+**Tier 1 (Slash Commands) First**:
 - Provides power users with maximum control
+- Most explicit - user knows exactly what will happen
 - Deterministic, testable, scriptable
 - No ambiguity in query interpretation
 - Zero latency, zero cost
+
+**Tier 2 (Pattern Matching) Second**:
+- Catches majority of common queries instantly
+- No LLM cost for routine questions
+- Better UX for casual users than requiring slash command syntax
+- 40-60% of natural language queries handled at zero cost
 
 **Tier 3 (LLM Agent with Built-in Tools) Third - ALWAYS AVAILABLE**:
 - Handles complex queries that don't match patterns
@@ -491,8 +494,8 @@ User Input
 **Hybrid 4-Tier (Chosen)**:
 - ✅ Zero latency for common queries (Tier 1 & 2)
 - ✅ Zero cost for common queries (Tier 1 & 2)
-- ✅ Good UX for beginners (Tier 1 natural language, Tier 3 always-on LLM)
-- ✅ Power for advanced users (Tier 2 slash commands)
+- ✅ Good UX for beginners (Tier 2 natural language, Tier 3 always-on LLM)
+- ✅ Power for advanced users (Tier 1 slash commands)
 - ✅ Flexible for complex cases (Tier 3 built-in agents, always available)
 - ✅ External data access when needed (Tier 4 MCP, opt-in)
 - ✅ Cost control via tiered approach and optional toggle
@@ -502,19 +505,23 @@ User Input
 
 ### For Application Developers
 
-**When to add a Tier 1 pattern**:
+**When to add a Tier 1 slash command**:
+- Need direct MongoDB query access
+- Power user feature for specific use case
+- Combinable filters or modes
+- Deterministic behavior required
+
+**When to add a Tier 2 pattern**:
 - Query is common (appears frequently in usage logs)
 - Maps cleanly to a single slash command
 - Has clear, unambiguous intent
 - Can be captured with regex
 
-**When NOT to add a Tier 1 pattern**:
+**When NOT to add a Tier 2 pattern**:
 - Query is rare or edge case
 - Requires context or reasoning
 - Ambiguous phrasing
 - Better handled by agent reasoning
-
-**When to add a Tier 2 command**:
 - Operation is well-defined
 - Users need precise control
 - Can be expressed in declarative syntax
@@ -566,15 +573,15 @@ User Input
 
 ### Key Metrics to Track
 
-**Tier 1 Performance**:
-- Pattern match rate (% of queries caught)
-- False positive rate (wrong pattern matched)
-- Top unmatched patterns (candidates for new patterns)
-
-**Tier 2 Usage**:
+**Tier 1 Usage**:
 - Command usage distribution
 - Error rate (invalid syntax)
 - Most common command combinations
+
+**Tier 2 Performance**:
+- Pattern match rate (% of queries caught)
+- False positive rate (wrong pattern matched)
+- Top unmatched patterns (candidates for new patterns)
 
 **Tier 3 Performance** (Built-in LLM Agent):
 - Average latency (~500-2000ms)
@@ -599,7 +606,7 @@ User Input
 ## Future Enhancements
 
 ### Short Term
-1. Add more Tier 1 patterns based on usage analytics
+1. Add more Tier 2 patterns based on usage analytics
 2. Log unmatched queries to identify pattern gaps
 3. A/B test pattern matching vs direct agent routing
 
@@ -616,8 +623,8 @@ User Input
 
 ## Related Documentation
 
-- [Natural Language Query Detection](NATURAL_LANGUAGE_QUERY_DETECTION.md) - Deep dive on Tier 1
-- [Slash Commands](SLASH_COMMANDS.md) - Tier 2 command reference
+- [Slash Commands](SLASH_COMMANDS.md) - Tier 1 command reference
+- [Natural Language Query Detection](NATURAL_LANGUAGE_QUERY_DETECTION.md) - Deep dive on Tier 2
 - Coordinator Agent Documentation - Tier 3 LLM agent with built-in tools
 - [MCP Agent](MCP_AGENT.md) - Tier 4 external tool discovery architecture
 
@@ -625,8 +632,8 @@ User Input
 
 The 4-tier routing architecture provides optimal balance between speed, cost, flexibility, and user experience:
 
-- **Tier 1** (Pattern Matching): Fast, free, beginner-friendly natural language
-- **Tier 2** (Slash Commands): Fast, free, powerful for experts
+- **Tier 1** (Slash Commands): Fast, free, powerful for experts, most explicit control
+- **Tier 2** (Pattern Matching): Fast, free, beginner-friendly natural language
 - **Tier 3** (LLM Agent with Built-in Tools): Flexible, always available, handles complex queries with reasoning - **NO TOGGLE REQUIRED**
 - **Tier 4** (MCP External Tools): Maximum flexibility, external data access (web search, advanced MongoDB queries), research capabilities - **REQUIRES TOGGLE**
 

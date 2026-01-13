@@ -914,3 +914,49 @@ Tier 4 now represents a complete "External Tool Discovery" tier that can leverag
 - Any future MCP-compatible tool servers
 
 This provides a clear architectural pattern for adding new external capabilities via MCP while keeping built-in tools (Tier 3) always available.
+
+---
+
+## Update 3: Tier Reordering for Logical Presentation
+
+**Date**: January 13, 2026 (evening)
+**Trigger**: User feedback on documentation presentation
+
+### Rationale
+
+After implementing the 4-tier system, user pointed out that the tier ordering should follow a **logical flow from most explicit to most automated** for better user understanding:
+
+**Updated Tier Order** (for documentation and presentation):
+- **TIER 1**: Explicit Slash Commands (most explicit user control)
+- **TIER 2**: Natural Language Pattern Detection (helper that converts to slash commands)
+- **TIER 3**: LLM Agent with Built-in Tools (reasoning with built-in capabilities)
+- **TIER 4**: MCP External Tools (advanced with external services)
+
+**Logical Flow**: Explicit Control → Natural Language Helper → LLM Reasoning → External Tools
+
+### Technical vs Presentation Order
+
+**Technical Execution Order** (in code):
+1. Check if input starts with `/` (slash command)
+2. Try to match natural language patterns
+3. Route to LLM coordinator with built-in tools
+4. Use MCP for external tools if needed
+
+**Presentation Order** (in docs):
+1. Tier 1: Slash Commands (most explicit)
+2. Tier 2: Natural Language (auto-converts to slash)
+3. Tier 3: LLM Built-in (reasoning)
+4. Tier 4: MCP External (advanced)
+
+### Files Updated
+
+1. `docs/features/QUERY_ROUTING.md` - Complete tier swap throughout
+2. `docs/testing/README.md` - Updated 4-tier architecture table
+3. `docs/testing/01-slash-commands.md` - Reordered to "Tier 1 & 2: Slash Commands + Natural Language Patterns"
+4. `docs/testing/02-text-queries.md` - Already labeled as "Tier 3"
+
+### Key Insight
+
+The reordering improves user mental model: users start with explicit control (slash commands), learn that natural language is available as a convenience, understand that complex queries use LLM reasoning, and discover advanced features require opt-in MCP mode.
+
+This presentation order makes the progression clearer: **Explicit → Convenient → Smart → Advanced**
