@@ -128,7 +128,7 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
 
     # Priority queries
     if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(high priority|urgent|important)\b', query_lower):
-        return "/tasks priority:high"
+        return "/tasks priority:high status:todo,in_progress"
 
     if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(medium priority|normal)\b', query_lower):
         return "/tasks priority:medium"
@@ -331,10 +331,18 @@ class SlashCommandExecutor:
             # Build match query from kwargs
             match_query = {"is_test": {"$ne": True}}  # Always exclude test data
 
-            # Status filter
+            # Status filter (supports comma-separated values like "todo,in_progress")
             if kwargs.get("status"):
-                match_query["status"] = kwargs["status"]
-                self.logger.info(f"Filtering by status: {kwargs['status']}")
+                status_value = kwargs["status"]
+                if "," in status_value:
+                    # Multiple statuses - use $in operator
+                    status_list = [s.strip() for s in status_value.split(",")]
+                    match_query["status"] = {"$in": status_list}
+                    self.logger.info(f"Filtering by status (multiple): {status_list}")
+                else:
+                    # Single status
+                    match_query["status"] = status_value
+                    self.logger.info(f"Filtering by status: {status_value}")
 
             # Priority filter
             if kwargs.get("priority"):
