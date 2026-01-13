@@ -203,7 +203,7 @@ def update_task(
 
 def add_task_note(task_id: ObjectId, note: str) -> bool:
     """
-    Add a note to a task.
+    Add a note to a task with automatic activity logging.
 
     Args:
         task_id: ObjectId of the task
@@ -213,13 +213,30 @@ def add_task_note(task_id: ObjectId, note: str) -> bool:
         True if successful, False otherwise
     """
     collection = get_collection(TASKS_COLLECTION)
+    now = datetime.utcnow()
+
+    # Create activity log entry
+    activity_entry = ActivityLogEntry(
+        timestamp=now,
+        action="note_added",
+        note=note
+    ).model_dump()
+
     result = collection.update_one(
         {"_id": task_id},
         {
-            "$push": {"notes": note},
-            "$set": {"updated_at": datetime.utcnow()}
+            "$push": {
+                "notes": note,
+                "activity_log": activity_entry
+            },
+            "$set": {"updated_at": now}
         }
     )
+
+    if result.modified_count > 0:
+        # Auto-generate episodic summary if conditions met
+        _maybe_generate_task_episodic_summary(task_id)
+
     return result.modified_count > 0
 
 
@@ -322,7 +339,7 @@ def update_project(
 
 def add_project_note(project_id: ObjectId, note: str) -> bool:
     """
-    Add a note to a project.
+    Add a note to a project with automatic activity logging.
 
     Args:
         project_id: ObjectId of the project
@@ -333,6 +350,13 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
     """
     collection = get_collection(PROJECTS_COLLECTION)
     now = datetime.utcnow()
+
+    # Get current project for episodic summary trigger
+    current_project = collection.find_one({"_id": project_id})
+    if not current_project:
+        return False
+
+    old_notes = current_project.get("notes", [])
 
     # Create activity log entry
     activity_entry = ActivityLogEntry(
@@ -354,6 +378,16 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
             }
         }
     )
+
+    if result.modified_count > 0:
+        # Auto-generate episodic summary if conditions met
+        new_notes = old_notes + [note]
+        _maybe_generate_project_episodic_summary(
+            project_id,
+            old_notes=old_notes,
+            new_notes=new_notes
+        )
+
     return result.modified_count > 0
 
 
