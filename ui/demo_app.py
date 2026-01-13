@@ -195,6 +195,60 @@ def get_priority_badge(priority: str) -> str:
     return ""
 
 
+def render_task_with_metadata(task):
+    """Render a task as a collapsible expander with full metadata."""
+    from datetime import datetime
+
+    # Build header: status icon + priority + title
+    status_icon = get_status_icon(task.status)
+    priority_badge = get_priority_badge(task.priority) if task.priority else ""
+    header = f"{status_icon} {priority_badge} {task.title}"
+
+    with st.expander(header, expanded=False):
+        # Create two columns for metadata
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.caption("**Status:**")
+            st.text(task.status.replace("_", " ").title())
+
+            if task.priority:
+                st.caption("**Priority:**")
+                st.text(task.priority.title())
+
+            st.caption("**Created:**")
+            created_date = task.created_at.strftime("%Y-%m-%d") if task.created_at else "N/A"
+            st.text(created_date)
+
+        with col2:
+            if task.started_at:
+                st.caption("**Started:**")
+                started_date = task.started_at.strftime("%Y-%m-%d")
+                st.text(started_date)
+
+            if task.completed_at:
+                st.caption("**Completed:**")
+                completed_date = task.completed_at.strftime("%Y-%m-%d")
+                st.text(completed_date)
+
+            st.caption("**ID:**")
+            task_id = str(task.id)[:8] if task.id else "N/A"
+            st.text(task_id)
+
+        # Show context if available
+        if task.context:
+            st.caption("**Context:**")
+            st.text(task.context[:200] + "..." if len(task.context) > 200 else task.context)
+
+        # Show notes if available
+        if task.notes:
+            st.caption(f"**Notes:** ({len(task.notes)})")
+            for note in task.notes[:3]:
+                st.text(f"• {note}")
+            if len(task.notes) > 3:
+                st.caption(f"... and {len(task.notes) - 3} more")
+
+
 # ═══════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════
@@ -370,23 +424,22 @@ def render_sidebar():
                             st.caption(f"Status: {project.status.title()}")
 
                         if tasks:
-                            for task in tasks[:5]:  # Show max 5 tasks per project
-                                icon = get_status_icon(task.status)
-                                priority = get_priority_badge(task.priority) if task.priority else ""
-                                st.markdown(f"{icon} {priority} {task.title}")
+                            for task in tasks[:10]:  # Show max 10 tasks per project
+                                render_task_with_metadata(task)
 
-                            if len(tasks) > 5:
-                                st.caption(f"... and {len(tasks) - 5} more")
+                            if len(tasks) > 10:
+                                st.caption(f"... and {len(tasks) - 10} more tasks")
                         else:
                             st.caption("No tasks")
                 else:
                     # Orphan tasks
                     if tasks:
                         with st.expander(f"📋 Other Tasks ({len(tasks)})", expanded=False):
-                            for task in tasks[:5]:
-                                icon = get_status_icon(task.status)
-                                priority = get_priority_badge(task.priority) if task.priority else ""
-                                st.markdown(f"{icon} {priority} {task.title}")
+                            for task in tasks[:10]:  # Show max 10 orphan tasks
+                                render_task_with_metadata(task)
+
+                            if len(tasks) > 10:
+                                st.caption(f"... and {len(tasks) - 10} more tasks")
         else:
             st.caption("No projects found")
 
