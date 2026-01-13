@@ -76,7 +76,26 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
 
     query_lower = user_input.lower().strip()
 
-    # Status queries
+    # Temporal queries - check for time-based filters first
+    # "Show me completed tasks from this week"
+    if re.search(r'\b(completed|finished|done)\b.*\b(this week|today|yesterday)\b', query_lower):
+        if 'this week' in query_lower:
+            return "/completed this_week"
+        elif 'today' in query_lower:
+            return "/completed today"
+        elif 'yesterday' in query_lower:
+            return "/completed yesterday"
+
+    # "What did I work on this week/today?"
+    if re.search(r'\b(this week|today|yesterday)\b', query_lower) and not re.search(r'\b(completed|done|finished)\b', query_lower):
+        if 'this week' in query_lower:
+            return "/tasks this_week"
+        elif 'today' in query_lower:
+            return "/tasks today"
+        elif 'yesterday' in query_lower:
+            return "/tasks yesterday"
+
+    # Status queries (non-temporal)
     if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(in progress|in-progress|ongoing|current|working on)\b', query_lower):
         return "/tasks status:in_progress"
 
@@ -112,11 +131,20 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
         project_name = project_match.group(1).strip()
         return f"/tasks project:{project_name}"
 
+    # List all projects queries
+    if re.search(r'\b(show me|list|view|see)\s+(the\s+)?(all\s+)?projects?\b', query_lower):
+        # "Show me the project" or "See all projects"
+        return "/projects"
+
+    if re.search(r'^(see all|show all|list all)$', query_lower):
+        # Generic "see all" / "show all" - assume projects context
+        return "/projects"
+
     # General "what's going on" queries
     if re.search(r'\b(what[\'s\s]+going on|what[\'s\s]+happening|status update|current status)\b', query_lower):
         return "/tasks"
 
-    # Search queries
+    # Search queries with "tasks" keyword
     if re.search(r'\b(find|search for|look for|show me).*\b(tasks?|work)\b', query_lower):
         # Extract search term
         search_match = re.search(r'\b(?:find|search for|look for|show me)\s+(?:tasks?\s+)?(?:about\s+)?(.+?)(?:\s+tasks?)?$', query_lower)
@@ -125,6 +153,22 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
             # Remove common trailing words
             search_term = re.sub(r'\s+(tasks?|work)$', '', search_term)
             return f"/search {search_term}"
+
+    # Search queries WITHOUT "tasks" keyword - "Look for X"
+    # Must come after more specific patterns
+    if re.search(r'\b(look for|find|search for)\s+\w', query_lower):
+        search_match = re.search(r'\b(?:look for|find|search for)\s+(.+)$', query_lower)
+        if search_match:
+            search_term = search_match.group(1).strip()
+            # Don't match if it's trying to find a project
+            if not re.search(r'\bprojects?\b', search_term):
+                return f"/search {search_term}"
+
+    # "What tasks are X?" queries - search for that attribute
+    what_tasks_match = re.search(r'what tasks are\s+(.+?)\??$', query_lower)
+    if what_tasks_match:
+        search_term = what_tasks_match.group(1).strip()
+        return f"/search {search_term}"
 
     return None
 
