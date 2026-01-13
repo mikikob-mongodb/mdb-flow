@@ -733,3 +733,184 @@ available without MCP toggle
 The 4-tier routing architecture now correctly separates internal LLM agents (Tier 3, always available) from external tool discovery (Tier 4, opt-in). This provides better user experience by removing unnecessary blocking while maintaining cost control through the MCP toggle for truly external operations.
 
 **Critical Insight**: Not all LLM operations need external tools. Built-in agents with Claude's reasoning can handle most complex queries, and should be always available for the best user experience.
+
+---
+
+## Update: MongoDB MCP Server Added to Tier 4
+
+**Date**: 2026-01-13 (continued)
+**Status**: ✅ Complete
+
+### Enhancement Request
+
+User requested that Tier 4 should also include advanced MongoDB query generation via the MongoDB MCP server, in addition to web search via Tavily.
+
+**Rationale**: Tier 4 is for external tool discovery via MCP. MongoDB MCP server can provide advanced query generation capabilities (complex aggregation pipelines, analytics) that go beyond the basic CRUD operations in built-in tools.
+
+### Changes Made
+
+#### 1. Documentation Updates (`docs/features/QUERY_ROUTING.md`)
+
+**Updated Tier 4 Description**:
+- Added MongoDB MCP server as an external tool
+- Added examples of MongoDB query generation queries
+- Updated decision diagrams to include MongoDB queries
+- Updated usage guidelines and examples
+
+**New Examples for Tier 4**:
+```
+"Generate an aggregation pipeline to find tasks by complexity over time"
+"Create a query that finds projects with the most overdue high-priority tasks"
+"Build a MongoDB query to analyze task completion rates by project"
+"Generate an aggregation to calculate average time-to-completion by priority"
+```
+
+**Key Addition to Tier 4 Tools**:
+- **Tavily**: Web search and research for current/external information
+- **MongoDB MCP Server**: Advanced query generation, aggregation pipelines, complex database operations
+- **Custom MCP Servers**: Any MCP-compatible tool servers
+
+#### 2. Coordinator Logic Updates (`agents/coordinator.py`)
+
+**Added to mcp_intents list** (line 1018):
+```python
+mcp_intents = [
+    "research", "web_search", "find_information",
+    "complex_query", "aggregation", "data_extraction",
+    "advanced_mongodb_query"  # Complex aggregation pipelines, analytics via MongoDB MCP
+]
+```
+
+**Added Intent Classification** (lines 1063-1065):
+```python
+# Advanced MongoDB query generation (aggregation pipelines, complex analytics)
+if any(word in msg_lower for word in ["aggregation pipeline", "generate query", "build query",
+                                       "create query", "mongodb query", "analyze completion rates",
+                                       "time-series analysis"]):
+    return "advanced_mongodb_query"
+```
+
+**Updated Error Message** (lines 2385-2388):
+```python
+if intent == "advanced_mongodb_query":
+    response_text = "I don't have access to the MongoDB MCP server for advanced query generation. Enable Experimental MCP Mode to use MongoDB's query generation capabilities for complex aggregations and analytics."
+```
+
+**Updated Tier 4 Comments** (lines 2365-2368):
+```python
+# This section handles requests that require EXTERNAL tools via MCP:
+# - Web search and research (via Tavily)
+# - Advanced MongoDB query generation (via MongoDB MCP server)
+# - Other external tool discovery
+```
+
+### Tier 4 Now Includes
+
+**Two Types of External Tools**:
+
+1. **Web Search & Research** (Tavily)
+   - Current events and trends
+   - External information lookup
+   - Real-time data
+
+2. **Advanced MongoDB Query Generation** (MongoDB MCP Server)
+   - Complex aggregation pipelines
+   - Time-series analysis
+   - Multi-collection analytics
+   - Advanced query optimization
+
+### When Users Would Enable MCP Mode (Tier 4)
+
+**Original (before this change)**:
+- Web search and research only
+
+**Updated (after this change)**:
+- Web search and research (Tavily)
+- Advanced MongoDB query generation and analytics (MongoDB MCP Server)
+
+### Example User Flows
+
+**Scenario 1: Basic Task Query** (Tier 3 - No Toggle Needed):
+```
+User: "Show me my high priority tasks"
+System: [Uses built-in worklog_agent] → Lists tasks
+```
+
+**Scenario 2: Complex Analytics** (Tier 4 - Requires Toggle):
+```
+User: "Generate an aggregation pipeline to analyze completion rates by project and priority over the last quarter"
+System (MCP disabled): "I don't have access to the MongoDB MCP server for advanced query generation. Enable Experimental MCP Mode..."
+System (MCP enabled): [Uses MongoDB MCP Server] → Generates and explains aggregation pipeline
+```
+
+**Scenario 3: Web Research** (Tier 4 - Requires Toggle):
+```
+User: "Research the latest MongoDB aggregation framework features"
+System (MCP enabled): [Uses Tavily] → Returns current information
+```
+
+### Architectural Clarity
+
+This change reinforces the Tier 4 purpose:
+
+**Tier 4 = External Tool Discovery via MCP**
+- Not just "web search"
+- Any external MCP server with specialized capabilities
+- MongoDB MCP for advanced query generation
+- Future: Could include other domain-specific MCP servers
+
+**Tier 3 = Built-in Tools (Always Available)**
+- Basic MongoDB CRUD (via worklog_agent)
+- Hybrid search (via retrieval_agent)
+- Memory operations
+- LLM reasoning
+
+### Files Modified
+
+1. **docs/features/QUERY_ROUTING.md**
+   - Updated Tier 4 description and examples
+   - Added MongoDB query generation examples
+   - Updated decision diagrams
+   - Updated usage guidelines
+
+2. **agents/coordinator.py**
+   - Added "advanced_mongodb_query" to mcp_intents (line 1018)
+   - Added intent classification logic (lines 1063-1065)
+   - Added custom error message for MongoDB queries (lines 2385-2388)
+   - Updated Tier 4 comments (lines 2365-2368)
+
+### Testing
+
+**Tests Run**:
+```bash
+pytest tests/ui/test_slash_commands.py -v -k "test_list_all_tasks or test_filter_by_status_todo or test_search_debugging"
+```
+
+**Result**: ✅ All tests passing
+
+### Key Achievements
+
+1. **Clearer Tier 4 Purpose**: Tier 4 is now clearly defined as "External MCP Tools" (not just web search)
+
+2. **MongoDB Advanced Capabilities**: Users can access advanced MongoDB query generation when needed
+
+3. **Separation of Concerns**:
+   - Tier 3: Built-in MongoDB CRUD and basic queries
+   - Tier 4: Advanced MongoDB analytics via MCP server
+
+4. **Extensible Design**: Framework now supports any external MCP server, not just Tavily
+
+### Configuration Note
+
+The MongoDB MCP server capability is controlled by the `MONGODB_MCP_ENABLED` setting and requires:
+1. "Experimental MCP Mode" toggle enabled in UI
+2. MongoDB MCP server configured (if available)
+
+### Summary
+
+Tier 4 now represents a complete "External Tool Discovery" tier that can leverage:
+- Tavily for web search and research
+- MongoDB MCP Server for advanced query generation
+- Any future MCP-compatible tool servers
+
+This provides a clear architectural pattern for adding new external capabilities via MCP while keeping built-in tools (Tier 3) always available.

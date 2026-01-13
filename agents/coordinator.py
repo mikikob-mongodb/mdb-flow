@@ -1009,12 +1009,13 @@ Use this memory context to:
         if intent in static_intents:
             return True
 
-        # Intents that need MCP (external tool discovery)
+        # Intents that need MCP (external tool discovery - Tier 4)
         # NOTE: "unknown" is NOT in this list - unknown intents should be handled
         # by the LLM with built-in tools (Tier 3), not require MCP mode (Tier 4)
         mcp_intents = [
             "research", "web_search", "find_information",
-            "complex_query", "aggregation", "data_extraction"
+            "complex_query", "aggregation", "data_extraction",
+            "advanced_mongodb_query"  # Complex aggregation pipelines, analytics via MongoDB MCP
         ]
 
         if intent in mcp_intents:
@@ -1059,7 +1060,11 @@ Use this memory context to:
         if any(word in msg_lower for word in ["search the web", "look up", "research", "find information about", "what's the latest"]):
             return "web_search"
 
-        # Default to unknown (will try MCP if enabled)
+        # Advanced MongoDB query generation (aggregation pipelines, complex analytics)
+        if any(word in msg_lower for word in ["aggregation pipeline", "generate query", "build query", "create query", "mongodb query", "analyze completion rates", "time-series analysis"]):
+            return "advanced_mongodb_query"
+
+        # Default to unknown (will use Tier 3 built-in LLM agents)
         return "unknown"
 
     def _classify_multi_step_intent(self, user_message: str) -> dict:
@@ -2357,8 +2362,10 @@ Execute the rule action: {rule_match['action']}
         # ═══════════════════════════════════════════════════════════════
         # TIER 4: MCP ROUTING - External Tool Discovery (Requires Toggle)
         # ═══════════════════════════════════════════════════════════════
-        # This section handles requests that require EXTERNAL tools via MCP
-        # (e.g., web search, research via Tavily).
+        # This section handles requests that require EXTERNAL tools via MCP:
+        # - Web search and research (via Tavily)
+        # - Advanced MongoDB query generation (via MongoDB MCP server)
+        # - Other external tool discovery
         #
         # Requests that don't match Tier 1 (patterns), Tier 2 (slash commands),
         # or Tier 4 (MCP external tools) will fall through to Tier 3 (LLM with
@@ -2374,8 +2381,13 @@ Execute the rule action: {rule_match['action']}
 
             # MCP mode check - only required for EXTERNAL tool discovery (Tier 4)
             if not self.mcp_mode_enabled:
-                logger.warning("📊 MCP mode disabled, cannot use external tools like Tavily")
-                response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
+                logger.warning(f"📊 MCP mode disabled, cannot use external tools for intent: {intent}")
+
+                # Customize message based on intent
+                if intent == "advanced_mongodb_query":
+                    response_text = "I don't have access to the MongoDB MCP server for advanced query generation. Enable Experimental MCP Mode to use MongoDB's query generation capabilities for complex aggregations and analytics."
+                else:
+                    response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
 
                 if return_debug:
                     return {

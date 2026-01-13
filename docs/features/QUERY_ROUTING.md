@@ -31,10 +31,11 @@ User Input: "What's in progress?"
 │ - Latency: ~500-2000ms | Cost: ~$0.001-0.01 | Adaptive    │
 │ - NO toggle required - always available                    │
 └─────────────────────────────────────────────────────────────┘
-    ↓ (if needs external tools like web search)
+    ↓ (if needs external tools like web search or advanced queries)
 ┌─────────────────────────────────────────────────────────────┐
 │ TIER 4: MCP Agent - External Tool Discovery               │
-│ - MCP servers (Tavily for web search, etc.)               │
+│ - Tavily: Web search and research                         │
+│ - MongoDB MCP: Advanced query generation, aggregations    │
 │ - Dynamic tool discovery                                   │
 │ - Latency: ~1000-3000ms | Cost: ~$0.01-0.05 | Flexible    │
 │ - Requires "Experimental MCP Mode" toggle enabled          │
@@ -242,11 +243,14 @@ The coordinator agent receives the query and:
 ## Tier 4: MCP Agent - External Tool Discovery
 
 ### Purpose
-Handle requests that require EXTERNAL tools and data sources beyond the built-in capabilities. This includes web search, research, and dynamic tool discovery via Model Context Protocol (MCP) servers.
+Handle requests that require EXTERNAL tools and data sources beyond the built-in capabilities. This includes:
+- Web search and research
+- Advanced MongoDB query generation via MCP
+- Dynamic tool discovery via Model Context Protocol (MCP) servers
 
 ### How It Works
 The MCP agent:
-1. Connects to external MCP servers (e.g., Tavily for web search)
+1. Connects to external MCP servers (e.g., Tavily for web search, MongoDB for advanced queries)
 2. Dynamically discovers available tools
 3. Selects appropriate external tools for the request
 4. Executes external tool calls
@@ -254,7 +258,8 @@ The MCP agent:
 6. Returns comprehensive response
 
 ### External Tools Available (When MCP Mode Enabled)
-- **Tavily**: Web search and research
+- **Tavily**: Web search and research for current/external information
+- **MongoDB MCP Server**: Advanced query generation, aggregation pipelines, complex database operations
 - **Custom MCP Servers**: Any MCP-compatible tool servers
 
 ### Examples That Route to Tier 4
@@ -265,6 +270,15 @@ The MCP agent:
 "Look up MongoDB best practices for 2025"
 "What's the current state of RAG systems?"
 "Find information about prompt caching"
+```
+
+**Advanced MongoDB Query Generation** (via MongoDB MCP):
+```
+"Generate an aggregation pipeline to find tasks by complexity over time"
+"Create a query that finds projects with the most overdue high-priority tasks"
+"Build a MongoDB query to analyze task completion rates by project"
+"Generate an aggregation to calculate average time-to-completion by priority"
+"Create a complex join query across tasks and projects with time-series analysis"
 ```
 
 **External Data Needs**:
@@ -291,12 +305,13 @@ The MCP agent:
 - **Availability**: **REQUIRES TOGGLE** - "Experimental MCP Mode" must be enabled
 
 ### When This Tier Catches Queries
-- Intent classified as "research", "web_search", "find_information"
+- Intent classified as "research", "web_search", "find_information", "advanced_mongodb_query"
 - User has enabled "Experimental MCP Mode" toggle
-- Query explicitly requests external/current information
+- Query explicitly requests external/current information OR advanced MongoDB query generation
 
 ### When Queries Are Blocked
 - MCP mode not enabled → Show message: "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
+- Note: Advanced MongoDB query generation via MongoDB MCP server requires the MCP toggle enabled
 
 ## Routing Decision Flow
 
@@ -404,6 +419,8 @@ User Input
 | "Research AI agent trends" | Needs current web data | Tavily web search |
 | "Look up MongoDB best practices" | External information | Tavily web search |
 | "What's new in Claude 4?" | Up-to-date info needed | Tavily web search |
+| "Generate aggregation pipeline for task complexity" | Advanced MongoDB query | MongoDB MCP server |
+| "Build query to analyze completion rates" | Complex aggregation needed | MongoDB MCP server |
 | "Research market and create project" | Multi-step with external data | Tavily + worklog_agent |
 
 ### Falls Through (MCP Mode Disabled for External Tools)
@@ -514,6 +531,7 @@ User Input
 **When to route to Tier 4** (external MCP tools):
 - Explicit research or web search requests
 - Needs current/external information
+- Advanced MongoDB query generation (aggregation pipelines, complex analytics)
 - Tool discovery required
 - Real-time data needs
 
@@ -541,6 +559,7 @@ User Input
 - Need to research current/external information
 - Want web search results
 - Looking for the latest trends or data
+- Need advanced MongoDB query generation (complex aggregations, analytics)
 - Require tools beyond the built-in capabilities
 
 ## Monitoring and Metrics
@@ -609,17 +628,17 @@ The 4-tier routing architecture provides optimal balance between speed, cost, fl
 - **Tier 1** (Pattern Matching): Fast, free, beginner-friendly natural language
 - **Tier 2** (Slash Commands): Fast, free, powerful for experts
 - **Tier 3** (LLM Agent with Built-in Tools): Flexible, always available, handles complex queries with reasoning - **NO TOGGLE REQUIRED**
-- **Tier 4** (MCP External Tools): Maximum flexibility, external data access, research capabilities - **REQUIRES TOGGLE**
+- **Tier 4** (MCP External Tools): Maximum flexibility, external data access (web search, advanced MongoDB queries), research capabilities - **REQUIRES TOGGLE**
 
 ### Key Architectural Decisions
 
 1. **Tier 3 is ALWAYS available** - Users don't hit a wall when queries don't match patterns. The LLM with built-in agents provides graceful fallback for all unmatched queries.
 
-2. **Tier 4 is OPT-IN** - External tool discovery (MCP) is only required for truly external data needs (web search, research). This manages costs and sets clear expectations.
+2. **Tier 4 is OPT-IN** - External tool discovery (MCP) is only required for truly external data needs (web search, research, advanced MongoDB query generation). This manages costs and sets clear expectations.
 
 3. **Progressive Enhancement** - The architecture progressively enhances capabilities:
    - Tier 1 & 2: Zero-cost, instant responses for common queries
    - Tier 3: Adds reasoning and flexibility for complex queries (always on)
-   - Tier 4: Adds external data access when explicitly needed (opt-in)
+   - Tier 4: Adds external data access (web search, advanced MongoDB analytics) when explicitly needed (opt-in)
 
 This design follows proven patterns in conversational UIs and delivers superior user experience compared to single-approach architectures, while providing clear cost control and flexibility.
