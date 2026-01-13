@@ -180,22 +180,24 @@ class SlashCommandExecutor:
         # Handle completed:timeframe pattern
         if kwargs.get("completed"):
             timeframe = kwargs["completed"]
+            limit = int(kwargs.get("limit", 50))
             self.logger.info(f"Getting tasks completed {timeframe}")
-            return self._get_tasks_by_activity_type("completed", timeframe)
+            return self._get_tasks_by_activity_type("completed", timeframe, limit)
 
         # Handle temporal subcommands
+        limit = int(kwargs.get("limit", 50))
         if sub == "today":
             self.logger.info("Getting tasks with activity today")
-            return self._get_temporal_tasks("today")
+            return self._get_temporal_tasks("today", limit)
         elif sub == "yesterday":
             self.logger.info("Getting tasks with activity yesterday")
-            return self._get_temporal_tasks("yesterday")
+            return self._get_temporal_tasks("yesterday", limit)
         elif sub == "week":
             self.logger.info("Getting tasks with activity this week")
-            return self._get_temporal_tasks("week")
+            return self._get_temporal_tasks("week", limit)
         elif sub == "stale":
             self.logger.info("Getting stale tasks (in_progress > 7 days)")
-            return self._get_stale_tasks()
+            return self._get_stale_tasks(limit)
         else:
             # Regular task list with filters and $lookup for project names
             # Build match query from kwargs
@@ -265,7 +267,7 @@ class SlashCommandExecutor:
                     }
                 },
                 {"$sort": {"created_at": -1}},
-                {"$limit": 50}
+                {"$limit": int(kwargs.get("limit", 50))}
             ])
 
             tasks_collection = get_collection(TASKS_COLLECTION)
@@ -282,7 +284,7 @@ class SlashCommandExecutor:
 
             return tasks
 
-    def _get_temporal_tasks(self, timeframe):
+    def _get_temporal_tasks(self, timeframe, limit=50):
         """Get tasks with activity in a specific timeframe."""
         from shared.db import get_collection, TASKS_COLLECTION
 
@@ -338,7 +340,7 @@ class SlashCommandExecutor:
                 }
             },
             {"$sort": {"created_at": -1}},
-            {"$limit": 50}
+            {"$limit": limit}
         ]))
 
         self.logger.info(f"Query returned {len(tasks)} tasks")
@@ -352,7 +354,7 @@ class SlashCommandExecutor:
 
         return tasks
 
-    def _get_tasks_by_activity_type(self, activity_type, timeframe):
+    def _get_tasks_by_activity_type(self, activity_type, timeframe, limit=50):
         """Get tasks by activity type (completed, started, etc.) in a timeframe."""
         from shared.db import get_collection, TASKS_COLLECTION
 
@@ -404,7 +406,7 @@ class SlashCommandExecutor:
                 }
             },
             {"$sort": {"created_at": -1}},
-            {"$limit": 50}
+            {"$limit": limit}
         ]))
 
         self.logger.info(f"Query returned {len(tasks)} tasks")
@@ -418,7 +420,7 @@ class SlashCommandExecutor:
 
         return tasks
 
-    def _get_stale_tasks(self):
+    def _get_stale_tasks(self, limit=50):
         """Get stale tasks (in_progress for more than 7 days)."""
         from shared.db import get_collection, TASKS_COLLECTION
 
@@ -457,7 +459,7 @@ class SlashCommandExecutor:
                 }
             },
             {"$sort": {"updated_at": 1}},
-            {"$limit": 50}
+            {"$limit": limit}
         ]))
 
         self.logger.info(f"Query returned {len(tasks)} stale tasks")
@@ -623,7 +625,7 @@ class SlashCommandExecutor:
                 }
             },
             {"$sort": {"created_at": -1}},
-            {"$limit": 50}
+            {"$limit": int(kwargs.get("limit", 50))}
         ]
 
         projects_collection = get_collection(PROJECTS_COLLECTION)
