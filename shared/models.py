@@ -82,7 +82,7 @@ class Project(BaseModel):
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
     name: str
     description: str = ""
-    status: Literal["active", "archived"] = "active"
+    status: Literal["active", "planned", "completed", "archived"] = "active"
     context: str = ""
     notes: List[str] = Field(default_factory=list)
     methods: List[str] = Field(default_factory=list)  # Technologies/approaches

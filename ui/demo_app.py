@@ -119,9 +119,10 @@ def get_all_projects_with_tasks() -> List[Dict[str, Any]]:
     projects_collection = get_collection(PROJECTS_COLLECTION)
     tasks_collection = get_collection(TASKS_COLLECTION)
 
+    # Get all projects (not just active) and exclude test projects
     projects_cursor = projects_collection.find(
-        {"status": "active"}
-    ).sort("last_activity", -1)
+        {"is_test": {"$ne": True}}
+    ).sort([("status", 1), ("last_activity", -1)])
 
     projects_with_tasks = []
 
@@ -353,9 +354,18 @@ def render_sidebar():
                 tasks = item["tasks"]
 
                 if project:
-                    with st.expander(f"📁 {project.name}", expanded=False):
+                    # Add status badge to project name
+                    status_badge = ""
+                    if project.status == "completed":
+                        status_badge = "✅ "
+                    elif project.status == "planned":
+                        status_badge = "📋 "
+
+                    with st.expander(f"📁 {status_badge}{project.name}", expanded=False):
                         if project.description:
                             st.caption(project.description)
+                        if project.status:
+                            st.caption(f"Status: {project.status.title()}")
 
                         if tasks:
                             for task in tasks[:5]:  # Show max 5 tasks per project
