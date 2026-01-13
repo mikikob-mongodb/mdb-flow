@@ -8,6 +8,7 @@ Seeds a complete demo dataset including:
 - Procedural Memory (GTM, Reference Architecture, Blog Post templates + Checklists)
 - Semantic Memory (User Preferences)
 - Episodic Memory (12+ past actions spanning completed projects and tasks)
+- AI-Generated Episodic Summaries (for demo app sidebar display)
 
 This script is designed specifically for presentation demos with realistic,
 interconnected data that showcases the 5-tier memory system and supports
@@ -1546,6 +1547,122 @@ def seed_episodic_memory(db, skip_embeddings: bool = False, clean: bool = False)
     return inserted_count
 
 
+def seed_episodic_summaries(db) -> int:
+    """Generate and store AI-generated episodic summaries for tasks and projects."""
+    print("\n" + "=" * 60)
+    print("GENERATING EPISODIC SUMMARIES (AI)")
+    print("=" * 60)
+
+    from shared.episodic import generate_task_episodic_summary, generate_project_episodic_summary
+    from shared.models import Task, Project
+    from memory.manager import MemoryManager
+    from shared.embeddings import embed_query
+
+    # Initialize memory manager
+    try:
+        memory_manager = MemoryManager(db=db, embedding_fn=embed_query)
+    except Exception as e:
+        print(f"⚠️  Could not initialize memory manager: {e}")
+        return 0
+
+    # Check if summaries already exist
+    existing_count = db.memory_episodic.count_documents({})
+    if existing_count > 0:
+        print(f"  ⏭️  Skipping: {existing_count} summaries already exist")
+        print(f"     (Use --clean to regenerate)")
+        return 0
+
+    summary_count = 0
+
+    # Generate task summaries
+    print("\n📋 Generating task summaries...")
+    tasks = list(db.tasks.find({"user_id": DEMO_USER_ID}))
+
+    for task_doc in tasks:
+        try:
+            # Convert to Task model
+            task = Task(**task_doc)
+
+            # Only generate if task has activity (in real usage, this is auto-generated)
+            # For demo, we'll create synthetic activity logs
+            if not task_doc.get("activity_log"):
+                # Add synthetic activity log entry
+                from datetime import datetime
+                activity_entry = {
+                    "timestamp": task_doc.get("created_at", datetime.utcnow()),
+                    "action": "created",
+                    "note": f"Task created for {task_doc.get('project', 'demo')}"
+                }
+                db.tasks.update_one(
+                    {"_id": task_doc["_id"]},
+                    {"$push": {"activity_log": activity_entry}}
+                )
+                # Reload task
+                task_doc = db.tasks.find_one({"_id": task_doc["_id"]})
+                task = Task(**task_doc)
+
+            # Generate summary
+            summary = generate_task_episodic_summary(task)
+
+            # Store in memory_episodic
+            memory_manager.store_episodic_summary(
+                user_id=DEMO_USER_ID,
+                entity_type="task",
+                entity_id=task.id,
+                summary=summary,
+                activity_count=len(task.activity_log),
+                entity_title=task.title,
+                entity_status=task.status
+            )
+
+            print(f"  ✓ Generated summary for: {task.title}")
+            summary_count += 1
+
+        except Exception as e:
+            print(f"  ⚠️  Failed to generate summary for task {task_doc.get('title', 'unknown')}: {e}")
+            continue
+
+    # Generate project summaries
+    print("\n📁 Generating project summaries...")
+    projects = list(db.projects.find({"user_id": DEMO_USER_ID}))
+
+    for project_doc in projects:
+        try:
+            # Convert to Project model
+            project = Project(**project_doc)
+
+            # Get tasks for this project
+            project_tasks = []
+            task_docs = db.tasks.find({"project_id": project.id, "user_id": DEMO_USER_ID})
+            for task_doc in task_docs:
+                project_tasks.append(Task(**task_doc))
+
+            # Generate summary
+            summary = generate_project_episodic_summary(project, project_tasks)
+
+            # Store in memory_episodic
+            memory_manager.store_episodic_summary(
+                user_id=DEMO_USER_ID,
+                entity_type="project",
+                entity_id=project.id,
+                summary=summary,
+                activity_count=len(project.activity_log) if project.activity_log else 0,
+                entity_title=project.name,
+                entity_status=project.status
+            )
+
+            print(f"  ✓ Generated summary for: {project.name}")
+            summary_count += 1
+
+        except Exception as e:
+            print(f"  ⚠️  Failed to generate summary for project {project_doc.get('name', 'unknown')}: {e}")
+            continue
+
+    print(f"\n📊 Summary: {summary_count} episodic summaries generated")
+
+    return summary_count
+
+
 def clear_collections(db, collections: List[str] = None) -> Dict[str, int]:
     """
     Clear specified collections for demo user.
@@ -1564,6 +1681,7 @@ def clear_collections(db, collections: List[str] = None) -> Dict[str, int]:
             "memory_short_term",
             "memory_long_term",
             "memory_shared",
+            "memory_episodic",
             "tool_discoveries"
         ]
 
@@ -1812,6 +1930,9 @@ def seed_all(db, clean: bool = False, skip_embeddings: bool = False) -> Dict[str
     results["semantic"] = seed_semantic_memory(db, clean=False)
     results["episodic"] = seed_episodic_memory(db, skip_embeddings=skip_embeddings, clean=False)
 
+    # Generate AI episodic summaries (for demo app sidebar)
+    results["episodic_summaries"] = seed_episodic_summaries(db)
+
     # Count embeddings across all collections
     if not skip_embeddings:
         # Count embeddings in tasks and projects
@@ -1908,6 +2029,7 @@ def main():
         print(f"  Procedural memories inserted: {results['procedural']}")
         print(f"  Semantic memories inserted: {results['semantic']}")
         print(f"  Episodic memories inserted: {results['episodic']}")
+        print(f"  Episodic summaries generated: {results['episodic_summaries']}")
         print(f"  Embeddings generated: {results['embeddings']}")
 
         # Check embeddings status
