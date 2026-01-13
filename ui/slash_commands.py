@@ -76,6 +76,27 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
 
     query_lower = user_input.lower().strip()
 
+    # Action commands - must come BEFORE status queries
+    # "I finished X" / "I'm done with X" / "Mark X as done"
+    finish_match = re.search(r'\b(?:i finished|i\'m done with|mark|complete)\s+(?:the\s+)?(.+?)(?:\s+(?:task|as done|as complete))?\s*$', query_lower)
+    if finish_match and not re.search(r'^(mark|complete)\s+(all|everything)', query_lower):
+        task_query = finish_match.group(1).strip()
+        # Remove common words
+        task_query = re.sub(r'^(the|a|an)\s+', '', task_query)
+        return f"/do complete {task_query}"
+
+    # "I'm starting work on X" / "Start working on X" / "Starting X"
+    start_match = re.search(r'\b(?:i\'m starting|starting|start)\s+(?:work on|working on)?\s*(?:the\s+)?(.+?)(?:\s+task)?\s*$', query_lower)
+    if start_match:
+        task_query = start_match.group(1).strip()
+        # Remove common words
+        task_query = re.sub(r'^(the|a|an)\s+', '', task_query)
+        return f"/do start {task_query}"
+
+    # "What's next?" / "What should I work on?"
+    if re.search(r'\b(what\'?s next|what should i (?:work on|do)|what\'?s my next task)\b', query_lower):
+        return "/tasks status:todo priority:high"
+
     # Temporal queries - check for time-based filters first
     # "Show me completed tasks from this week"
     if re.search(r'\b(completed|finished|done)\b.*\b(this week|today|yesterday)\b', query_lower):
