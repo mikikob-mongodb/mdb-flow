@@ -85,8 +85,8 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
         task_query = re.sub(r'^(the|a|an)\s+', '', task_query)
         return f"/do complete {task_query}"
 
-    # "I'm starting work on X" / "Start working on X" / "Starting X"
-    start_match = re.search(r'\b(?:i\'m starting|starting|start)\s+(?:work on|working on)?\s*(?:the\s+)?(.+?)(?:\s+task)?\s*$', query_lower)
+    # "I'm starting work on X" / "Start working on X" / "Begin the X task"
+    start_match = re.search(r'\b(?:i\'m starting|starting|start|begin|beginning)\s+(?:work on|working on)?\s*(?:the\s+)?(.+?)(?:\s+task)?\s*$', query_lower)
     if start_match:
         task_query = start_match.group(1).strip()
         # Remove common words
