@@ -25,6 +25,9 @@ from shared.config import settings
 from ui.slash_commands import parse_slash_command, detect_natural_language_query, SlashCommandExecutor
 from ui.formatters import render_command_result
 
+# Anthropic for episodic memory summaries
+from anthropic import Anthropic
+
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -195,6 +198,112 @@ def get_priority_badge(priority: str) -> str:
     return ""
 
 
+def generate_task_episodic_summary(task: Task) -> str:
+    """Generate AI summary from task's episodic memory (activity log) using Haiku."""
+    try:
+        # Format activity log
+        activity_text = ""
+        for entry in task.activity_log[-10:]:  # Last 10 entries
+            timestamp = entry.timestamp.strftime("%Y-%m-%d %H:%M") if entry.timestamp else "N/A"
+            activity_text += f"- {timestamp}: {entry.action}"
+            if entry.note:
+                activity_text += f" - {entry.note}"
+            activity_text += "\n"
+
+        if not activity_text:
+            activity_text = "- Task created (no additional activity recorded)"
+
+        # Build prompt
+        prompt = f"""Summarize this task's episodic memory (activity history) in 2-3 concise sentences.
+
+Task: {task.title}
+Status: {task.status}
+Priority: {task.priority or 'none'}
+Created: {task.created_at.strftime('%Y-%m-%d') if task.created_at else 'N/A'}
+
+Activity History (Episodic Memory):
+{activity_text}
+
+Provide a brief summary focusing on current state and recent progress. Be concise and factual."""
+
+        # Use Haiku for speed and cost efficiency
+        client = Anthropic(api_key=settings.anthropic_api_key)
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=150,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.content[0].text.strip()
+
+    except Exception as e:
+        return f"Unable to generate summary: {str(e)}"
+
+
+def generate_project_episodic_summary(project: Project, tasks: List[Task]) -> str:
+    """Generate AI summary from project's episodic memory (all task activity) using Haiku."""
+    try:
+        # Aggregate all task activity
+        all_activity = []
+        for task in tasks:
+            for entry in task.activity_log:
+                all_activity.append({
+                    "task": task.title,
+                    "timestamp": entry.timestamp,
+                    "action": entry.action,
+                    "note": entry.note
+                })
+
+        # Sort by timestamp descending (most recent first)
+        all_activity.sort(key=lambda x: x["timestamp"], reverse=True)
+        recent_activity = all_activity[:20]  # Last 20 events
+
+        # Format activity
+        activity_text = ""
+        for event in recent_activity:
+            timestamp = event["timestamp"].strftime("%Y-%m-%d %H:%M") if event["timestamp"] else "N/A"
+            activity_text += f"- {timestamp}: [{event['task']}] {event['action']}"
+            if event.get("note"):
+                activity_text += f" - {event['note']}"
+            activity_text += "\n"
+
+        if not activity_text:
+            activity_text = "- No recent activity recorded"
+
+        # Calculate task metrics
+        task_counts = {
+            "total": len(tasks),
+            "todo": len([t for t in tasks if t.status == "todo"]),
+            "in_progress": len([t for t in tasks if t.status == "in_progress"]),
+            "done": len([t for t in tasks if t.status == "done"])
+        }
+
+        # Build prompt
+        prompt = f"""Summarize this project's episodic memory in 3-4 concise sentences.
+
+Project: {project.name}
+Status: {project.status}
+Tasks: {task_counts['total']} total ({task_counts['in_progress']} in progress, {task_counts['done']} done, {task_counts['todo']} todo)
+
+Recent Activity (Last 20 events across all tasks):
+{activity_text}
+
+Focus on: current momentum, what's being worked on, recent completions, and project health. Be concise and factual."""
+
+        # Use Haiku for speed and cost efficiency
+        client = Anthropic(api_key=settings.anthropic_api_key)
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.content[0].text.strip()
+
+    except Exception as e:
+        return f"Unable to generate summary: {str(e)}"
+
+
 def render_task_with_metadata(task):
     """Render a task as a collapsible expander with full metadata."""
     from datetime import datetime
@@ -205,6 +314,25 @@ def render_task_with_metadata(task):
     header = f"{status_icon} {priority_badge} {task.title}"
 
     with st.expander(header, expanded=False):
+        # Generate episodic memory summary (cached in session state)
+        task_id_str = str(task.id) if task.id else "unknown"
+
+        # Initialize cache if needed
+        if "task_episodic_summaries" not in st.session_state:
+            st.session_state.task_episodic_summaries = {}
+
+        # Generate summary if not cached
+        if task_id_str not in st.session_state.task_episodic_summaries:
+            with st.spinner("🧠 Generating episodic memory summary..."):
+                summary = generate_task_episodic_summary(task)
+                st.session_state.task_episodic_summaries[task_id_str] = summary
+
+        # Display episodic memory summary
+        st.markdown("**🧠 Episodic Memory Summary**")
+        st.info(st.session_state.task_episodic_summaries[task_id_str])
+
+        st.divider()
+
         # Create two columns for metadata
         col1, col2 = st.columns(2)
 
@@ -422,6 +550,25 @@ def render_sidebar():
                             st.caption(project.description)
                         if project.status:
                             st.caption(f"Status: {project.status.title()}")
+
+                        # Generate project episodic memory summary (cached in session state)
+                        project_id_str = str(project.id) if project.id else "unknown"
+
+                        # Initialize cache if needed
+                        if "project_episodic_summaries" not in st.session_state:
+                            st.session_state.project_episodic_summaries = {}
+
+                        # Generate summary if not cached
+                        if project_id_str not in st.session_state.project_episodic_summaries:
+                            with st.spinner("🧠 Generating project episodic memory summary..."):
+                                summary = generate_project_episodic_summary(project, tasks)
+                                st.session_state.project_episodic_summaries[project_id_str] = summary
+
+                        # Display project episodic memory summary
+                        st.markdown("**🧠 Project Episodic Memory**")
+                        st.success(st.session_state.project_episodic_summaries[project_id_str])
+
+                        st.divider()
 
                         if tasks:
                             for task in tasks[:10]:  # Show max 10 tasks per project
