@@ -76,6 +76,10 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
 
     query_lower = user_input.lower().strip()
 
+    # Skip if input already starts with / (it's already a slash command)
+    if query_lower.startswith('/'):
+        return None
+
     # Action commands - must come BEFORE status queries
     # "I finished X" / "I'm done with X" / "Mark X as done"
     finish_match = re.search(r'\b(?:i finished|i\'m done with|mark|complete)\s+(?:the\s+)?(.+?)(?:\s+(?:task|as done|as complete))?\s*$', query_lower)
