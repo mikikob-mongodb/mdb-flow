@@ -340,6 +340,11 @@ def render_sidebar():
         # ─────────────────────────────────────────────────────────────────
         st.subheader("📁 Projects")
 
+        # Legend
+        with st.expander("ℹ️ Legend", expanded=False):
+            st.caption("**Status:** ○ Todo  •  ◐ In Progress  •  ✓ Done")
+            st.caption("**Priority:** 🔴 High  •  🟡 Medium  •  🟢 Low")
+
         projects_with_tasks = get_all_projects_with_tasks()
 
         if projects_with_tasks:
