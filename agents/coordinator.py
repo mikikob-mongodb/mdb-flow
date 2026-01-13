@@ -1009,17 +1009,18 @@ Use this memory context to:
         if intent in static_intents:
             return True
 
-        # Intents that need MCP
+        # Intents that need MCP (external tool discovery)
+        # NOTE: "unknown" is NOT in this list - unknown intents should be handled
+        # by the LLM with built-in tools (Tier 3), not require MCP mode (Tier 4)
         mcp_intents = [
             "research", "web_search", "find_information",
-            "complex_query", "aggregation", "data_extraction",
-            "unknown"
+            "complex_query", "aggregation", "data_extraction"
         ]
 
         if intent in mcp_intents:
             return False
 
-        # Default to static for safety
+        # Default to static tools (including LLM with built-in tools for "unknown")
         return True
 
     def _classify_intent(self, user_message: str) -> str:
@@ -2354,20 +2355,27 @@ Execute the rule action: {rule_match['action']}
                 return formatted["response"]
 
         # ═══════════════════════════════════════════════════════════════
-        # MCP ROUTING: Check if request should be handled by MCP Agent
+        # TIER 4: MCP ROUTING - External Tool Discovery (Requires Toggle)
+        # ═══════════════════════════════════════════════════════════════
+        # This section handles requests that require EXTERNAL tools via MCP
+        # (e.g., web search, research via Tavily).
+        #
+        # Requests that don't match Tier 1 (patterns), Tier 2 (slash commands),
+        # or Tier 4 (MCP external tools) will fall through to Tier 3 (LLM with
+        # built-in agents) below.
         # ═══════════════════════════════════════════════════════════════
 
         intent = self._classify_intent(user_message)
         logger.info(f"📊 Classified intent: {intent}")
 
-        # Check if static tools can handle this
+        # Check if this request needs EXTERNAL MCP tools (Tier 4)
         if not self._can_static_tools_handle(intent, user_message):
-            logger.info(f"📊 Static tools cannot handle intent '{intent}', checking MCP...")
+            logger.info(f"📊 Intent '{intent}' requires external MCP tools, checking if MCP mode enabled...")
 
-            # MCP mode check
+            # MCP mode check - only required for EXTERNAL tool discovery (Tier 4)
             if not self.mcp_mode_enabled:
-                logger.warning("📊 MCP mode disabled, suggesting to user")
-                response_text = "I don't have a built-in tool for this request. Enable Experimental MCP Mode to let me try to figure it out."
+                logger.warning("📊 MCP mode disabled, cannot use external tools like Tavily")
+                response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
 
                 if return_debug:
                     return {
@@ -2442,6 +2450,17 @@ Execute the rule action: {rule_match['action']}
                     }
                 else:
                     return error_response
+
+        # ═══════════════════════════════════════════════════════════════
+        # TIER 3: LLM AGENT WITH BUILT-IN TOOLS (Always Available)
+        # ═══════════════════════════════════════════════════════════════
+        # This section handles ALL requests using Claude with built-in tools:
+        # - worklog_agent (tasks, projects, notes)
+        # - retrieval_agent (search, memory)
+        # - memory system (context, rules, preferences)
+        #
+        # This tier is ALWAYS available and does NOT require MCP toggle.
+        # ═══════════════════════════════════════════════════════════════
 
         # Get prompt caching setting
         cache_prompts = self.optimizations.get("prompt_caching", True)
