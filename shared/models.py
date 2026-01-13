@@ -255,3 +255,43 @@ class SharedMemory(BaseModel):
         if self.id is None and "_id" in data:
             del data["_id"]
         return data
+
+
+class EpisodicMemory(BaseModel):
+    """Episodic memory for AI-generated summaries of activity history.
+
+    Stores periodic snapshots of task/project activity as natural language summaries.
+    Generated automatically every 3-5 activity log entries.
+
+    Persistent storage (no TTL).
+    """
+
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    user_id: str = "default"  # User identifier
+    entity_type: Literal["task", "project"]  # What this summary is about
+    entity_id: PyObjectId  # Task or Project ID
+    summary: str  # AI-generated natural language summary
+    activity_count: int  # Number of activity log entries at time of generation
+
+    # Metadata for context
+    entity_title: Optional[str] = None  # Task title or project name
+    entity_status: Optional[str] = None  # Current status
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {
+            ObjectId: str,
+            datetime: lambda v: v.isoformat()
+        }
+
+    def to_mongo(self) -> dict:
+        """Convert to MongoDB document format."""
+        data = self.model_dump(by_alias=True, exclude_none=True)
+        if self.id is None and "_id" in data:
+            del data["_id"]
+        return data

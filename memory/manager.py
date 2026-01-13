@@ -135,6 +135,25 @@ class MemoryManager:
         except OperationFailure:
             pass
 
+        # ═══════════════════════════════════════════════════════════════
+        # EPISODIC MEMORY (persistent - AI-generated activity summaries)
+        # ═══════════════════════════════════════════════════════════════
+        self.episodic = self.db.memory_episodic
+
+        # Indexes
+        try:
+            self.episodic.create_index([
+                ("entity_type", ASCENDING),
+                ("entity_id", ASCENDING),
+                ("generated_at", DESCENDING)
+            ])
+        except OperationFailure:
+            pass
+        try:
+            self.episodic.create_index([("user_id", ASCENDING), ("generated_at", DESCENDING)])
+        except OperationFailure:
+            pass
+
     # ═══════════════════════════════════════════════════════════════════
     # SHORT-TERM: SESSION CONTEXT
     # ═══════════════════════════════════════════════════════════════════
@@ -1488,6 +1507,129 @@ class MemoryManager:
             "fresh": fresh,
             "expired": total - fresh
         }
+
+    # ═══════════════════════════════════════════════════════════════════
+    # EPISODIC MEMORY: AI-GENERATED ACTIVITY SUMMARIES
+    # ═══════════════════════════════════════════════════════════════════
+
+    def store_episodic_summary(
+        self,
+        user_id: str,
+        entity_type: str,
+        entity_id: Any,
+        summary: str,
+        activity_count: int,
+        entity_title: str = None,
+        entity_status: str = None
+    ) -> str:
+        """
+        Store an AI-generated episodic memory summary.
+
+        Args:
+            user_id: User identifier
+            entity_type: "task" or "project"
+            entity_id: ObjectId of task or project
+            summary: AI-generated natural language summary
+            activity_count: Number of activity log entries at time of generation
+            entity_title: Task title or project name (optional)
+            entity_status: Current status (optional)
+
+        Returns:
+            Inserted document ID as string
+        """
+        from bson import ObjectId
+
+        # Convert entity_id to ObjectId if needed
+        if not isinstance(entity_id, ObjectId):
+            entity_id = ObjectId(entity_id)
+
+        doc = {
+            "user_id": user_id,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "summary": summary,
+            "activity_count": activity_count,
+            "entity_title": entity_title,
+            "entity_status": entity_status,
+            "created_at": datetime.utcnow(),
+            "generated_at": datetime.utcnow()
+        }
+
+        result = self.episodic.insert_one(doc)
+        return str(result.inserted_id)
+
+    def get_latest_episodic_summary(
+        self,
+        entity_type: str,
+        entity_id: Any
+    ) -> Optional[Dict]:
+        """
+        Get the most recent episodic memory summary for a task or project.
+
+        Args:
+            entity_type: "task" or "project"
+            entity_id: ObjectId of task or project
+
+        Returns:
+            Latest summary document or None
+        """
+        from bson import ObjectId
+
+        # Convert entity_id to ObjectId if needed
+        if not isinstance(entity_id, ObjectId):
+            entity_id = ObjectId(entity_id)
+
+        doc = self.episodic.find_one(
+            {
+                "entity_type": entity_type,
+                "entity_id": entity_id
+            },
+            sort=[("generated_at", DESCENDING)]
+        )
+
+        if doc:
+            doc["_id"] = str(doc["_id"])
+            doc["entity_id"] = str(doc["entity_id"])
+
+        return doc
+
+    def get_all_episodic_summaries(
+        self,
+        entity_type: str,
+        entity_id: Any,
+        limit: int = 10
+    ) -> List[Dict]:
+        """
+        Get all episodic memory summaries for a task or project (most recent first).
+
+        Args:
+            entity_type: "task" or "project"
+            entity_id: ObjectId of task or project
+            limit: Maximum number of summaries to return
+
+        Returns:
+            List of summary documents
+        """
+        from bson import ObjectId
+
+        # Convert entity_id to ObjectId if needed
+        if not isinstance(entity_id, ObjectId):
+            entity_id = ObjectId(entity_id)
+
+        cursor = self.episodic.find(
+            {
+                "entity_type": entity_type,
+                "entity_id": entity_id
+            }
+        ).sort("generated_at", DESCENDING).limit(limit)
+
+        results = []
+        for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            doc["entity_id"] = str(doc["entity_id"])
+            results.append(doc)
+
+        return results
 
     # ═══════════════════════════════════════════════════════════════════
     # UTILITIES

@@ -1,7 +1,7 @@
 """MongoDB database connection and utilities."""
 
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -129,6 +129,9 @@ def create_task(task: Task, action_note: str = "Task created") -> ObjectId:
     collection = get_collection(TASKS_COLLECTION)
     result = collection.insert_one(task_doc)
 
+    # Auto-generate episodic summary for new task (activity_count = 1)
+    _maybe_generate_task_episodic_summary(result.inserted_id)
+
     return result.inserted_id
 
 
@@ -190,6 +193,10 @@ def update_task(
             "$push": {"activity_log": activity_entry}
         }
     )
+
+    if result.modified_count > 0:
+        # Auto-generate episodic summary if conditions met
+        _maybe_generate_task_episodic_summary(task_id)
 
     return result.modified_count > 0
 
@@ -483,3 +490,108 @@ def set_current_context(
         updates["current_project_id"] = project_id
 
     return update_settings(user_id, **updates)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# EPISODIC MEMORY AUTO-GENERATION
+# ═══════════════════════════════════════════════════════════════════
+
+def _maybe_generate_task_episodic_summary(task_id: ObjectId) -> None:
+    """
+    Auto-generate episodic memory summary for a task if conditions are met.
+
+    Generates every 3-5 activity log entries (specifically at counts 1, 5, 9, 13, etc.).
+
+    Args:
+        task_id: ObjectId of the task
+    """
+    try:
+        # Import here to avoid circular imports
+        from shared.episodic import should_generate_task_summary, generate_task_episodic_summary
+        from agents.coordinator import memory_manager
+
+        # Get updated task
+        task = get_task(task_id)
+        if not task:
+            return
+
+        # Check if we should generate a summary
+        activity_count = len(task.activity_log)
+        if should_generate_task_summary(activity_count):
+            # Generate summary
+            summary = generate_task_episodic_summary(task)
+
+            # Store in memory_episodic collection
+            memory_manager.store_episodic_summary(
+                user_id="default",  # TODO: Get from context
+                entity_type="task",
+                entity_id=task_id,
+                summary=summary,
+                activity_count=activity_count,
+                entity_title=task.title,
+                entity_status=task.status
+            )
+
+    except Exception as e:
+        # Silently fail - episodic summary generation is optional
+        # Don't break the task update if this fails
+        pass
+
+
+def _maybe_generate_project_episodic_summary(
+    project_id: ObjectId,
+    old_description: Optional[str] = None,
+    new_description: Optional[str] = None,
+    old_notes: Optional[List] = None,
+    new_notes: Optional[List] = None
+) -> None:
+    """
+    Auto-generate episodic memory summary for a project if conditions are met.
+
+    Generates when description or notes change.
+
+    Args:
+        project_id: ObjectId of the project
+        old_description: Previous description (if known)
+        new_description: New description (if known)
+        old_notes: Previous notes list (if known)
+        new_notes: New notes list (if known)
+    """
+    try:
+        # Import here to avoid circular imports
+        from shared.episodic import should_generate_project_summary, generate_project_episodic_summary
+        from agents.coordinator import memory_manager
+
+        # Check if we should generate a summary (if we have before/after state)
+        if old_description is not None or old_notes is not None:
+            if not should_generate_project_summary(old_description, new_description, old_notes, new_notes):
+                return
+
+        # Get updated project
+        project = get_project(project_id)
+        if not project:
+            return
+
+        # Get tasks for this project
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        task_docs = tasks_collection.find({"project_id": project_id})
+        tasks = [Task(**doc) for doc in task_docs]
+
+        # Generate summary
+        summary = generate_project_episodic_summary(project, tasks)
+
+        # Store in memory_episodic collection
+        activity_count = len(project.activity_log)
+        memory_manager.store_episodic_summary(
+            user_id="default",  # TODO: Get from context
+            entity_type="project",
+            entity_id=project_id,
+            summary=summary,
+            activity_count=activity_count,
+            entity_title=project.name,
+            entity_status=project.status
+        )
+
+    except Exception as e:
+        # Silently fail - episodic summary generation is optional
+        pass
