@@ -96,7 +96,16 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
     if re.search(r'\b(what[\'s\s]+|show\s+|list\s+)?(low priority)\b', query_lower):
         return "/tasks priority:low"
 
-    # Project-specific queries
+    # Project detail queries
+    # Extract project name from queries like "Show me the AgentOps project"
+    project_detail_match = re.search(r'(?:show me|get|display|view)\s+(?:the\s+)?(.+?)\s+project\b', user_input, re.IGNORECASE)
+    if project_detail_match:
+        project_name = project_detail_match.group(1).strip()
+        # Only match if project name starts with capital (likely a proper noun)
+        if project_name and project_name[0].isupper():
+            return f"/projects {project_name}"
+
+    # Project-specific task queries
     # Extract project name from queries like "What's in the Voice Agent project?"
     project_match = re.search(r'\b(?:in|for|on)\s+(?:the\s+)?([A-Z][A-Za-z\s]+?)\s+(?:project|tasks?)\b', user_input)
     if project_match:

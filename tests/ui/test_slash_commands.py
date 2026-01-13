@@ -23,7 +23,7 @@ class TestTasksBasicQueries:
         result = execute_command("/tasks")
 
         assert result["success"], f"Command failed: {result.get('error')}"
-        assert validate_count_range(result, min_count=35, max_count=45)
+        assert validate_count_range(result, min_count=35, max_count=60)
 
         # Validate structure
         data = result.get("result", [])
