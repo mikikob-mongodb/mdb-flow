@@ -528,6 +528,208 @@ All user-reported queries tested and verified working:
 
 ## Conclusion
 
-Successfully expanded natural language query detection from basic status/priority queries to comprehensive coverage of common user requests. The hybrid 3-tier routing architecture now provides optimal balance between speed, cost, and flexibility, with ~90% of common queries handled instantly by pattern matching. Comprehensive documentation ensures maintainability and guides future enhancements.
+Successfully expanded natural language query detection from basic status/priority queries to comprehensive coverage of common user requests. The hybrid routing architecture now provides optimal balance between speed, cost, and flexibility, with ~90% of common queries handled instantly by pattern matching. Comprehensive documentation ensures maintainability and guides future enhancements.
 
 **Key Achievement**: Natural language interface that feels conversational while maintaining zero-latency, zero-cost execution for common operations.
+
+---
+
+## Update: 4-Tier Architecture Implementation
+
+**Date**: 2026-01-13 (continued)
+**Status**: ✅ Complete
+
+### Problem Identified
+
+User identified that the system was incorrectly treating routing as 3-tier when it should be 4-tier:
+
+**Original Understanding** (Incorrect):
+- Tier 1: Natural Language Pattern Detection
+- Tier 2: Explicit Slash Commands
+- Tier 3: MCP Agent System (requires toggle)
+
+**User's Correct Understanding**:
+- **TIER 1**: Natural Language Pattern Detection (regex, instant, free)
+- **TIER 2**: Explicit Slash Commands (direct queries, instant, free)
+- **TIER 3**: LLM Agent with Built-in Tools (should be ALWAYS available)
+  - worklog_agent, retrieval_agent, memory system
+  - NO toggle required
+- **TIER 4**: MCP Agent - External Tool Discovery (requires toggle)
+  - Tavily web search, external MCP servers
+  - Only for research and current information needs
+
+**Core Issue**: The coordinator was blocking "unknown" intents with "Enable MCP Mode" message instead of using built-in LLM agents. This meant users couldn't ask complex questions without enabling MCP mode, even though those questions could be answered with built-in tools.
+
+**User's Concern**: "We keep adding more regex rules and slash commands but we need to have some additional flexibility"
+
+### Changes Made
+
+#### 1. Coordinator Logic Fix (`agents/coordinator.py`)
+
+**Changed**:
+```python
+# OLD: "unknown" was in mcp_intents list
+mcp_intents = [
+    "research", "web_search", "find_information",
+    "complex_query", "aggregation", "data_extraction",
+    "unknown"  # ❌ This blocked all unknown queries
+]
+```
+
+**To**:
+```python
+# NEW: "unknown" removed - falls through to LLM with built-in tools
+mcp_intents = [
+    "research", "web_search", "find_information",
+    "complex_query", "aggregation", "data_extraction"
+    # ✅ "unknown" NOT in list - handled by Tier 3
+]
+```
+
+**Impact**:
+- "Unknown" intents now fall through to normal LLM processing (Tier 3)
+- Only research/web_search intents require MCP mode (Tier 4)
+- Built-in LLM agents always available for reasoning
+
+#### 2. Updated Comments and Documentation
+
+**Added clear tier markers in coordinator.py**:
+```python
+# TIER 3: LLM AGENT WITH BUILT-IN TOOLS (Always Available)
+# - worklog_agent, retrieval_agent, memory system
+# - NO toggle required
+
+# TIER 4: MCP ROUTING - External Tool Discovery (Requires Toggle)
+# - Tavily web search, external MCP servers
+# - Only for research/current information
+```
+
+#### 3. Complete Documentation Rewrite (`docs/features/QUERY_ROUTING.md`)
+
+**Updated to reflect 4-tier architecture**:
+- Rewritten overview section (3-tier → 4-tier)
+- New Tier 3 section: "LLM Agent with Built-in Tools (ALWAYS AVAILABLE)"
+- New Tier 4 section: "MCP Agent - External Tool Discovery (Requires Toggle)"
+- Updated decision flow diagrams
+- Updated performance comparison table
+- Updated examples by tier
+- Updated design rationale
+- Updated usage guidelines
+- Added "Key Architectural Decisions" section
+
+**Key Documentation Points**:
+1. **Tier 3 is ALWAYS available** - Users don't hit a wall when queries don't match patterns
+2. **Tier 4 is OPT-IN** - External tool discovery only for truly external data needs
+3. **Progressive Enhancement** - Each tier adds capabilities without blocking access
+
+### Testing
+
+**Tests Run**:
+```bash
+pytest tests/ui/test_slash_commands.py -v
+```
+
+**Result**: ✅ 57/57 tests passing
+
+**Demo App**: ✅ Successfully started at http://localhost:8502
+
+### Impact Analysis
+
+**Before** (3-tier with MCP blocking):
+```
+User: "What should I work on next?"
+System: "I don't have a built-in tool for this request. Enable Experimental MCP Mode..."
+User: 😞 (blocked, must find toggle)
+```
+
+**After** (4-tier with Tier 3 always available):
+```
+User: "What should I work on next?"
+System: [Uses worklog_agent + retrieval_agent to analyze tasks and suggest priorities]
+User: 😊 (seamless experience)
+```
+
+**Queries Now Working Without MCP Toggle**:
+- "What should I work on next?"
+- "Summarize my progress this week"
+- "Why is the Voice Agent project taking so long?"
+- "Tell me more about that"
+- "How are my tasks organized?"
+- "What's blocking the AgentOps project?"
+- All conversational follow-ups
+
+**Queries Still Requiring MCP Toggle** (Tier 4):
+- "Research the latest AI agent trends"
+- "Look up MongoDB best practices for 2025"
+- "What's new in Claude 4?"
+- "Search the web for X"
+
+### Files Modified
+
+1. **agents/coordinator.py**
+   - Removed "unknown" from mcp_intents list (line ~1017)
+   - Updated MCP routing comments (lines ~2357-2366)
+   - Added Tier 3 section comments (lines ~2454-2463)
+   - Updated error message for MCP-required queries
+
+2. **docs/features/QUERY_ROUTING.md**
+   - Complete rewrite from 3-tier to 4-tier (625 lines total)
+   - New Tier 3 and Tier 4 sections
+   - Updated all diagrams and examples
+   - Updated performance comparison table
+   - Added key architectural decisions section
+
+### Commit
+
+```
+commit ded11c2
+Implement 4-tier routing architecture
+
+BREAKING CHANGE: Tier 3 (LLM agent with built-in tools) now always
+available without MCP toggle
+```
+
+### Key Achievements
+
+1. **Better UX**: Users no longer hit "Enable MCP Mode" wall for questions that can be answered with built-in tools
+
+2. **Cost Control**: External tools (Tier 4) remain opt-in, managing API costs
+
+3. **Flexibility**: Built-in LLM reasoning (Tier 3) provides graceful fallback for all unmatched queries
+
+4. **Clear Separation**:
+   - Tier 3 = Internal reasoning (worklog, retrieval, memory) - Always on
+   - Tier 4 = External data (web search, research) - Opt-in
+
+5. **Progressive Enhancement**: Architecture now properly reflects the progressive capability levels
+
+### Lessons Learned
+
+1. **Listen to user feedback about architecture**: User correctly identified that blocking Tier 3 behind MCP toggle was wrong
+
+2. **Balance flexibility vs cost**: Pattern matching is great for common queries, but LLM fallback (Tier 3) is essential for edge cases
+
+3. **Document architectural intent clearly**: The 4-tier structure clarifies which features are always available vs opt-in
+
+4. **Test assumptions**: The original 3-tier model incorrectly lumped built-in and external agents together
+
+### Related Documentation
+
+- [Query Routing Architecture](../features/QUERY_ROUTING.md) - Updated with 4-tier system
+- [Coordinator Agent Code](../../agents/coordinator.py) - Lines 987-2500+
+- Previous session work on pattern detection (same file, above)
+
+### Session Statistics (4-Tier Update)
+
+- **Duration**: ~1 hour
+- **Files Modified**: 2 (1 production, 1 doc)
+- **Lines Changed**: ~200 (coordinator.py: ~10, QUERY_ROUTING.md: ~190)
+- **Commits**: 1
+- **Tests**: 57/57 passing
+- **Key Architecture Fix**: Tier 3 always available
+
+### Final Conclusion
+
+The 4-tier routing architecture now correctly separates internal LLM agents (Tier 3, always available) from external tool discovery (Tier 4, opt-in). This provides better user experience by removing unnecessary blocking while maintaining cost control through the MCP toggle for truly external operations.
+
+**Critical Insight**: Not all LLM operations need external tools. Built-in agents with Claude's reasoning can handle most complex queries, and should be always available for the best user experience.
