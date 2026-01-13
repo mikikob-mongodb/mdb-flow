@@ -510,6 +510,14 @@ class TestDoCommands:
             "Task title should contain 'unit tests'"
         assert task.get("status") == "todo", "New task should have status 'todo'"
 
+        # CLEANUP: Delete the created task to prevent duplicates
+        task_id = task.get("_id")
+        if task_id:
+            from shared.db import get_collection, TASKS_COLLECTION
+            from bson import ObjectId
+            tasks = get_collection(TASKS_COLLECTION)
+            tasks.delete_one({"_id": ObjectId(task_id)})
+
     def test_do_create_task_with_options(self, execute_command):
         """Test 7.6: Create task with project and priority."""
         result = execute_command(
@@ -524,6 +532,14 @@ class TestDoCommands:
         task = data.get("task", {})
         assert task.get("priority") == "high", "Priority should be 'high'"
         # Note: Project assignment validation would require checking project_id
+
+        # CLEANUP: Delete the created task to prevent duplicates
+        task_id = task.get("_id")
+        if task_id:
+            from shared.db import get_collection, TASKS_COLLECTION
+            from bson import ObjectId
+            tasks = get_collection(TASKS_COLLECTION)
+            tasks.delete_one({"_id": ObjectId(task_id)})
 
     def test_do_fuzzy_matching(self, execute_command):
         """Test 7.7: Fuzzy matching finds tasks with partial names."""
