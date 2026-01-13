@@ -335,11 +335,12 @@ def create_vector_indexes(db, verify_only: bool = False) -> Dict[str, str]:
     results = {}
 
     # Vector index definitions: collection -> (field, index_name, description)
+    # Note: Index name must match retrieval.py expectations ("vector_index")
     vector_indexes = {
-        "tasks": ("embedding", "embedding_vector", "Task semantic search"),
-        "projects": ("embedding", "embedding_vector", "Project semantic search"),
-        "long_term_memory": ("embedding", "embedding_vector", "Memory semantic search"),
-        "tool_discoveries": ("request_embedding", "request_embedding_vector", "Tool discovery semantic search"),
+        "tasks": ("embedding", "vector_index", "Task semantic search"),
+        "projects": ("embedding", "vector_index", "Project semantic search"),
+        "long_term_memory": ("embedding", "vector_index", "Memory semantic search"),
+        "tool_discoveries": ("request_embedding", "vector_index", "Tool discovery semantic search"),
     }
 
     if verify_only:
@@ -408,15 +409,19 @@ def print_vector_index_warning():
     logger.info("⚠️  Vector indexes may need manual creation in Atlas UI")
     logger.info("")
     logger.info("The following vector indexes should be created manually in MongoDB Atlas:")
-    logger.info("  1. tasks.embedding_vector (1024 dimensions, cosine similarity)")
-    logger.info("  2. projects.embedding_vector (1024 dimensions, cosine similarity)")
-    logger.info("  3. long_term_memory.embedding_vector (1024 dimensions, cosine similarity)")
-    logger.info("  4. tool_discoveries.request_embedding_vector (1024 dimensions, cosine similarity)")
+    logger.info("  1. tasks.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("  2. projects.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("  3. long_term_memory.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("  4. tool_discoveries.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("")
+    logger.info("IMPORTANT: Index name MUST be 'vector_index' to match retrieval code expectations")
     logger.info("")
     logger.info("To create these indexes:")
     logger.info("  1. Go to MongoDB Atlas → Database → Search Indexes")
     logger.info("  2. Create Search Index → JSON Editor")
-    logger.info("  3. Use the following template:")
+    logger.info("  3. Select the collection (tasks, projects, long_term_memory, or tool_discoveries)")
+    logger.info("  4. Set Index Name to: vector_index")
+    logger.info("  5. Use the following JSON definition:")
     logger.info("")
     logger.info('  {')
     logger.info('    "fields": [')
@@ -428,6 +433,8 @@ def print_vector_index_warning():
     logger.info('      }')
     logger.info('    ]')
     logger.info('  }')
+    logger.info("")
+    logger.info("  Note: For tool_discoveries collection, use path: 'request_embedding' instead of 'embedding'")
     logger.info("")
 
 # =============================================================================
@@ -653,9 +660,9 @@ def main():
 
     for collection_name, status in vector_results.items():
         if status == "created":
-            logger.info(f"  🆕 {collection_name}.embedding_vector (created, 1024-dim cosine)")
+            logger.info(f"  🆕 {collection_name}.vector_index (created, 1024-dim cosine)")
         elif status == "exists":
-            logger.info(f"  ✅ {collection_name}.embedding_vector (exists)")
+            logger.info(f"  ✅ {collection_name}.vector_index (exists)")
         elif status == "exists (verify mode)":
             logger.info(f"  ✅ {collection_name} (collection exists)")
         elif status == "api_unavailable":
