@@ -322,6 +322,86 @@ def get_existing_indexes(db) -> Dict[str, Set[str]]:
 
     return existing
 
+def create_vector_indexes(db, verify_only: bool = False) -> Dict[str, str]:
+    """
+    Create Atlas Search vector indexes for semantic search.
+
+    Attempts to create vector indexes programmatically using MongoDB Atlas Search API.
+    Falls back to manual instructions if automatic creation fails.
+
+    Returns:
+        Dict mapping collection names to status (created, exists, failed, skipped)
+    """
+    results = {}
+
+    # Vector index definitions: collection -> (field, index_name, description)
+    vector_indexes = {
+        "tasks": ("embedding", "embedding_vector", "Task semantic search"),
+        "projects": ("embedding", "embedding_vector", "Project semantic search"),
+        "long_term_memory": ("embedding", "embedding_vector", "Memory semantic search"),
+        "tool_discoveries": ("request_embedding", "request_embedding_vector", "Tool discovery semantic search"),
+    }
+
+    if verify_only:
+        # In verify mode, just check if collections exist
+        for collection_name in vector_indexes.keys():
+            if collection_name in db.list_collection_names():
+                results[collection_name] = "exists (verify mode)"
+            else:
+                results[collection_name] = "missing"
+        return results
+
+    for collection_name, (field_name, index_name, description) in vector_indexes.items():
+        try:
+            collection = db[collection_name]
+
+            # Check if search index already exists
+            try:
+                existing_search_indexes = list(collection.list_search_indexes())
+                if any(idx.get("name") == index_name for idx in existing_search_indexes):
+                    results[collection_name] = "exists"
+                    continue
+            except Exception:
+                # list_search_indexes might not be available in all pymongo versions
+                pass
+
+            # Attempt to create vector search index
+            # Note: This requires MongoDB Atlas and pymongo >= 4.5
+            vector_index_definition = {
+                "fields": [
+                    {
+                        "path": field_name,
+                        "type": "vector",
+                        "numDimensions": 1024,  # Voyage AI embeddings
+                        "similarity": "cosine"
+                    }
+                ]
+            }
+
+            try:
+                # Use create_search_index if available (pymongo >= 4.5)
+                if hasattr(collection, 'create_search_index'):
+                    collection.create_search_index(
+                        {"definition": vector_index_definition, "name": index_name}
+                    )
+                    results[collection_name] = "created"
+                else:
+                    results[collection_name] = "api_unavailable"
+            except Exception as create_error:
+                # Check if it's a "already exists" error
+                if "already exists" in str(create_error).lower():
+                    results[collection_name] = "exists"
+                else:
+                    # Log the specific error for debugging
+                    logger.debug(f"    Failed to create {collection_name}.{index_name}: {create_error}")
+                    results[collection_name] = "failed"
+
+        except Exception as e:
+            logger.debug(f"    Error processing {collection_name}: {e}")
+            results[collection_name] = "error"
+
+    return results
+
 def print_vector_index_warning():
     """Print warning about vector indexes that need manual creation."""
     logger.info("")
@@ -566,8 +646,34 @@ def main():
     else:
         logger.info(f"    ✅ {len(existing_eval)} indexes exist")
 
-    # Print vector index warning
-    if not args.verify:
+    # Vector search indexes (Atlas Search)
+    logger.info("")
+    logger.info("🔍 Vector Search Indexes (Atlas Search):")
+    vector_results = create_vector_indexes(db, verify_only=args.verify)
+
+    for collection_name, status in vector_results.items():
+        if status == "created":
+            logger.info(f"  🆕 {collection_name}.embedding_vector (created, 1024-dim cosine)")
+        elif status == "exists":
+            logger.info(f"  ✅ {collection_name}.embedding_vector (exists)")
+        elif status == "exists (verify mode)":
+            logger.info(f"  ✅ {collection_name} (collection exists)")
+        elif status == "api_unavailable":
+            logger.info(f"  ⚠️  {collection_name} (pymongo API unavailable - manual creation required)")
+        elif status == "failed":
+            logger.info(f"  ⚠️  {collection_name} (creation failed - may require Atlas UI)")
+        elif status == "error":
+            logger.info(f"  ❌ {collection_name} (error during creation)")
+        elif status == "missing":
+            logger.info(f"  ❌ {collection_name} (collection missing)")
+
+    # Print vector index warning if any failed or API unavailable
+    need_manual_creation = any(
+        status in ["failed", "api_unavailable", "error"]
+        for status in vector_results.values()
+    )
+
+    if not args.verify and need_manual_creation:
         print_vector_index_warning()
 
     # Summary

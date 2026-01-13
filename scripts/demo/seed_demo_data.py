@@ -446,7 +446,7 @@ def get_episodic_memory_data(projects: List[Dict[str, Any]]) -> List[Dict[str, A
 # SEEDING FUNCTIONS
 # =============================================================================
 
-def seed_projects(db, clean: bool = False) -> int:
+def seed_projects(db, clean: bool = False, skip_embeddings: bool = False) -> int:
     """Seed project data."""
     print("\n" + "=" * 60)
     print("SEEDING PROJECTS")
@@ -469,6 +469,24 @@ def seed_projects(db, clean: bool = False) -> int:
             print(f"  ⏭️  Skipping existing: {project['name']}")
             continue
 
+        # Generate embedding for semantic search
+        if not skip_embeddings:
+            # Create searchable text: name + description
+            # Enables queries like: "infrastructure project" → Project Alpha
+            searchable_text = f"{project['name']} {project['description']}"
+
+            try:
+                project["embedding"] = embed_document(searchable_text)
+
+                # Verify embedding dimension (should be 1024 for Voyage AI)
+                if len(project["embedding"]) != 1024:
+                    print(f"  ⚠️  Warning: Expected 1024 dims, got {len(project['embedding'])}")
+
+                print(f"  📊 Generated embedding for: {project['name']} (1024-dim)")
+            except Exception as e:
+                print(f"  ⚠️  Failed to generate embedding: {e}")
+                print(f"      Continuing without embedding for: {project['name']}")
+
         db.projects.insert_one(project)
         print(f"  ✓ Inserted: {project['name']} ({project['status']})")
         inserted_count += 1
@@ -478,7 +496,7 @@ def seed_projects(db, clean: bool = False) -> int:
     return inserted_count
 
 
-def seed_tasks(db, clean: bool = False) -> int:
+def seed_tasks(db, clean: bool = False, skip_embeddings: bool = False) -> int:
     """Seed task data."""
     print("\n" + "=" * 60)
     print("SEEDING TASKS")
@@ -507,6 +525,26 @@ def seed_tasks(db, clean: bool = False) -> int:
         if task["title"] in existing_titles:
             print(f"  ⏭️  Skipping existing: {task['title']}")
             continue
+
+        # Generate embedding for semantic search
+        if not skip_embeddings:
+            # Create searchable text: title + description (if exists)
+            # Enables queries like: "debugging task" → Create debugging methodologies doc
+            searchable_text = task['title']
+            if task.get('description'):
+                searchable_text += f" {task['description']}"
+
+            try:
+                task["embedding"] = embed_document(searchable_text)
+
+                # Verify embedding dimension (should be 1024 for Voyage AI)
+                if len(task["embedding"]) != 1024:
+                    print(f"  ⚠️  Warning: Expected 1024 dims, got {len(task['embedding'])}")
+
+                print(f"  📊 Generated embedding for: {task['title']} (1024-dim)")
+            except Exception as e:
+                print(f"  ⚠️  Failed to generate embedding: {e}")
+                print(f"      Continuing without embedding for: {task['title']}")
 
         db.tasks.insert_one(task)
         print(f"  ✓ Inserted: {task['title']} ({task['status']}, {task['priority']})")
@@ -935,19 +973,29 @@ def seed_all(db, clean: bool = False, skip_embeddings: bool = False) -> Dict[str
                 print(f"    {collection}: {count} deleted")
 
     # Seed all data types
-    results["projects"] = seed_projects(db, clean=False)  # Already cleared if clean=True
-    results["tasks"] = seed_tasks(db, clean=False)
+    results["projects"] = seed_projects(db, clean=False, skip_embeddings=skip_embeddings)  # Already cleared if clean=True
+    results["tasks"] = seed_tasks(db, clean=False, skip_embeddings=skip_embeddings)
     results["procedural"] = seed_procedural_memory(db, skip_embeddings=skip_embeddings, clean=False)
     results["semantic"] = seed_semantic_memory(db, clean=False)
     results["episodic"] = seed_episodic_memory(db, skip_embeddings=skip_embeddings, clean=False)
 
-    # Count embeddings
+    # Count embeddings across all collections
     if not skip_embeddings:
-        embeddings_count = db.long_term_memory.count_documents({
+        # Count embeddings in tasks and projects
+        tasks_embeddings = db.tasks.count_documents({
             "user_id": DEMO_USER_ID,
             "embedding": {"$exists": True}
         })
-        results["embeddings"] = embeddings_count
+        projects_embeddings = db.projects.count_documents({
+            "user_id": DEMO_USER_ID,
+            "embedding": {"$exists": True}
+        })
+        # Count embeddings in long_term_memory (procedural + episodic)
+        memory_embeddings = db.long_term_memory.count_documents({
+            "user_id": DEMO_USER_ID,
+            "embedding": {"$exists": True}
+        })
+        results["embeddings"] = tasks_embeddings + projects_embeddings + memory_embeddings
     else:
         results["embeddings"] = 0
 
