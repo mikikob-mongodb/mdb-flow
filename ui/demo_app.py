@@ -355,14 +355,15 @@ def render_sidebar():
                 tasks = item["tasks"]
 
                 if project:
-                    # Add status badge to project name
-                    status_badge = ""
+                    # Select icon based on project status
                     if project.status == "completed":
-                        status_badge = "✅ "
+                        icon = "✅"
                     elif project.status == "planned":
-                        status_badge = "📋 "
+                        icon = "📋"
+                    else:  # active or archived
+                        icon = "📁"
 
-                    with st.expander(f"📁 {status_badge}{project.name}", expanded=False):
+                    with st.expander(f"{icon} {project.name}", expanded=False):
                         if project.description:
                             st.caption(project.description)
                         if project.status:
