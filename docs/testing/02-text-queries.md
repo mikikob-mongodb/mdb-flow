@@ -1,15 +1,37 @@
-# 02 - Text Queries (LLM)
+# 02 - Tier 3: LLM Agents with Built-in Tools
 
-**Time:** 15 minutes  
+**Time:** 15 minutes
 **Priority:** P0 - Core functionality
+**Version:** v3.1 (Updated for 4-tier routing)
 
 ---
 
 ## Overview
 
-Text queries use the LLM to interpret intent and call appropriate tools. These go through the Coordinator agent.
+This guide covers **Tier 3** of Flow Companion's 4-tier query routing architecture:
 
-**Key Point:** Debug panel should show LLM time + tool calls.
+**Tier 3: LLM Agent with Built-in Tools** (~8s, ~$0.01, Always Available)
+
+Tier 3 queries use the LLM Coordinator to interpret intent and call built-in tools. This tier is **ALWAYS available** without requiring the MCP Mode toggle.
+
+**Built-in Tools (Tier 3):**
+- `get_tasks` - Retrieve tasks with filters
+- `get_projects` - Retrieve project information
+- `search_tasks` - Semantic search on tasks
+- `search_projects` - Semantic search on projects
+- `create_task` - Create new tasks
+- `update_task_status` - Change task status
+- Worklog Agent - Task activity and progress tracking
+- Retrieval Agent - Memory-enhanced search
+- Memory System - Working, episodic, semantic, procedural memory
+
+**When Tier 3 is Used:**
+- Complex queries not matched by Tier 1 patterns
+- Queries requiring context or memory (e.g., "What should I work on next?")
+- Queries combining multiple filters or conditions
+- Queries requiring interpretation (e.g., "What's blocking me?")
+
+**Key Point:** Debug panel should show LLM time + tool calls. If a query needs web search or external data, it requires Tier 4 (MCP Mode toggle).
 
 ---
 
@@ -49,7 +71,9 @@ Text queries use the LLM to interpret intent and call appropriate tools. These g
 |----|-------|------------------|-------------------|------|
 | 2.11 | "What's high priority in AgentOps?" | `get_tasks` with filters | High priority + project filter | □ |
 | 2.12 | "Show me completed tasks from this week" | `get_tasks` + date filter | Done tasks, recent | □ |
-| 2.13 | "What tasks are blocked?" | `get_tasks` or `search_tasks` | Finds blocked tasks | □ |
+| 2.13 | "What tasks are blocked?" | `search_tasks` | Semantic search for "blocked" in task content* | □ |
+
+*Note: "Blocked" is not a status field (only todo/in_progress/done exist). The system searches task titles, context, and notes for mentions of "blocked".
 
 ### 2.4 Ambiguous Queries
 

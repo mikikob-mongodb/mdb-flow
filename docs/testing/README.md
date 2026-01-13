@@ -2,7 +2,7 @@
 
 **Version:** 3.0 (Milestone 6)
 **Demo Date:** January 15, 2026
-**Last Updated:** January 9, 2026
+**Last Updated:** January 13, 2026
 
 ---
 
@@ -14,7 +14,33 @@ This directory contains comprehensive testing guides for Flow Companion, coverin
 - **47 total tests** (35 unit, 11 integration, 1 skipped)
 - **~90% code coverage** (MCP Agent + Tool Discoveries)
 - **5-tier memory architecture** (Working, Episodic, Semantic, Procedural, Shared)
+- **4-tier query routing** (Pattern Detection, Slash Commands, LLM Agents, MCP Tools)
 - **Milestone 6 features**: MCP Agent, multi-step workflows, knowledge caching
+
+---
+
+## 4-Tier Query Routing Architecture
+
+Flow Companion uses a 4-tier routing system to handle queries efficiently:
+
+| Tier | Name | Speed | Cost | Toggle | Examples |
+|------|------|-------|------|--------|----------|
+| **1** | Natural Language Pattern Detection | 0ms | $0 | Always On | "What's urgent?" → `/tasks priority:high status:todo,in_progress` |
+| **2** | Explicit Slash Commands | 0ms | $0 | Always On | `/tasks status:todo`, `/projects AgentOps` |
+| **3** | LLM Agent with Built-in Tools | ~8s | ~$0.01 | Always On | "What should I work on next?" (uses worklog/retrieval agents) |
+| **4** | MCP External Tools | ~10s | ~$0.02 | MCP Toggle | "Research gaming market" (uses Tavily web search) |
+
+**Key Points:**
+- **Tier 1 & 2** are instant, free, and don't require LLM calls
+- **Tier 3** is ALWAYS available without MCP toggle (uses built-in agents: worklog, retrieval, memory)
+- **Tier 4** requires MCP Mode toggle (uses external MCP servers: Tavily, MongoDB MCP)
+- System automatically routes queries to the appropriate tier based on pattern matching and intent classification
+
+**Recent Updates:**
+- Natural language patterns now support status filtering (e.g., "What's urgent?" excludes completed tasks)
+- MongoDB MCP Server added to Tier 4 for advanced query generation
+
+See: [docs/features/QUERY_ROUTING.md](../features/QUERY_ROUTING.md) for complete routing documentation.
 
 ---
 
@@ -23,8 +49,8 @@ This directory contains comprehensive testing guides for Flow Companion, coverin
 | Guide | Description | Time | Priority | Updated |
 |-------|-------------|------|----------|---------|
 | [00-setup.md](00-setup.md) | Environment setup, .env config, seed data | 5-10 min | Required | v3.0 |
-| [01-slash-commands.md](01-slash-commands.md) | Direct DB commands (fast path) | 15 min | P0 | v2.0 |
-| [02-text-queries.md](02-text-queries.md) | LLM-routed read queries | 15 min | P0 | v2.0 |
+| [01-slash-commands.md](01-slash-commands.md) | Tier 1 & 2: Natural language patterns + slash commands | 15 min | P0 | v3.1 |
+| [02-text-queries.md](02-text-queries.md) | Tier 3: LLM agents with built-in tools | 15 min | P0 | v3.1 |
 | [03-text-actions.md](03-text-actions.md) | LLM-routed write actions | 15 min | P0 | v2.0 |
 | [04-voice-input.md](04-voice-input.md) | Voice-to-text integration | 10 min | P1 | v2.0 |
 | [05-context-engineering.md](05-context-engineering.md) | Optimization toggles | 20 min | P1 | v2.0 |

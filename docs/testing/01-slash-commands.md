@@ -1,15 +1,58 @@
-# 01 - Slash Commands (Direct DB)
+# 01 - Tier 1 & 2: Natural Language Patterns + Slash Commands
 
-**Time:** 15 minutes  
+**Time:** 15 minutes
 **Priority:** P0 - Core functionality
+**Version:** v3.1 (Updated for 4-tier routing)
 
 ---
 
 ## Overview
 
-Slash commands bypass the LLM and query MongoDB directly. They should be **fast (<500ms)** regardless of optimization settings.
+This guide covers the first two tiers of Flow Companion's 4-tier query routing architecture:
 
-**Key Point:** Debug panel should show NO LLM time for slash commands.
+- **Tier 1: Natural Language Pattern Detection** - Regex-based patterns that convert natural language to slash commands (0ms, $0)
+- **Tier 2: Explicit Slash Commands** - Direct MongoDB queries bypassing the LLM (0ms, $0)
+
+Both tiers are **instant (<500ms)** and free, regardless of optimization settings.
+
+**Key Point:** Debug panel should show NO LLM time for Tier 1 & 2 queries.
+
+---
+
+## Tier 1: Natural Language Pattern Detection
+
+Natural language patterns automatically convert common queries to slash commands using regex matching. This provides a natural language interface without LLM costs.
+
+### Pattern Examples
+
+| Natural Language Query | Detected Pattern | Resulting Command |
+|------------------------|------------------|-------------------|
+| "What's urgent?" | High priority pattern | `/tasks priority:high status:todo,in_progress` |
+| "What's in progress?" | Status pattern | `/tasks status:in_progress` |
+| "What's done?" | Status pattern | `/tasks status:done` |
+| "What's todo?" | Status pattern | `/tasks status:todo` |
+| "Show me AgentOps" | Project pattern | `/projects AgentOps` |
+| "What's in the Voice Agent project?" | Project-specific tasks | `/tasks project:Voice Agent` |
+
+**Recent Updates (v3.1):**
+- Urgent/important queries now filter by status (exclude completed tasks)
+- Support for comma-separated status values in slash commands
+- "What's urgent?" returns only `todo` or `in_progress` high-priority tasks
+
+### Verification
+
+```
+□ Natural language query converts to slash command (see debug panel)
+□ Query executes instantly (<200ms)
+□ No LLM time shown in debug panel
+□ Results match expected filters
+```
+
+---
+
+## Tier 2: Explicit Slash Commands
+
+Slash commands provide direct MongoDB access for power users and automation.
 
 ---
 
@@ -84,6 +127,43 @@ Slash commands bypass the LLM and query MongoDB directly. They should be **fast 
 ---
 
 ## Test Cases
+
+### 0. Tier 1: Natural Language Pattern Detection
+
+Test that natural language queries are automatically converted to slash commands.
+
+| ID | Natural Language Query | Expected Command | Expected Filters | Pass |
+|----|------------------------|------------------|------------------|------|
+| 0.1 | "What's urgent?" | `/tasks` | `priority:high status:todo,in_progress` | □ |
+| 0.2 | "What's important?" | `/tasks` | `priority:high status:todo,in_progress` | □ |
+| 0.3 | "What's in progress?" | `/tasks` | `status:in_progress` | □ |
+| 0.4 | "What's done?" | `/tasks` | `status:done` | □ |
+| 0.5 | "What's todo?" | `/tasks` | `status:todo` | □ |
+| 0.6 | "Show me AgentOps" | `/projects` | AgentOps project | □ |
+| 0.7 | "What's in the Voice Agent project?" | `/tasks` | `project:Voice Agent` | □ |
+
+**Critical Verification (ID 0.1 & 0.2):**
+```
+□ Query: "What's urgent?"
+□ Debug panel shows: ⚡ /tasks priority:high status:todo,in_progress
+□ Results include ONLY todo or in_progress tasks (no done tasks)
+□ All results have priority=high
+□ Executes in <200ms
+□ No LLM time shown
+```
+
+**Pattern Detection Verification:**
+```
+□ Natural language converts to slash command (see debug panel)
+□ Command executes instantly (<200ms)
+□ No LLM token usage shown
+□ Results match expected filters
+□ Completed/done tasks excluded from urgent queries (v3.1 fix)
+```
+
+---
+
+### 1. Tier 2: Explicit Slash Commands
 
 ### 1.1 Task List Commands
 
