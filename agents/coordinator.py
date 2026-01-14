@@ -552,6 +552,60 @@ The selection number is 1-based (1 = first result, 2 = second result, etc.)""",
         }
     },
     {
+        "name": "search_knowledge",
+        "description": """Search cached knowledge from previous research, web searches, and learning. Use this to check 'what we know about X' BEFORE doing new research or calling external tools.
+
+Examples:
+- "What do we know about gaming use cases?"
+- "What have we learned about NPC memory systems?"
+- "Show me our research on voice agents"
+
+Returns cached knowledge with source attribution and timestamps. Only available when long-term memory is enabled.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for in cached knowledge"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return",
+                    "default": 5
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "analyze_tool_discoveries",
+        "description": """Analyze patterns in tool discoveries to suggest new features, Atlas optimizations, and templates. Shows what should be built next based on user behavior and MCP tool usage patterns.
+
+Examples:
+- "What patterns do you see in recent tool discoveries?"
+- "What should we build next based on my usage?"
+- "Analyze my tool discovery history"
+
+Returns:
+- Suggested new tools (repeated requests that could become built-in)
+- Atlas optimization opportunities (indexes, collections)
+- Template candidates (repeated workflows)
+- Feature gaps (failed or missing functionality)
+
+Only available when long-term memory is enabled.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "Number of days to analyze (default 7)",
+                    "default": 7
+                }
+            },
+            "required": []
+        }
+    },
+    {
         "name": "list_templates",
         "description": "List all available project templates with their phases and task counts. Use when user asks 'what templates do I have', 'show me templates', 'list templates', or 'what project templates are available'.",
         "input_schema": {
@@ -2316,6 +2370,73 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     }
 
                     logger.info(f"📋 Listed {len(formatted_templates)} templates for user {self.user_id}")
+
+            elif tool_name == "search_knowledge":
+                # Search cached knowledge from semantic memory
+                if not self.memory or not self.user_id:
+                    result = {
+                        "success": False,
+                        "error": "Long-term memory not enabled"
+                    }
+                else:
+                    query = tool_input.get("query", "")
+                    limit = tool_input.get("limit", 5)
+
+                    # Search semantic memory for cached knowledge
+                    knowledge_results = self.memory.search_knowledge(
+                        user_id=self.user_id,
+                        query=query,
+                        limit=limit
+                    )
+
+                    # Format results for display
+                    formatted_results = []
+                    for item in knowledge_results:
+                        formatted_results.append({
+                            "query": item.get("query", ""),
+                            "results": item.get("results", ""),
+                            "source": item.get("source", "unknown"),
+                            "cached_at": item.get("created_at", "").isoformat() if item.get("created_at") else "",
+                            "score": item.get("score", 0),
+                            "access_count": item.get("access_count", 0)
+                        })
+
+                    result = {
+                        "success": True,
+                        "knowledge": formatted_results,
+                        "count": len(formatted_results),
+                        "message": f"Found {len(formatted_results)} cached knowledge entries" if formatted_results else "No cached knowledge found for this query"
+                    }
+
+                    logger.info(f"🔍 Searched knowledge cache: '{query}' → {len(formatted_results)} results")
+
+            elif tool_name == "analyze_tool_discoveries":
+                # Analyze tool discovery patterns
+                if not self.memory or not self.user_id:
+                    result = {
+                        "success": False,
+                        "error": "Long-term memory not enabled"
+                    }
+                else:
+                    days = tool_input.get("days", 7)
+
+                    # Import analysis function
+                    from memory.discovery_analysis import analyze_discoveries
+
+                    # Run analysis
+                    analysis = analyze_discoveries(
+                        db=self.db,
+                        user_id=self.user_id,
+                        days=days
+                    )
+
+                    result = {
+                        "success": True,
+                        "analysis": analysis,
+                        "period_days": days
+                    }
+
+                    logger.info(f"📊 Analyzed tool discoveries for {days} days")
 
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
