@@ -217,12 +217,17 @@ def seed_demo_data(skip: bool = False) -> bool:
         logger.info(f"✅ Tasks: {tasks}")
         logger.info(f"✅ Memory entries: {procedural + semantic + episodic}")
 
-        # Count embeddings
-        embeddings_count = db.memory_long_term.count_documents({
+        # Count embeddings from both episodic and semantic memory
+        episodic_embeddings = db.memory_episodic.count_documents({
             "user_id": "demo-user",
             "embedding": {"$exists": True}
         })
-        logger.info(f"✅ Embeddings generated: {embeddings_count}")
+        semantic_embeddings = db.memory_semantic.count_documents({
+            "user_id": "demo-user",
+            "embedding": {"$exists": True}
+        })
+        embeddings_count = episodic_embeddings + semantic_embeddings
+        logger.info(f"✅ Embeddings generated: {embeddings_count} (episodic: {episodic_embeddings}, semantic: {semantic_embeddings})")
 
         return True
 

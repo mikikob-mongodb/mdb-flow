@@ -418,9 +418,9 @@ def check_all_collections(db) -> Dict[str, bool]:
     required_collections = [
         "tasks",
         "projects",
-        "memory_short_term",
-        "memory_long_term",
-        "memory_shared",
+        "memory_episodic",
+        "memory_semantic",
+        "memory_procedural",
         "tool_discoveries",
     ]
 

@@ -43,9 +43,9 @@ COLLECTIONS = {
     "projects": "User projects with activity tracking",
 
     # Memory system collections
-    "memory_short_term": "Session context (2-hour TTL)",
-    "memory_long_term": "Persistent memory (episodic, semantic, procedural)",
-    "memory_shared": "Agent handoffs (5-minute TTL)",
+    "memory_episodic": "Immutable event log of actions and events",
+    "memory_semantic": "Knowledge cache and user preferences",
+    "memory_procedural": "Templates, workflows, and rules",
 
     # MCP Agent collections
     "tool_discoveries": "MCP tool usage learning and reuse",
@@ -156,92 +156,83 @@ def create_projects_indexes(db, verify_only: bool = False) -> List[str]:
     return created
 
 def create_memory_indexes(db, verify_only: bool = False) -> Dict[str, List[str]]:
-    """Create indexes for all memory collections."""
+    """Create indexes for all memory collections.
+
+    New structure:
+    - memory_episodic: Actions and events (immutable event log)
+    - memory_semantic: Knowledge cache and preferences (long-term)
+    - memory_procedural: Templates and workflows (unchanged)
+    - Working memory: In-memory only (session context, handoffs, disambiguation)
+    """
     results = {}
 
-    # SHORT-TERM MEMORY
-    short_term = db["memory_short_term"]
-    stm_created = []
+    # EPISODIC MEMORY (Actions and Events)
+    episodic = db["memory_episodic"]
+    episodic_created = []
 
-    stm_indexes = [
-        IndexModel([("session_id", ASCENDING)], name="session_id_1"),
-        IndexModel([("agent", ASCENDING)], name="agent_1"),
-        IndexModel([("memory_type", ASCENDING)], name="memory_type_1"),
-        IndexModel([("expires_at", ASCENDING)], name="expires_at_ttl", expireAfterSeconds=0),
-        IndexModel([("session_id", ASCENDING), ("memory_type", ASCENDING)], name="session_id_1_memory_type_1"),
-        IndexModel([("session_id", ASCENDING), ("agent", ASCENDING)], name="session_id_1_agent_1"),
-    ]
-
-    if not verify_only:
-        try:
-            result = short_term.create_indexes(stm_indexes)
-            stm_created.extend(result)
-        except OperationFailure:
-            pass
-
-    results["memory_short_term"] = stm_created
-
-    # LONG-TERM MEMORY
-    # Note: Optimized index set after cleanup (see docs/architecture/index-dependency-analysis.md)
-    # Removed 8 redundant single-field indexes covered by compounds
-    long_term = db["memory_long_term"]
-    ltm_created = []
-
-    ltm_indexes = [
-        # Optional: Keep user_id for fallback queries (can be removed if all queries use compounds)
-        IndexModel([("user_id", ASCENDING)], name="user_id_1"),
-
-        # Essential compound indexes (cover all query patterns)
-        IndexModel([("user_id", ASCENDING), ("memory_type", ASCENDING)], name="user_id_1_memory_type_1"),
+    episodic_indexes = [
+        # Primary query patterns
         IndexModel([("user_id", ASCENDING), ("timestamp", DESCENDING)], name="user_id_1_timestamp_-1"),
         IndexModel([("user_id", ASCENDING), ("action_type", ASCENDING)], name="user_id_1_action_type_1"),
+        IndexModel([("user_id", ASCENDING), ("entity_type", ASCENDING)], name="user_id_1_entity_type_1"),
         IndexModel([("user_id", ASCENDING), ("source_agent", ASCENDING)], name="user_id_1_source_agent_1"),
-        IndexModel([("user_id", ASCENDING), ("memory_type", ASCENDING), ("semantic_type", ASCENDING), ("key", ASCENDING)], name="semantic_lookup"),
-        IndexModel([("user_id", ASCENDING), ("memory_type", ASCENDING), ("trigger_pattern", ASCENDING)], name="procedural_lookup"),
+        IndexModel([("session_id", ASCENDING), ("timestamp", DESCENDING)], name="session_id_1_timestamp_-1"),
 
-        # Removed (redundant - covered by compounds above):
-        # - memory_type_1 (covered by user_id_1_memory_type_1)
-        # - timestamp_-1 (covered by user_id_1_timestamp_-1)
-        # - action_type_1 (covered by user_id_1_action_type_1)
-        # - source_agent_1 (covered by user_id_1_source_agent_1)
-        # - semantic_type_1 (covered by semantic_lookup)
-        # - key_1 (covered by semantic_lookup)
-        # - rule_type_1 (never used in any query)
-        # - trigger_pattern_1 (covered by procedural_lookup)
+        # For handoff tracking
+        IndexModel([("handoff_id", ASCENDING)], name="handoff_id_1"),
     ]
 
     if not verify_only:
         try:
-            result = long_term.create_indexes(ltm_indexes)
-            ltm_created.extend(result)
+            result = episodic.create_indexes(episodic_indexes)
+            episodic_created.extend(result)
         except OperationFailure:
             pass
 
-    results["memory_long_term"] = ltm_created
+    results["memory_episodic"] = episodic_created
 
-    # SHARED MEMORY
-    shared = db["memory_shared"]
-    sm_created = []
+    # SEMANTIC MEMORY (Knowledge Cache and Preferences)
+    semantic = db["memory_semantic"]
+    semantic_created = []
 
-    sm_indexes = [
-        IndexModel([("session_id", ASCENDING)], name="session_id_1"),
-        IndexModel([("from_agent", ASCENDING)], name="from_agent_1"),
-        IndexModel([("to_agent", ASCENDING)], name="to_agent_1"),
-        IndexModel([("status", ASCENDING)], name="status_1"),
-        IndexModel([("handoff_id", ASCENDING)], name="handoff_id_1", unique=True),
-        IndexModel([("chain_id", ASCENDING)], name="chain_id_1"),
-        IndexModel([("expires_at", ASCENDING)], name="expires_at_ttl", expireAfterSeconds=0),
-        IndexModel([("session_id", ASCENDING), ("to_agent", ASCENDING), ("status", ASCENDING)], name="session_id_1_to_agent_1_status_1"),
+    semantic_indexes = [
+        # Primary query patterns
+        IndexModel([("user_id", ASCENDING), ("semantic_type", ASCENDING), ("key", ASCENDING)], name="semantic_lookup"),
+        IndexModel([("user_id", ASCENDING), ("timestamp", DESCENDING)], name="user_id_1_timestamp_-1"),
+        IndexModel([("semantic_type", ASCENDING)], name="semantic_type_1"),
+
+        # For knowledge cache queries
+        IndexModel([("user_id", ASCENDING), ("semantic_type", ASCENDING), ("query", ASCENDING)], name="knowledge_query"),
+        IndexModel([("user_id", ASCENDING), ("semantic_type", ASCENDING), ("created_at", DESCENDING)], name="knowledge_recency"),
     ]
 
     if not verify_only:
         try:
-            result = shared.create_indexes(sm_indexes)
-            sm_created.extend(result)
+            result = semantic.create_indexes(semantic_indexes)
+            semantic_created.extend(result)
         except OperationFailure:
             pass
 
-    results["memory_shared"] = sm_created
+    results["memory_semantic"] = semantic_created
+
+    # PROCEDURAL MEMORY (Templates and Workflows)
+    procedural = db["memory_procedural"]
+    procedural_created = []
+
+    procedural_indexes = [
+        IndexModel([("user_id", ASCENDING), ("rule_type", ASCENDING)], name="user_id_1_rule_type_1"),
+        IndexModel([("user_id", ASCENDING), ("name", ASCENDING)], name="user_id_1_name_1"),
+        IndexModel([("user_id", ASCENDING), ("trigger_pattern", ASCENDING)], name="procedural_lookup"),
+    ]
+
+    if not verify_only:
+        try:
+            result = procedural.create_indexes(procedural_indexes)
+            procedural_created.extend(result)
+        except OperationFailure:
+            pass
+
+    results["memory_procedural"] = procedural_created
 
     return results
 
@@ -298,7 +289,8 @@ def create_vector_indexes(db, verify_only: bool = False) -> Dict[str, str]:
     vector_indexes = {
         "tasks": ("embedding", "vector_index", "Task semantic search"),
         "projects": ("embedding", "vector_index", "Project semantic search"),
-        "memory_long_term": ("embedding", "vector_index", "Memory semantic search"),
+        "memory_episodic": ("embedding", "vector_index", "Episodic memory semantic search"),
+        "memory_semantic": ("embedding", "vector_index", "Semantic memory search"),
         "tool_discoveries": ("request_embedding", "vector_index", "Tool discovery semantic search"),
     }
 
@@ -370,15 +362,16 @@ def print_vector_index_warning():
     logger.info("The following vector indexes should be created manually in MongoDB Atlas:")
     logger.info("  1. tasks.vector_index (1024 dimensions, cosine similarity)")
     logger.info("  2. projects.vector_index (1024 dimensions, cosine similarity)")
-    logger.info("  3. memory_long_term.vector_index (1024 dimensions, cosine similarity)")
-    logger.info("  4. tool_discoveries.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("  3. memory_episodic.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("  4. memory_semantic.vector_index (1024 dimensions, cosine similarity)")
+    logger.info("  5. tool_discoveries.vector_index (1024 dimensions, cosine similarity)")
     logger.info("")
     logger.info("IMPORTANT: Index name MUST be 'vector_index' to match retrieval code expectations")
     logger.info("")
     logger.info("To create these indexes:")
     logger.info("  1. Go to MongoDB Atlas → Database → Search Indexes")
     logger.info("  2. Create Search Index → JSON Editor")
-    logger.info("  3. Select the collection (tasks, projects, memory_long_term, or tool_discoveries)")
+    logger.info("  3. Select the collection (tasks, projects, memory_episodic, memory_semantic, or tool_discoveries)")
     logger.info("  4. Set Index Name to: vector_index")
     logger.info("  5. Use the following JSON definition:")
     logger.info("")
@@ -517,55 +510,44 @@ def main():
         logger.info(f"    ✅ {len(existing_projects)} indexes exist")
 
     # Memory indexes
-    logger.info("  memory_short_term:")
+    logger.info("  memory_episodic:")
     memory_results = create_memory_indexes(db, verify_only=args.verify)
-    existing_stm = existing_before.get("memory_short_term", set())
+    existing_episodic = existing_before.get("memory_episodic", set())
 
     if not args.verify:
-        newly_created = [idx for idx in memory_results.get("memory_short_term", []) if idx not in existing_stm]
+        newly_created = [idx for idx in memory_results.get("memory_episodic", []) if idx not in existing_episodic]
         for idx_name in newly_created:
-            if "ttl" in idx_name.lower():
-                logger.info(f"    🆕 {idx_name} (created, TTL: 7200s)")
-            else:
-                logger.info(f"    🆕 {idx_name} (created)")
-        if existing_stm:
-            logger.info(f"    ✅ {len(existing_stm)} indexes already exist")
+            logger.info(f"    🆕 {idx_name} (created)")
+        if existing_episodic:
+            logger.info(f"    ✅ {len(existing_episodic)} indexes already exist")
     else:
-        logger.info(f"    ✅ {len(existing_stm)} indexes exist")
-        ttl_indexes = [idx for idx in existing_stm if "ttl" in idx.lower()]
-        if ttl_indexes:
-            logger.info(f"    ✅ TTL indexes: {', '.join(ttl_indexes)}")
+        logger.info(f"    ✅ {len(existing_episodic)} indexes exist")
 
-    logger.info("  memory_long_term:")
-    existing_ltm = existing_before.get("memory_long_term", set())
+    logger.info("  memory_semantic:")
+    existing_semantic = existing_before.get("memory_semantic", set())
 
     if not args.verify:
-        newly_created = [idx for idx in memory_results.get("memory_long_term", []) if idx not in existing_ltm]
+        newly_created = [idx for idx in memory_results.get("memory_semantic", []) if idx not in existing_semantic]
         if newly_created:
             for idx_name in newly_created:
                 logger.info(f"    🆕 {idx_name} (created)")
-        if existing_ltm:
-            logger.info(f"    ✅ {len(existing_ltm)} indexes already exist")
+        if existing_semantic:
+            logger.info(f"    ✅ {len(existing_semantic)} indexes already exist")
     else:
-        logger.info(f"    ✅ {len(existing_ltm)} indexes exist")
+        logger.info(f"    ✅ {len(existing_semantic)} indexes exist")
 
-    logger.info("  memory_shared:")
-    existing_sm = existing_before.get("memory_shared", set())
+    logger.info("  memory_procedural:")
+    existing_procedural = existing_before.get("memory_procedural", set())
 
     if not args.verify:
-        newly_created = [idx for idx in memory_results.get("memory_shared", []) if idx not in existing_sm]
-        for idx_name in newly_created:
-            if "ttl" in idx_name.lower():
-                logger.info(f"    🆕 {idx_name} (created, TTL: 300s)")
-            else:
+        newly_created = [idx for idx in memory_results.get("memory_procedural", []) if idx not in existing_procedural]
+        if newly_created:
+            for idx_name in newly_created:
                 logger.info(f"    🆕 {idx_name} (created)")
-        if existing_sm:
-            logger.info(f"    ✅ {len(existing_sm)} indexes already exist")
+        if existing_procedural:
+            logger.info(f"    ✅ {len(existing_procedural)} indexes already exist")
     else:
-        logger.info(f"    ✅ {len(existing_sm)} indexes exist")
-        ttl_indexes = [idx for idx in existing_sm if "ttl" in idx.lower()]
-        if ttl_indexes:
-            logger.info(f"    ✅ TTL indexes: {', '.join(ttl_indexes)}")
+        logger.info(f"    ✅ {len(existing_procedural)} indexes exist")
 
     # Tool discoveries indexes
     logger.info("  tool_discoveries:")
@@ -619,9 +601,9 @@ def main():
     else:
         collections_created = sum(1 for v in collection_results.values() if v == "created")
         total_indexes = (len(tasks_indexes) + len(projects_indexes) +
-                        len(memory_results.get("memory_short_term", [])) +
-                        len(memory_results.get("memory_long_term", [])) +
-                        len(memory_results.get("memory_shared", [])) +
+                        len(memory_results.get("memory_episodic", [])) +
+                        len(memory_results.get("memory_semantic", [])) +
+                        len(memory_results.get("memory_procedural", [])) +
                         len(tool_indexes))
 
         if args.drop_first:
