@@ -94,7 +94,7 @@ def init_session_state():
         st.session_state.session_id = str(uuid.uuid4())
 
     if "user_id" not in st.session_state:
-        st.session_state.user_id = "demo_user"
+        st.session_state.user_id = "demo-user"
 
     if "mcp_enabled" not in st.session_state:
         st.session_state.mcp_enabled = False
