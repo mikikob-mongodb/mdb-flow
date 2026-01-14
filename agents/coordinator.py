@@ -15,6 +15,7 @@ from agents.mcp_agent import MCPAgent
 from utils.context_engineering import compress_tool_result
 from config.prompts import get_system_prompt, get_prompt_stats
 from memory import MemoryManager
+from memory.workflow_executor import WorkflowExecutor
 
 logger = get_logger("coordinator")
 
@@ -1117,6 +1118,37 @@ Use this memory context to:
 
         # Default to unknown (will use Tier 3 built-in LLM agents)
         return "unknown"
+
+    def _build_tool_registry(self) -> Dict[str, Any]:
+        """
+        Build a tool registry mapping action names to callable functions.
+
+        Returns:
+            Dict mapping action name to callable function
+        """
+        from bson import ObjectId
+
+        return {
+            # Task operations
+            "create_task": lambda **kwargs: self.worklog_agent._create_task(**kwargs),
+            "update_task": lambda **kwargs: self.worklog_agent._update_task(**kwargs),
+            "start_task": lambda task_id: self.worklog_agent._update_task(task_id, status="in_progress"),
+            "complete_task": lambda task_id: self.worklog_agent._complete_task(task_id),
+            "stop_task": lambda task_id: self.worklog_agent._update_task(task_id, status="todo"),
+            "get_task": lambda task_id: self.worklog_agent._get_task(task_id),
+            "add_note_to_task": lambda task_id, note: self.worklog_agent._add_note_to_task(task_id, note),
+
+            # Project operations
+            "create_project": lambda **kwargs: self.worklog_agent._create_project(**kwargs),
+            "update_project": lambda **kwargs: self.worklog_agent._update_project(**kwargs),
+            "get_project": lambda project_id: self.worklog_agent._get_project(project_id),
+
+            # Search operations
+            "search_tasks": lambda **kwargs: self.worklog_agent._search_tasks(**kwargs),
+            "search_projects": lambda **kwargs: self.worklog_agent._search_projects(**kwargs),
+            "get_tasks": lambda **kwargs: self.worklog_agent._get_tasks(**kwargs),
+            "get_projects": lambda **kwargs: self.worklog_agent._get_projects(**kwargs),
+        }
 
     def _classify_multi_step_intent(self, user_message: str) -> dict:
         """
@@ -2402,34 +2434,68 @@ Execute the rule action: {rule_match['action']}
         # ═══════════════════════════════════════════════════════════════
 
         workflow_match = None
-        if self.memory_config.get("context_injection") and self.memory:
-            workflow_match = self.memory.get_workflow_for_pattern(self.user_id, user_message)
+        if self.memory_config.get("long_term") and self.memory:
+            # Try semantic workflow search (regex + vector similarity)
+            workflow_match = self.memory.search_workflows_semantic(
+                user_id=self.user_id,
+                user_message=user_message,
+                min_score=0.7  # Minimum similarity score for semantic matches
+            )
+
             if workflow_match:
-                # Inject workflow execution guide into system prompt
-                workflow_steps = workflow_match.get('workflow', {}).get('steps', [])
-                steps_text = "\n".join([
-                    f"  {step['step']}. {step['action']} - {step.get('description', 'Execute this action')}"
-                    for step in workflow_steps[:5]  # Show first 5 steps
-                ])
+                match_type = workflow_match.get("match_type", "unknown")
+                match_score = workflow_match.get("match_score", 0)
+                workflow_name = workflow_match.get("name", "Unknown Workflow")
+                logger.info(f"🔄 Workflow matched ({match_type}, score={match_score:.2f}): '{workflow_name}'")
 
-                workflow_directive = f"""
+                # Execute workflow programmatically using WorkflowExecutor
+                tool_registry = self._build_tool_registry()
+                executor = WorkflowExecutor(tool_registry=tool_registry)
 
-<workflow_match>
-MATCHED WORKFLOW: "{workflow_match['name']}"
-{workflow_match['description']}
+                try:
+                    workflow_result = executor.execute_workflow(
+                        workflow=workflow_match,
+                        user_message=user_message,
+                        context={}
+                    )
 
-Follow these steps:
-{steps_text}
+                    self.memory_ops["workflow_executed"] = workflow_name
+                    self.memory_ops["workflow_success"] = workflow_result.get("success", False)
 
-IMPORTANT:
-- Extract task_id from create_task result and use it in start_task
-- Execute steps sequentially using multiple tool calls
-- Each tool call will return results you can use in the next step
-</workflow_match>
-"""
-                system_prompt += workflow_directive
-                self.memory_ops["workflow_matched"] = workflow_match['name']
-                logger.info(f"🔄 Workflow matched: '{workflow_match['name']}' with {len(workflow_steps)} steps")
+                    # Format response based on workflow result
+                    if workflow_result.get("success"):
+                        steps_completed = workflow_result.get("steps_completed", 0)
+                        total_steps = workflow_result.get("total_steps", 0)
+                        response_text = f"✅ **{workflow_name}** completed successfully ({steps_completed}/{total_steps} steps)"
+
+                        # Add details from workflow results
+                        results = workflow_result.get("results", [])
+                        if results:
+                            response_text += "\n\n**Steps executed:**"
+                            for result in results:
+                                action = result.get("action", "unknown")
+                                response_text += f"\n• {action}"
+
+                        return {
+                            "response": response_text,
+                            "confidence": "high",
+                            "workflow_executed": True,
+                            "workflow_result": workflow_result
+                        }
+                    else:
+                        error_msg = workflow_result.get("error", "Unknown error")
+                        response_text = f"⚠️ **{workflow_name}** failed: {error_msg}"
+                        return {
+                            "response": response_text,
+                            "confidence": "high",
+                            "workflow_executed": True,
+                            "workflow_result": workflow_result
+                        }
+
+                except Exception as e:
+                    logger.exception(f"Workflow execution failed: {e}")
+                    # Fall through to normal LLM processing
+                    workflow_match = None
 
         # ═══════════════════════════════════════════════════════════════
         # MULTI-STEP ROUTING: Check if request contains multiple steps
