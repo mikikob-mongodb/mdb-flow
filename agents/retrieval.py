@@ -1217,6 +1217,20 @@ class RetrievalAgent:
                     "is_test": {"$ne": True}
                 }
             },
+            # Lookup project name from project_id
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project_doc"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project_doc.name", 0]}
+                }
+            },
             {
                 "$project": {
                     "_id": 1,
@@ -1225,6 +1239,7 @@ class RetrievalAgent:
                     "status": 1,
                     "priority": 1,
                     "project_id": 1,
+                    "project_name": 1,
                     "score": {"$meta": "score"}
                 }
             },
@@ -1411,6 +1426,20 @@ class RetrievalAgent:
                     "limit": limit
                 }
             },
+            # Lookup project name from project_id
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project_doc"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project_doc.name", 0]}
+                }
+            },
             {
                 "$project": {
                     "_id": 1,
@@ -1418,6 +1447,7 @@ class RetrievalAgent:
                     "context": 1,
                     "status": 1,
                     "project_id": 1,
+                    "project_name": 1,
                     "priority": 1,
                     "score": {"$meta": "vectorSearchScore"}
                 }
@@ -1472,6 +1502,20 @@ class RetrievalAgent:
                     }
                 }
             },
+            # Lookup project name from project_id
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project_doc"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project_doc.name", 0]}
+                }
+            },
             {
                 "$project": {
                     "_id": 1,
@@ -1479,6 +1523,7 @@ class RetrievalAgent:
                     "context": 1,
                     "status": 1,
                     "project_id": 1,
+                    "project_name": 1,
                     "priority": 1,
                     "score": {"$meta": "searchScore"}
                 }
