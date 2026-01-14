@@ -846,7 +846,7 @@ Flow Companion's **MCP Agent** enables the system to handle requests that built-
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │ EXTERNAL MCP SERVERS                                     │  │
 │  │ ┌─────────────────────┐  ┌──────────────────────────┐   │  │
-│  │ │ Tavily MCP (SSE)    │  │ MongoDB MCP (stdio)      │   │  │
+│  │ │ Tavily (stdio/SSE)  │  │ MongoDB MCP (stdio)      │   │  │
 │  │ │ - tavily-search     │  │ - mongodb-query (future) │   │  │
 │  │ │ - tavily-extract    │  │ - mongodb-aggregate      │   │  │
 │  │ │ - tavily-map        │  │ - mongodb-create         │   │  │
@@ -867,9 +867,13 @@ Flow Companion's **MCP Agent** enables the system to handle requests that built-
 ```python
 class MCPAgent:
     async def initialize(self):
-        """Connect to configured MCP servers via SSE/stdio"""
-        # Tavily via SSE
-        streams = await sse_client(url=f"https://mcp.tavily.com/mcp/?tavilyApiKey={key}")
+        """Connect to configured MCP servers via stdio (primary) or SSE (fallback)"""
+        # Tavily via stdio (local NPX)
+        streams = await stdio_client(
+            command="npx",
+            args=["-y", "tavily-mcp@latest"],
+            env={"TAVILY_API_KEY": settings.tavily_api_key}
+        )
         session = ClientSession(*streams)
         await session.initialize()
 
@@ -888,7 +892,7 @@ class MCPAgent:
 ```
 
 **Connected Servers**:
-- **Tavily MCP** (SSE transport) - Web search, content extraction, URL mapping, web crawling
+- **Tavily MCP** (stdio primary, SSE fallback) - Web search, content extraction, URL mapping, web crawling
 - **MongoDB MCP** (planned - stdio transport) - Direct database access
 
 #### 2. Tool Discovery Store (`memory/tool_discoveries.py`)
@@ -1663,7 +1667,7 @@ With compression enabled:
 
 **MCP Agent** - Fully Implemented (Milestone 6):
 - ✅ MCP Protocol integration using Python SDK
-- ✅ Tavily remote server connection via SSE transport
+- ✅ Tavily server connection via stdio (primary) and SSE (fallback)
 - ✅ Tool Discovery Store with vector search (0.85 threshold)
 - ✅ Discovery learning and reuse patterns
 - ✅ Knowledge caching with 7-day TTL

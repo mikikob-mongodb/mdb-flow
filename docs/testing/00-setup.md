@@ -198,8 +198,8 @@ Memory Engineering:
 | Embedding cold start | First search slow | Run a warm-up search |
 | Voice permission | No audio capture | Check browser permissions |
 | Memory not updating | Stats don't change | Check MongoDB write permissions |
-| MCP connection fails | Tavily tools not available | Verify TAVILY_API_KEY in .env |
-| MCP timeout | Request takes >30s | Network issue or Tavily API down |
+| MCP connection fails | Tavily tools not available | Verify TAVILY_API_KEY in .env, ensure NPX is installed |
+| MCP slow connection | First connection takes 5-10s | Normal for NPX download, subsequent connections faster |
 
 ---
 

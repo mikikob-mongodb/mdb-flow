@@ -78,7 +78,7 @@ Flow Companion can connect to [Model Context Protocol](https://modelcontextproto
 3. The agent will now attempt to handle novel requests (research, web search, data extraction) via MCP
 
 **Connected Servers:**
-- **Tavily** (Remote SSE) - Web search and research via `tavily-search`, `tavily-extract`, `tavily-map`, `tavily-crawl`
+- **Tavily** (Stdio/SSE) - Web search and research via `tavily-search`, `tavily-extract`, `tavily-map`, `tavily-crawl` (uses local NPX with SSE fallback)
 - **MongoDB MCP** (Local Docker, Optional) - Dynamic database queries and aggregations (planned for future milestone)
 
 **Knowledge Cache:**

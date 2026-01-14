@@ -395,7 +395,7 @@ Flow Companion can connect to external **Model Context Protocol (MCP)** servers 
            ┌──────────────────────────────┐
            │   External MCP Servers       │
            │                              │
-           │  • Tavily (SSE Remote)       │
+           │  • Tavily (Stdio/SSE)        │
            │    - tavily-search           │
            │    - tavily-extract          │
            │    - tavily-map              │
