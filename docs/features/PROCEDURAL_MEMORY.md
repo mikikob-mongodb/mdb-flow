@@ -8,14 +8,14 @@ Procedural memory enables the system to **automate multi-step workflows** by rec
 
 ## Documentation Structure
 
-### 📚 [PROCEDURAL_MEMORY_DESIGN.md](./PROCEDURAL_MEMORY_DESIGN.md)
+### 📚 [Procedural Memory Architecture](../architecture/procedural-memory.md)
 **Read this first** - Core concepts, architecture, and design philosophy
 - How the system works
 - Pattern matching and execution
 - Data flow between steps
 - Best practices
 
-### 💡 [PROCEDURAL_MEMORY_PATTERNS.md](./PROCEDURAL_MEMORY_PATTERNS.md)
+### 💡 [Workflow Pattern Catalog](./procedural-memory-patterns.md)
 **Ideation reference** - 32+ workflow pattern ideas organized by category
 - Task Management (10 patterns)
 - Project Workflows (4 patterns)
@@ -25,7 +25,7 @@ Procedural memory enables the system to **automate multi-step workflows** by rec
 - Template/Initialization (4 patterns)
 - Conditional/Smart (3 patterns)
 
-### 🛠️ [SAMPLE_WORKFLOW_IMPLEMENTATIONS.md](./SAMPLE_WORKFLOW_IMPLEMENTATIONS.md)
+### 🛠️ [Implementation Examples](./procedural-memory-implementations.md)
 **Implementation guide** - Ready-to-use workflow definitions
 - Level 1: Simple Chaining (Reassign Task)
 - Level 2: Search + Action (Weekly Report)
@@ -273,9 +273,9 @@ r"create.*task.*(?:then|and)\s+start"
 
 ## Next Steps
 
-1. **Review**: Read [PROCEDURAL_MEMORY_DESIGN.md](./PROCEDURAL_MEMORY_DESIGN.md) for architecture
-2. **Explore**: Browse [PROCEDURAL_MEMORY_PATTERNS.md](./PROCEDURAL_MEMORY_PATTERNS.md) for ideas
-3. **Implement**: Use [SAMPLE_WORKFLOW_IMPLEMENTATIONS.md](./SAMPLE_WORKFLOW_IMPLEMENTATIONS.md) as templates
+1. **Review**: Read [Procedural Memory Architecture](../architecture/procedural-memory.md) for system design
+2. **Explore**: Browse [Workflow Pattern Catalog](./procedural-memory-patterns.md) for ideas
+3. **Implement**: Use [Implementation Examples](./procedural-memory-implementations.md) as templates
 4. **Test**: Add workflows to seed data and test with real queries
 5. **Measure**: Monitor metrics and refine based on usage
 

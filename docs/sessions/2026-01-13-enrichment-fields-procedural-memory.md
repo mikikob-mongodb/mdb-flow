@@ -192,7 +192,7 @@ User requested comprehensive exploration of procedural memory patterns for multi
 
 ### Documentation Created
 
-#### 1. PROCEDURAL_MEMORY_QUICKSTART.md (190 lines)
+#### 1. PROCEDURAL_MEMORY.md (190 lines)
 **Quick reference guide** covering:
 - What procedural memory is (with clear examples)
 - Current implementation status: 4 implemented ✅, 5 high-priority next 🔄
@@ -206,7 +206,7 @@ User requested comprehensive exploration of procedural memory patterns for multi
 - Implementation priorities
 - Common mistakes to avoid
 
-#### 2. PROCEDURAL_MEMORY_PATTERNS.md (400+ lines)
+#### 2. procedural-memory-patterns.md (400+ lines)
 **Comprehensive pattern catalog** with **32 workflow ideas** organized by category:
 
 **Task Management Workflows (10 patterns):**
@@ -269,7 +269,7 @@ User requested comprehensive exploration of procedural memory patterns for multi
 - Level 4: Conditional logic (Check state → Act differently)
 - Level 5: Cross-entity (Project + Tasks + Assignments)
 
-#### 3. SAMPLE_WORKFLOW_IMPLEMENTATIONS.md (550+ lines)
+#### 3. procedural-memory-implementations.md (550+ lines)
 **Ready-to-implement** workflow definitions with complete code:
 
 **Level 1 Example: Reassign Task**
@@ -320,7 +320,7 @@ User requested comprehensive exploration of procedural memory patterns for multi
 - Workflow execution engine requirements
 - Demo-friendly workflow recommendations
 
-#### 4. PROCEDURAL_MEMORY_DESIGN.md (460+ lines)
+#### 4. procedural-memory.md (460+ lines)
 **System design philosophy** covering:
 
 **Architecture:**
@@ -411,10 +411,10 @@ User requested comprehensive exploration of procedural memory patterns for multi
 - `utils/context_engineering.py` - 3 compression functions preserve enrichment (~60 lines)
 
 **Documentation:**
-- `docs/PROCEDURAL_MEMORY_QUICKSTART.md` - Quick start guide (190 lines)
-- `docs/PROCEDURAL_MEMORY_PATTERNS.md` - Pattern catalog (400+ lines)
-- `docs/SAMPLE_WORKFLOW_IMPLEMENTATIONS.md` - Implementation examples (550+ lines)
-- `docs/PROCEDURAL_MEMORY_DESIGN.md` - Design philosophy (460+ lines)
+- `docs/features/PROCEDURAL_MEMORY.md` - Quick start guide (190 lines)
+- `docs/features/procedural-memory-patterns.md` - Pattern catalog (400+ lines)
+- `docs/features/procedural-memory-implementations.md` - Implementation examples (550+ lines)
+- `docs/architecture/procedural-memory.md` - Design philosophy (460+ lines)
 - `docs/sessions/2026-01-13-enrichment-fields-procedural-memory.md` - This summary
 
 **Total Lines Changed/Added:** ~1,900 lines
@@ -441,7 +441,7 @@ User requested comprehensive exploration of procedural memory patterns for multi
 ```
 
 ### Procedural Memory Patterns
-Refer to implementation priority in `PROCEDURAL_MEMORY_QUICKSTART.md`:
+Refer to implementation priority in `docs/features/PROCEDURAL_MEMORY.md`:
 1. Reassign Task (simple, high-value)
 2. Weekly Status Report (demo-friendly)
 3. Create Project with Tasks (cross-entity showcase)
