@@ -2,12 +2,16 @@
 MCP Agent - Learning agent that uses Model Context Protocol servers
 
 Handles requests that static tools can't by:
-1. Connecting to MCP servers (Tavily remote via SSE)
+1. Connecting to MCP servers (Tavily via stdio/SSE)
 2. Discovering available tools dynamically
 3. Using LLM to figure out which tool to use for novel requests
 4. Executing solutions via MCP protocol
 5. Logging discoveries for developer review
 6. Reusing previous discoveries when similar requests come in
+
+Transports:
+- stdio (local): Spawns NPX process for reliable local connections
+- SSE (remote): Fallback to remote server if stdio fails
 """
 
 import asyncio
@@ -18,6 +22,7 @@ from typing import Optional, Dict, List, Any
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from mcp.client.stdio import stdio_client
 
 from memory.tool_discoveries import ToolDiscoveryStore
 from memory.manager import MemoryManager
@@ -88,14 +93,74 @@ class MCPAgent:
         return status
 
     async def _connect_tavily(self):
-        """Connect to Tavily's remote MCP server via SSE transport."""
+        """Connect to Tavily MCP server - tries stdio (local) first, then SSE (remote)."""
         logger.info("Connecting to Tavily MCP server...")
+
+        # Try stdio (local) first - more reliable, avoids SSE timeout issues
+        try:
+            await self._connect_tavily_stdio()
+            logger.info("✅ Using Tavily MCP via stdio (local NPX)")
+            return
+        except Exception as e:
+            logger.warning(f"Stdio connection failed: {e}")
+            logger.info("Falling back to SSE (remote)...")
+
+        # Fall back to SSE (remote) if stdio fails
+        await self._connect_tavily_sse()
+
+    async def _connect_tavily_stdio(self):
+        """Connect to Tavily MCP server via stdio (local NPX)."""
+        logger.debug("Creating stdio client connection...")
+
+        # Spawn NPX process with Tavily API key in environment
+        env = {"TAVILY_API_KEY": settings.tavily_api_key}
+        command = "npx"
+        args = ["-y", "tavily-mcp@latest"]
+
+        try:
+            streams_context = stdio_client(
+                command=command,
+                args=args,
+                env=env
+            )
+            streams = await self.exit_stack.enter_async_context(streams_context)
+
+            # Create and initialize session
+            logger.debug("Creating MCP client session...")
+            session = ClientSession(*streams)
+            self.mcp_clients["tavily"] = await self.exit_stack.enter_async_context(session)
+
+            # Initialize the connection
+            logger.debug("Initializing MCP session...")
+            await self.mcp_clients["tavily"].initialize()
+
+            # Discover available tools
+            logger.debug("Discovering tools...")
+            response = await self.mcp_clients["tavily"].list_tools()
+            self.available_tools["tavily"] = [{
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.inputSchema
+            } for tool in response.tools]
+
+            tool_names = [t['name'] for t in self.available_tools['tavily']]
+            logger.info(
+                f"✅ Connected to Tavily MCP (stdio): {len(self.available_tools['tavily'])} tools discovered"
+            )
+            logger.info(f"Tavily tools: {tool_names}")
+
+        except Exception as e:
+            logger.error(f"❌ Error connecting to Tavily via stdio: {e}")
+            raise
+
+    async def _connect_tavily_sse(self):
+        """Connect to Tavily's remote MCP server via SSE transport."""
+        logger.debug("Creating SSE client connection...")
 
         server_url = f"https://mcp.tavily.com/mcp/?tavilyApiKey={settings.tavily_api_key}"
 
         try:
             # Use AsyncExitStack for proper resource management
-            logger.debug("Creating SSE client connection...")
             streams_context = sse_client(url=server_url)
             streams = await self.exit_stack.enter_async_context(streams_context)
 
@@ -119,12 +184,12 @@ class MCPAgent:
 
             tool_names = [t['name'] for t in self.available_tools['tavily']]
             logger.info(
-                f"✅ Connected to Tavily MCP: {len(self.available_tools['tavily'])} tools discovered"
+                f"✅ Connected to Tavily MCP (SSE): {len(self.available_tools['tavily'])} tools discovered"
             )
             logger.info(f"Tavily tools: {tool_names}")
 
         except Exception as e:
-            logger.error(f"❌ Error connecting to Tavily: {e}")
+            logger.error(f"❌ Error connecting to Tavily via SSE: {e}")
             raise
 
     def get_status(self) -> Dict[str, Any]:
