@@ -663,7 +663,7 @@ class CoordinatorAgent:
     async def enable_mcp_mode(self):
         """Initialize and enable MCP mode"""
         if self.mcp_agent is None:
-            if not self.db:
+            if self.db is None:
                 return {
                     "success": False,
                     "error": "Database connection not available for MCP Agent"
