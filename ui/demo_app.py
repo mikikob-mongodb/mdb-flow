@@ -194,16 +194,17 @@ def get_priority_badge(priority: str) -> str:
 
 
 @st.cache_data(ttl=60)  # Cache for 60 seconds
-def get_task_episodic_summary(task_id: str) -> Optional[str]:
+def get_task_episodic_summary(task_id: str, enabled: bool = True) -> Optional[str]:
     """Retrieve latest episodic memory summary from Atlas for a task.
 
     Args:
         task_id: Task ID as string
+        enabled: Whether episodic memory is enabled (included in cache key)
 
     Returns:
         Summary string or None if not found
     """
-    if not task_id:
+    if not task_id or not enabled:
         return None
 
     try:
@@ -218,16 +219,17 @@ def get_task_episodic_summary(task_id: str) -> Optional[str]:
 
 
 @st.cache_data(ttl=60)  # Cache for 60 seconds
-def get_project_episodic_summary(project_id: str) -> Optional[str]:
+def get_project_episodic_summary(project_id: str, enabled: bool = True) -> Optional[str]:
     """Retrieve latest episodic memory summary from Atlas for a project.
 
     Args:
         project_id: Project ID as string
+        enabled: Whether episodic memory is enabled (included in cache key)
 
     Returns:
         Summary string or None if not found
     """
-    if not project_id:
+    if not project_id or not enabled:
         return None
 
     try:
@@ -266,8 +268,9 @@ def render_task_with_metadata(task):
 
     with st.expander(header, expanded=False):
         # Fetch and display episodic memory summary if toggle is enabled
-        if st.session_state.get("mem_episodic", True):
-            summary = get_task_episodic_summary(str(task.id)) if task.id else None
+        episodic_enabled = st.session_state.get("mem_episodic", True)
+        if episodic_enabled:
+            summary = get_task_episodic_summary(str(task.id), enabled=episodic_enabled) if task.id else None
             if summary:
                 st.markdown("**🧠 Episodic Memory Summary**")
                 st.info(summary)
@@ -534,8 +537,9 @@ def render_sidebar():
                                 st.caption(f"  • {update_date}: {content[:80]}...")
 
                         # Fetch and display project episodic memory if toggle is enabled
-                        if st.session_state.get("mem_episodic", True):
-                            summary = get_project_episodic_summary(str(project.id)) if project.id else None
+                        episodic_enabled = st.session_state.get("mem_episodic", True)
+                        if episodic_enabled:
+                            summary = get_project_episodic_summary(str(project.id), enabled=episodic_enabled) if project.id else None
                             if summary:
                                 st.markdown("**🧠 Project Episodic Memory**")
                                 st.success(summary)
