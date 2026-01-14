@@ -19,10 +19,14 @@ scripts/
 │   ├── seed_demo_data.py
 │   └── reset_demo.py
 ├── maintenance/     # Database cleanup & utilities
-│   └── cleanup_database.py
+│   ├── cleanup_database.py
+│   └── cleanup_indexes.py
 ├── dev/             # Development & debug tools
 │   ├── test_memory_system.py
 │   ├── test_multi_step_intent.py
+│   ├── test_new_features.py
+│   ├── audit_memory_system.py
+│   ├── test_slash_commands.sh
 │   └── debug/
 │       ├── debug_agent.py
 │       ├── test_hybrid_search.py
@@ -31,7 +35,12 @@ scripts/
 └── deprecated/      # Old scripts (see deprecated/README.md)
     ├── setup_database.py
     ├── load_sample_data.py
-    └── seed_memory_demo_data.py
+    ├── seed_memory_demo_data.py
+    ├── cleanup_old_collections.py
+    ├── cleanup_old_collections_auto.py
+    ├── migrate_memory_collections.py
+    ├── add_workflow_patterns.py
+    └── seed_demo_templates.py
 ```
 
 ---
@@ -87,12 +96,16 @@ python scripts/demo/reset_demo.py --verify-only
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
 | **cleanup_database.py** | Clean test data, duplicates, orphans | Regular maintenance |
+| **cleanup_indexes.py** | Remove redundant MongoDB indexes | After schema changes |
 
 ### 🛠️ Development Tools (`scripts/dev/`)
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
-| **test_memory_system.py** | Test 5-tier memory system | Development, verification |
+| **test_memory_system.py** | Test memory system (episodic, semantic, procedural) | Development, verification |
 | **test_multi_step_intent.py** | Test multi-step intent classification | Coordinator debugging |
+| **test_new_features.py** | Test newly implemented features | Feature validation |
+| **audit_memory_system.py** | Comprehensive memory system audit | Memory system health check |
+| **test_slash_commands.sh** | Run slash command test suite | UI testing |
 | **debug/debug_agent.py** | Test agent vs direct DB queries | Debugging agent behavior |
 | **debug/test_hybrid_search.py** | Test hybrid search | Search debugging |
 | **debug/test_tool_coordinator.py** | Test coordinator | Coordinator debugging |
@@ -104,8 +117,13 @@ python scripts/demo/reset_demo.py --verify-only
 | ~~setup_database.py~~ | Deprecated | Use `scripts/setup/init_db.py` |
 | ~~load_sample_data.py~~ | Deprecated | Use `scripts/demo/seed_demo_data.py` |
 | ~~seed_memory_demo_data.py~~ | Deprecated | Use `scripts/demo/seed_demo_data.py` |
+| ~~cleanup_old_collections.py~~ | Migration complete | No longer needed (Jan 2026 migration) |
+| ~~cleanup_old_collections_auto.py~~ | Migration complete | No longer needed (Jan 2026 migration) |
+| ~~migrate_memory_collections.py~~ | Migration complete | Migration finished (Jan 2026) |
+| ~~add_workflow_patterns.py~~ | One-off complete | Workflows already seeded in demo data |
+| ~~seed_demo_templates.py~~ | One-off complete | Templates already seeded in demo data |
 
-**Note:** See `scripts/deprecated/README.md` for migration guide.
+**Note:** See `scripts/deprecated/README.md` for details.
 
 ---
 
@@ -160,22 +178,25 @@ python scripts/setup/init_db.py --drop-first
 
 **Creates:**
 
-**Collections (8):**
-- tasks, projects, settings
-- short_term_memory, long_term_memory, shared_memory
-- tool_discoveries, eval_comparison_runs
+**Collections (6):**
+- tasks, projects
+- memory_episodic, memory_semantic, memory_procedural
+- tool_discoveries
 
 **Indexes:**
 - Standard indexes (user_id, status, timestamps)
 - Compound indexes (user_id + status, etc.)
 - Text search indexes (weighted full-text search)
-- TTL indexes (auto-expiration: 2hr for short-term, 5min for shared)
+- Memory-specific indexes:
+  - Episodic: user_id+timestamp, action_type, entity_type (6 indexes)
+  - Semantic: semantic_lookup, knowledge_query (5 indexes)
+  - Procedural: user_id+rule_type, procedural_lookup (3 indexes)
 
 **Vector Search Indexes (Manual in Atlas UI):**
 1. tasks.vector_index
 2. projects.vector_index
-3. long_term_memory.memory_embeddings
-4. long_term_memory.vector_index
+3. memory_episodic.memory_embeddings
+4. memory_semantic.memory_embeddings
 5. tool_discoveries.discovery_vector_index
 
 All 1024 dimensions (Voyage AI voyage-3), cosine similarity.
@@ -205,8 +226,8 @@ python scripts/setup/verify_setup.py --verbose
 **Checks:**
 - ✅ Environment (.env file, required/optional variables)
 - ✅ MongoDB (connection, database access, write permissions)
-- ✅ Collections (all 8 required collections exist)
-- ✅ Indexes (standard, text search, TTL, vector search)
+- ✅ Collections (all 6 required collections exist)
+- ✅ Indexes (standard, text search, memory-specific, vector search)
 - ✅ APIs (Anthropic, Voyage AI, OpenAI, Tavily)
 - ✅ Operations (INSERT, QUERY, UPDATE, DELETE)
 
@@ -239,7 +260,7 @@ python scripts/demo/reset_demo.py --skip-embeddings
 ```
 
 **Phases:**
-1. **TEARDOWN:** Clear 6 collections (projects, tasks, all memories, tool_discoveries)
+1. **TEARDOWN:** Clear 6 collections (projects, tasks, memory_episodic, memory_semantic, memory_procedural, tool_discoveries)
 2. **SETUP:** Calls seed_demo_data.py functions directly to seed fresh data
 3. **VERIFY:** Check GTM template, Project Alpha, Q3 GTM, user preferences exist
 
@@ -256,7 +277,9 @@ python scripts/demo/reset_demo.py --skip-embeddings
 🗑️  Teardown:
   projects: 3 deleted
   tasks: 7 deleted
-  long_term_memory: 9 deleted
+  memory_episodic: 3 deleted
+  memory_semantic: 4 deleted
+  memory_procedural: 2 deleted
 
 🌱 Seeding:
   projects: 3 inserted
@@ -287,7 +310,7 @@ python scripts/demo/reset_demo.py --skip-embeddings
 
 **Location:** `scripts/demo/seed_demo_data.py`
 
-**Purpose:** Seed realistic, interconnected data for showcasing 5-tier memory system.
+**Purpose:** Seed realistic, interconnected data for showcasing memory system (episodic, semantic, procedural).
 
 **Usage:**
 ```bash
@@ -352,11 +375,11 @@ python scripts/maintenance/cleanup_database.py --full            # Full cleanup
 
 **Location:** `scripts/dev/test_memory_system.py`
 
-Test 5-tier memory system.
+Test memory system (episodic, semantic, procedural).
 
 ```bash
 python scripts/dev/test_memory_system.py                # All tests
-python scripts/dev/test_memory_system.py --long-term    # Long-term only
+python scripts/dev/test_memory_system.py --episodic     # Episodic only
 python scripts/dev/test_memory_system.py --performance  # Performance tests
 ```
 
@@ -631,5 +654,5 @@ python scripts/setup.py
 
 ---
 
-**Last Updated:** January 12, 2026
-**Version:** 3.1 (Reorganized structure - setup/, demo/, maintenance/, dev/, deprecated/)
+**Last Updated:** January 14, 2026
+**Version:** 3.2 (Memory collection migration complete - episodic, semantic, procedural)

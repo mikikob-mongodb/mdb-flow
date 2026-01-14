@@ -98,6 +98,92 @@ seed_demo_data.seed_episodic_memory(db)
 
 ---
 
+### cleanup_old_collections.py & cleanup_old_collections_auto.py
+**Deprecated:** January 14, 2026
+**Migration Status:** Complete (one-time use)
+
+**Reason for deprecation:**
+- These were one-time migration scripts for the January 2026 memory collection migration
+- Dropped old collections: memory_short_term, memory_long_term, memory_shared
+- Migration is now complete, scripts no longer needed
+- New memory architecture uses: memory_episodic, memory_semantic, memory_procedural
+
+**No replacement needed** - This was a one-time migration task that is now complete.
+
+---
+
+### migrate_memory_collections.py
+**Deprecated:** January 14, 2026
+**Migration Status:** Complete (guide document)
+
+**Reason for deprecation:**
+- This was a migration guide/reference script for the January 2026 memory migration
+- Documented the mapping from old to new collection structure
+- Migration is complete as of January 13, 2026 (commit eaf3d61)
+- Code is now fully migrated to new memory architecture
+
+**No replacement needed** - Migration is complete.
+
+**Reference:**
+- See `docs/archive/MIGRATION_STATUS_2026-01-13.md` for complete migration details
+- See `docs/archive/SESSION_SUMMARY_2026-01-13.md` for full session documentation
+
+---
+
+### add_workflow_patterns.py
+**Deprecated:** January 14, 2026
+**Replaced by:** Data already seeded in `scripts/demo/seed_demo_data.py`
+
+**Reason for deprecation:**
+- One-time script to add 5 additional workflow patterns to procedural memory
+- These workflows are now included in the standard demo data seed
+- Running this script would create duplicates
+- No longer needed for new setups
+
+**Migration path:**
+```bash
+# Old (deprecated)
+python scripts/add_workflow_patterns.py
+
+# New (recommended) - Workflows already included
+python scripts/demo/seed_demo_data.py
+```
+
+**Workflows added (now in seed_demo_data.py):**
+- Reassign Task Workflow
+- Create Project with Standard Tasks
+- Clone Project Structure
+- Handoff All Tasks
+- Escalate Blocked Tasks
+
+---
+
+### seed_demo_templates.py
+**Deprecated:** January 14, 2026
+**Replaced by:** Data already seeded in `scripts/demo/seed_demo_data.py`
+
+**Reason for deprecation:**
+- One-time script to add 3 demo templates to procedural memory
+- These templates are now included in the standard demo data seed
+- Running this script would create duplicates
+- No longer needed for new setups
+
+**Migration path:**
+```bash
+# Old (deprecated)
+python scripts/seed_demo_templates.py
+
+# New (recommended) - Templates already included
+python scripts/demo/seed_demo_data.py
+```
+
+**Templates added (now in seed_demo_data.py):**
+- PRD Template
+- Roadmap Template
+- Market Research Template
+
+---
+
 ## Removal Timeline
 
 **Phase 1 (Current):** Scripts moved to `deprecated/` directory
