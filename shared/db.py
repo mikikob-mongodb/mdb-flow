@@ -356,7 +356,7 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
     if not current_project:
         return False
 
-    old_notes = current_project.get("notes", [])
+    old_activity_count = len(current_project.get("activity_log", []))
 
     # Create activity log entry
     activity_entry = ActivityLogEntry(
@@ -375,7 +375,6 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
         {"_id": project_id},
         {
             "$push": {
-                "notes": note,
                 "activity_log": activity_entry,
                 "updates": project_update
             },
@@ -388,11 +387,11 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
 
     if result.modified_count > 0:
         # Auto-generate episodic summary if conditions met
-        new_notes = old_notes + [note]
+        new_activity_count = old_activity_count + 1
         _maybe_generate_project_episodic_summary(
             project_id,
-            old_notes=old_notes,
-            new_notes=new_notes
+            old_activity_count=old_activity_count,
+            new_activity_count=new_activity_count
         )
 
     return result.modified_count > 0
@@ -583,20 +582,20 @@ def _maybe_generate_project_episodic_summary(
     project_id: ObjectId,
     old_description: Optional[str] = None,
     new_description: Optional[str] = None,
-    old_notes: Optional[List] = None,
-    new_notes: Optional[List] = None
+    old_activity_count: Optional[int] = None,
+    new_activity_count: Optional[int] = None
 ) -> None:
     """
     Auto-generate episodic memory summary for a project if conditions are met.
 
-    Generates when description or notes change.
+    Generates when description changes or activity count crosses thresholds.
 
     Args:
         project_id: ObjectId of the project
         old_description: Previous description (if known)
         new_description: New description (if known)
-        old_notes: Previous notes list (if known)
-        new_notes: New notes list (if known)
+        old_activity_count: Previous activity count (if known)
+        new_activity_count: New activity count (if known)
     """
     try:
         # Import here to avoid circular imports
@@ -604,8 +603,8 @@ def _maybe_generate_project_episodic_summary(
         from agents.coordinator import memory_manager
 
         # Check if we should generate a summary (if we have before/after state)
-        if old_description is not None or old_notes is not None:
-            if not should_generate_project_summary(old_description, new_description, old_notes, new_notes):
+        if old_description is not None or old_activity_count is not None:
+            if not should_generate_project_summary(old_description, new_description, old_activity_count, new_activity_count):
                 return
 
         # Get updated project

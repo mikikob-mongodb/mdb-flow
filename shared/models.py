@@ -99,7 +99,6 @@ class Project(BaseModel):
     description: str = ""
     status: Literal["active", "planned", "completed", "archived"] = "active"
     context: str = ""
-    notes: List[str] = Field(default_factory=list)
     methods: List[str] = Field(default_factory=list)  # Technologies/approaches
     decisions: List[str] = Field(default_factory=list)
     activity_log: List[ActivityLogEntry] = Field(default_factory=list)

@@ -106,11 +106,6 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "tags": ["infrastructure", "modernization", "cloud", "cost-optimization", "migration"],
             "priority": "high",
             "stakeholders": ["Mike Chen", "Sarah Thompson", "DevOps Team", "Finance"],
-            "notes": [
-                "Decision: Going with AWS for compute and MongoDB Atlas for data layer after evaluating 3 cloud providers",
-                "Risk identified: Legacy authentication system may need significant refactoring during migration",
-                "Stakeholder feedback: Finance wants monthly cost tracking dashboard to monitor savings"
-            ],
             "methods": ["AWS ECS", "MongoDB Atlas", "Terraform", "GitLab CI/CD"],
             "decisions": [
                 "Chose phased migration approach over big-bang to minimize risk",
@@ -144,11 +139,6 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "tags": ["voice", "real-time", "demo", "audio", "streaming", "websocket", "developer-day"],
             "priority": "high",
             "stakeholders": ["Mike Chen", "Developer Relations", "Demo Team"],
-            "notes": [
-                "Tech stack decision: Deepgram for STT (fastest in benchmarks), ElevenLabs for TTS (best voice quality)",
-                "Performance target: <200ms latency for conversational feel - requires careful optimization",
-                "Demo scenario: Customer support bot that can handle interruptions and multi-turn conversations"
-            ],
             "methods": ["WebSocket", "Deepgram STT", "ElevenLabs TTS", "MongoDB Change Streams"],
             "decisions": [
                 "Using WebSocket for bidirectional streaming instead of separate upload/download endpoints",
@@ -182,11 +172,6 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "tags": ["open-source", "langgraph", "integration", "contribution", "langchain"],
             "priority": "medium",
             "stakeholders": ["Mike Chen", "Open Source Team", "LangChain maintainers"],
-            "notes": [
-                "LangChain team expressed interest in MongoDB checkpointer - they'll fast-track review if we submit clean PR",
-                "Implementation challenge: Need to map LangGraph's tuple-based checkpoint keys to MongoDB document structure",
-                "Performance consideration: Using MongoDB change streams for graph state updates could enable real-time monitoring"
-            ],
             "methods": ["Python", "LangGraph", "MongoDB", "pytest"],
             "decisions": [
                 "Implementing full BaseCheckpointSaver interface for compatibility with all LangGraph features",
@@ -219,13 +204,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["presentation", "speaking", "mongodb", "developer-day", "ai-agents"],
             "priority": "high",
-            "stakeholders": ["Mike Chen", "Developer Relations", "Event Team", "Product Marketing"],
-            "notes": [
-                "Presentation slot: 2:30 PM on main stage - prime time slot right after lunch",
-                "Demo requirements: Need working voice agent demo + memory visualization dashboard",
-                "Audience level: Mostly senior devs familiar with AI but may not know memory patterns deeply"
-            ],
-            "methods": ["Keynote", "Live Demo", "MongoDB Atlas", "Streamlit"],
+            "stakeholders": ["Mike Chen", "Developer Relations", "Event Team", "Product Marketing"], "methods": ["Keynote", "Live Demo", "MongoDB Atlas", "Streamlit"],
             "decisions": [
                 "Focus on practical patterns over theory - show working code and architecture diagrams",
                 "Lead with impressive voice agent demo to hook audience, then explain memory architecture",
@@ -260,13 +239,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["observability", "agentops", "reference-architecture", "open-source", "production"],
             "priority": "high",
-            "stakeholders": ["Mike Chen", "Field Engineering", "Product Marketing"],
-            "notes": [
-                "Shipped with 3 example agents: RAG, tool-calling, and multi-agent workflow",
-                "Documentation includes deployment guide for AWS, GCP, and Azure",
-                "LangSmith team featured it in their newsletter - good partnership signal"
-            ],
-            "methods": ["OpenTelemetry", "LangSmith", "Python", "Docker", "Grafana"],
+            "stakeholders": ["Mike Chen", "Field Engineering", "Product Marketing"], "methods": ["OpenTelemetry", "LangSmith", "Python", "Docker", "Grafana"],
             "decisions": [
                 "Used OpenTelemetry for vendor-neutral instrumentation instead of proprietary solutions",
                 "Included both self-hosted (Grafana) and SaaS (LangSmith) observability options",
@@ -299,13 +272,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["content", "blog", "memory", "thought-leadership", "technical-writing"],
             "priority": "medium",
-            "stakeholders": ["Mike Chen", "Content Marketing", "Developer Relations"],
-            "notes": [
-                "Each post ~2000 words with working code examples and MongoDB queries",
-                "SEO research shows 'agent memory patterns' has growing search volume",
-                "Cross-promotion planned with LangChain and LlamaIndex communities"
-            ],
-            "methods": ["Technical Writing", "MongoDB", "Python", "Code Examples"],
+            "stakeholders": ["Mike Chen", "Content Marketing", "Developer Relations"], "methods": ["Technical Writing", "MongoDB", "Python", "Code Examples"],
             "decisions": [
                 "Publishing on MongoDB blog for SEO benefit rather than Medium/personal blog",
                 "Including companion GitHub repo with full working examples for each pattern",
@@ -339,13 +306,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["gaming", "demo", "vertical", "npc", "memory", "relationships"],
             "priority": "medium",
-            "stakeholders": ["Gaming Sales Team", "Product Marketing", "Mike Chen"],
-            "notes": [
-                "Target: GDC 2026 (March) for initial demo - 10 weeks to build",
-                "NPC behaviors: remember past conversations, react to player reputation, evolve relationships over time",
-                "Technical challenge: Real-time NPC memory retrieval needs to be <50ms to not impact gameplay"
-            ],
-            "methods": ["Unity", "MongoDB Atlas", "Vector Search", "LLM Integration"],
+            "stakeholders": ["Gaming Sales Team", "Product Marketing", "Mike Chen"], "methods": ["Unity", "MongoDB Atlas", "Vector Search", "LLM Integration"],
             "decisions": []
         },
         {
@@ -359,13 +320,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["education", "demo", "adaptive-learning", "edtech", "personalization"],
             "priority": "low",
-            "stakeholders": ["EdTech Sales Team", "Mike Chen"],
-            "notes": [
-                "Scope: Math tutoring for middle school - narrow domain makes AI behavior more reliable",
-                "Student model: track mastery of 50+ concepts, preferred explanation styles, common misconceptions",
-                "Privacy requirements: Need to ensure COPPA compliance for student data"
-            ],
-            "methods": ["Streamlit", "MongoDB Atlas", "OpenAI GPT-4", "Learning Analytics"],
+            "stakeholders": ["EdTech Sales Team", "Mike Chen"], "methods": ["Streamlit", "MongoDB Atlas", "OpenAI GPT-4", "Learning Analytics"],
             "decisions": []
         }
     ]

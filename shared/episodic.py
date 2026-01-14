@@ -152,18 +152,18 @@ def should_generate_task_summary(task_activity_count: int) -> bool:
 def should_generate_project_summary(
     old_description: Optional[str],
     new_description: Optional[str],
-    old_notes: Optional[List[str]],
-    new_notes: Optional[List[str]]
+    old_activity_count: Optional[int],
+    new_activity_count: Optional[int]
 ) -> bool:
     """Determine if a new episodic summary should be generated for a project.
 
-    Generate when description or notes change.
+    Generate when description changes or activity count crosses thresholds.
 
     Args:
         old_description: Previous project description
         new_description: New project description
-        old_notes: Previous project notes list
-        new_notes: New project notes list
+        old_activity_count: Previous activity count
+        new_activity_count: New activity count
 
     Returns:
         True if summary should be generated
@@ -172,10 +172,12 @@ def should_generate_project_summary(
     if old_description != new_description:
         return True
 
-    # Notes changed (added or removed)
-    old_notes_set = set(old_notes or [])
-    new_notes_set = set(new_notes or [])
-    if old_notes_set != new_notes_set:
-        return True
+    # Activity count increased (new activity added)
+    # Generate episodic summary every 5 activities
+    if old_activity_count is not None and new_activity_count is not None:
+        old_threshold = old_activity_count // 5
+        new_threshold = new_activity_count // 5
+        if new_threshold > old_threshold:
+            return True
 
     return False
