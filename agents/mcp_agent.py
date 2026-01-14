@@ -95,17 +95,21 @@ class MCPAgent:
 
         try:
             # Use AsyncExitStack for proper resource management
+            logger.debug("Creating SSE client connection...")
             streams_context = sse_client(url=server_url)
             streams = await self.exit_stack.enter_async_context(streams_context)
 
             # Create and initialize session
+            logger.debug("Creating MCP client session...")
             session = ClientSession(*streams)
             self.mcp_clients["tavily"] = await self.exit_stack.enter_async_context(session)
 
             # Initialize the connection
+            logger.debug("Initializing MCP session...")
             await self.mcp_clients["tavily"].initialize()
 
             # Discover available tools
+            logger.debug("Discovering tools...")
             response = await self.mcp_clients["tavily"].list_tools()
             self.available_tools["tavily"] = [{
                 "name": tool.name,
@@ -115,12 +119,12 @@ class MCPAgent:
 
             tool_names = [t['name'] for t in self.available_tools['tavily']]
             logger.info(
-                f"Connected to Tavily MCP: {len(self.available_tools['tavily'])} tools discovered"
+                f"✅ Connected to Tavily MCP: {len(self.available_tools['tavily'])} tools discovered"
             )
             logger.info(f"Tavily tools: {tool_names}")
 
         except Exception as e:
-            logger.error(f"Error connecting to Tavily: {e}")
+            logger.error(f"❌ Error connecting to Tavily: {e}")
             raise
 
     def get_status(self) -> Dict[str, Any]:

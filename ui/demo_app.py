@@ -398,7 +398,14 @@ def render_sidebar():
             if mcp_enabled and not st.session_state.get("mcp_initialized"):
                 with st.spinner("🔬 Connecting to Tavily..."):
                     try:
-                        status = asyncio.run(coordinator.enable_mcp_mode())
+                        # Add timeout to prevent indefinite hanging
+                        async def init_with_timeout():
+                            return await asyncio.wait_for(
+                                coordinator.enable_mcp_mode(),
+                                timeout=30.0  # 30 second timeout
+                            )
+
+                        status = asyncio.run(init_with_timeout())
                         st.session_state.mcp_initialized = True
                         st.session_state.mcp_status = status
                         if status.get("success"):
@@ -406,6 +413,10 @@ def render_sidebar():
                             st.success(f"✅ tavily: {len(tools)} tools")
                         else:
                             st.error(f"❌ Failed: {status.get('error')}")
+                    except asyncio.TimeoutError:
+                        st.error(f"❌ Timeout: Tavily connection took too long (>30s). Check network or API key.")
+                        st.session_state.mcp_enabled = False
+                        mcp_enabled = False
                     except Exception as e:
                         st.error(f"❌ Error: {e}")
                         st.session_state.mcp_enabled = False
