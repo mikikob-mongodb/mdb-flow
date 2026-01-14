@@ -242,8 +242,23 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
     if re.search(r'\b(what[\'s\s]+going on|what[\'s\s]+happening|status update|current status)\b', query_lower):
         return "/tasks"
 
+    # Check for complex filter conditions - skip pattern matching if present
+    # These should go to LLM agent (Tier 3) which can use search_tasks with filters
+    complex_filter_indicators = [
+        r'\b(high|medium|low)[- ]priority\b',  # priority filters
+        r'\b(in[- ]progress|todo|done)\b',     # status filters (explicit)
+        r'\bthat (are|is)\b',                  # "tasks that are X" structure
+        r'\bwith\b.*\b(priority|status)\b',    # "with priority/status"
+        r'\band\b.*\b(priority|status|blocked|overdue)\b',  # multiple conditions
+    ]
+    has_complex_filters = any(re.search(pattern, query_lower) for pattern in complex_filter_indicators)
+
     # Search queries with "tasks" keyword
     if re.search(r'\b(find|search for|look for|show me).*\b(tasks?|work)\b', query_lower):
+        # Skip if complex filters present - let LLM handle it
+        if has_complex_filters:
+            return None
+
         # Extract search term
         search_match = re.search(r'\b(?:find|search for|look for|show me)\s+(?:tasks?\s+)?(?:about\s+)?(.+?)(?:\s+tasks?)?$', query_lower)
         if search_match:
@@ -255,6 +270,10 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
     # Search queries WITHOUT "tasks" keyword - "Look for X"
     # Must come after more specific patterns
     if re.search(r'\b(look for|find|search for)\s+\w', query_lower):
+        # Skip if complex filters present - let LLM handle it
+        if has_complex_filters:
+            return None
+
         search_match = re.search(r'\b(?:look for|find|search for)\s+(.+)$', query_lower)
         if search_match:
             search_term = search_match.group(1).strip()
