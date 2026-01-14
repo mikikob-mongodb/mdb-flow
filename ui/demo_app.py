@@ -723,57 +723,108 @@ def render_chat():
         if prompt := st.chat_input("Try /tasks or ask a question..."):
             handle_input(prompt)
 
-        # Suggested prompts
-        header_col, shuffle_col = st.columns([5, 1])
-        with header_col:
-            st.caption("💡 **Try these:**")
-        with shuffle_col:
-            if st.button("🔄", key="shuffle_suggestions", help="Show different suggestions"):
-                import random
-                suggestions = [
-                    # Tier 1: Slash commands (new fields)
-                    ("/tasks assignee:Mike Chen", "⚡ Mike's tasks"),
-                    ("/tasks assignee:Sarah", "⚡ Sarah's tasks"),
-                    ("/tasks blocked", "⚡ Blocked tasks"),
-                    ("/tasks overdue", "⚡ Overdue tasks"),
-                    ("/tasks due:today", "⚡ Due today"),
-                    ("/tasks due:week", "⚡ Due this week"),
-                    ("/projects stakeholder:Mike Chen", "⚡ Mike's projects"),
-                    # Tier 2: Natural language → slash (new fields)
-                    ("What's Sarah working on?", "💬 Sarah's tasks"),
-                    ("What's blocked?", "💬 Blocked tasks"),
-                    ("What's overdue?", "💬 Overdue tasks"),
-                    ("What's due today?", "💬 Due today"),
-                    ("Show me Mike's projects", "💬 Mike's projects"),
-                    # Tier 3: LLM queries (complex filters)
-                    ("Show me Mike's tasks that are in progress", "🤖 Complex query"),
-                    ("What tasks are blocked in Project Alpha?", "🤖 Project blockers"),
-                    ("What projects is Sarah involved in?", "🤖 Stakeholder search"),
-                    # Tier 4: LLM actions (new fields)
-                    ("Create a task to review PR, assign to Sarah, due tomorrow", "🤖 Create task"),
-                    ("Add a blocker to the migration task: waiting on approval", "🤖 Add blocker"),
-                    ("Add Mike as a stakeholder to Voice Agent project", "🤖 Add stakeholder"),
-                ]
-                st.session_state.current_suggestions = random.sample(suggestions, 4)
-                st.rerun()
+        # Suggested queries with dropdown
+        st.caption("💡 **Try these examples:**")
 
-        # Show suggestions
-        import random
-        if 'current_suggestions' not in st.session_state:
-            suggestions = [
-                ("/tasks assignee:Mike Chen", "⚡ Mike's tasks"),
-                ("What's Sarah working on?", "💬 Sarah's tasks"),
-                ("What's blocked?", "💬 Blocked tasks"),
-                ("Show me Mike's tasks that are in progress", "🤖 Complex query"),
-            ]
-            st.session_state.current_suggestions = suggestions
+        # Categorized examples from testing guides
+        example_categories = {
+            "⚡ Slash Commands - Basic": [
+                "/tasks",
+                "/tasks status:in_progress",
+                "/tasks priority:high",
+                "/projects",
+                "/projects AgentOps",
+                "/help",
+            ],
+            "⚡ Slash Commands - Filters": [
+                "/tasks assignee:Mike Chen",
+                "/tasks blocked",
+                "/tasks overdue",
+                "/tasks due:today",
+                "/tasks due:week",
+                "/tasks status:in_progress priority:high",
+                "/projects stakeholder:Mike Chen",
+            ],
+            "⚡ Slash Commands - Search": [
+                "/search debugging",
+                "/search vector memory",
+                "/search text checkpointer",
+                "/search projects agent",
+            ],
+            "💬 Natural Language - Status": [
+                "What's urgent?",
+                "What's in progress?",
+                "What's done?",
+                "Show me todo items",
+                "What's high priority?",
+            ],
+            "💬 Natural Language - Assignees": [
+                "What's Sarah working on?",
+                "Show me Mike Chen's tasks",
+                "What is Mike Chen working on that's in progress?",
+            ],
+            "💬 Natural Language - Temporal": [
+                "What's blocked?",
+                "What's overdue?",
+                "What's due today?",
+                "What's due this week?",
+                "Show me completed tasks from this week",
+            ],
+            "💬 Natural Language - Projects": [
+                "Show me AgentOps",
+                "What's in the Voice Agent project?",
+                "What projects is Sarah involved in?",
+                "Show Sarah's active projects",
+            ],
+            "🤖 LLM Queries - Complex Filters": [
+                "Show me Mike's tasks that are in progress",
+                "What's high priority in AgentOps?",
+                "What tasks are blocked in Project Alpha?",
+                "Find tasks about debugging",
+                "Search for memory-related tasks",
+            ],
+            "🤖 LLM Actions - Task Management": [
+                "I finished the debugging doc",
+                "Mark the checkpointer task as done",
+                "I'm starting work on the checkpointer",
+                "Create a task: Review PR #123",
+                "Add a note to voice agent: WebSocket working",
+            ],
+            "🤖 LLM Actions - Enrichment Fields": [
+                "Create a task to review security docs, assign to Mike Chen, due next Friday",
+                "Add a blocker to the migration task: waiting on approval",
+                "Add Mike Chen as a stakeholder to Project Alpha",
+                "Add a project update to Alpha: completed architecture review",
+            ],
+        }
 
-        cols = st.columns(4)
-        for idx, (suggestion, label) in enumerate(st.session_state.current_suggestions):
-            with cols[idx]:
-                if st.button(label, key=f"suggest_{idx}", use_container_width=True, help=suggestion):
-                    handle_input(suggestion)
-                    st.rerun()
+        # Dropdown for category selection
+        col_dropdown, col_button = st.columns([3, 1])
+        with col_dropdown:
+            selected_category = st.selectbox(
+                "Category",
+                options=list(example_categories.keys()),
+                key="example_category",
+                label_visibility="collapsed"
+            )
+
+        # Show examples as buttons for selected category
+        examples = example_categories[selected_category]
+
+        # Show up to 6 examples in 3 columns x 2 rows
+        for row in range(2):
+            cols = st.columns(3)
+            for col_idx in range(3):
+                example_idx = row * 3 + col_idx
+                if example_idx < len(examples):
+                    example = examples[example_idx]
+                    with cols[col_idx]:
+                        # Truncate long examples for button label
+                        label = example if len(example) <= 30 else example[:27] + "..."
+                        if st.button(label, key=f"example_{selected_category}_{example_idx}",
+                                   use_container_width=True, help=example):
+                            handle_input(example)
+                            st.rerun()
 
     with col_debug:
         render_debug_panel()
