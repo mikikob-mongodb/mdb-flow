@@ -794,13 +794,14 @@ def render_chat():
                 "Mark the checkpointer task as done",
                 "I'm starting work on the checkpointer",
                 "Create a task: Review PR #123",
-                "Add a note to voice agent: WebSocket working",
+                "Add a task note to debugging: fixed the race condition",
             ],
             "🤖 LLM Actions - Enrichment Fields": [
                 "Create a task to review security docs, assign to Mike Chen, due next Friday",
                 "Add a blocker to the migration task: waiting on approval",
                 "Add Mike Chen as a stakeholder to Project Alpha",
                 "Add a project update to Alpha: completed architecture review",
+                "Add a project note to Voice Agent Architecture: WebSocket latency now 165ms",
             ],
         }
 
