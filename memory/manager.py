@@ -1155,7 +1155,7 @@ class MemoryManager:
                     if re.search(trigger_pattern, user_message, re.IGNORECASE):
                         # Update last_used timestamp
                         from datetime import datetime
-                        self.long_term.update_one(
+                        self.procedural.update_one(
                             {"_id": workflow["_id"]},
                             {
                                 "$set": {"last_used": datetime.utcnow()},
@@ -1167,6 +1167,107 @@ class MemoryManager:
                 except re.error:
                     # Invalid regex pattern, skip
                     continue
+
+        return None
+
+    def search_workflows_semantic(
+        self,
+        user_id: str,
+        user_message: str,
+        min_score: float = 0.7,
+        limit: int = 3
+    ) -> Optional[dict]:
+        """
+        Search for workflow using combined regex + vector similarity.
+
+        First tries exact regex pattern matching. If no match found,
+        falls back to semantic vector search.
+
+        Args:
+            user_id: User identifier
+            user_message: User's input text
+            min_score: Minimum similarity score for vector search (0.0-1.0)
+            limit: Maximum number of vector search results to consider
+
+        Returns:
+            Best matching workflow or None
+        """
+        import re
+        from datetime import datetime
+
+        # STEP 1: Try regex pattern matching (fast, precise)
+        workflows = list(self.procedural.find({
+            "user_id": user_id,
+            "rule_type": "workflow"
+        }))
+
+        for workflow in workflows:
+            trigger_pattern = workflow.get("trigger_pattern", "")
+            if trigger_pattern:
+                try:
+                    if re.search(trigger_pattern, user_message, re.IGNORECASE):
+                        # Update usage stats
+                        self.procedural.update_one(
+                            {"_id": workflow["_id"]},
+                            {
+                                "$set": {"last_used": datetime.utcnow()},
+                                "$inc": {"times_used": 1}
+                            }
+                        )
+                        workflow["_id"] = str(workflow["_id"])
+                        workflow["match_type"] = "regex"
+                        workflow["match_score"] = 1.0
+                        return workflow
+                except re.error:
+                    continue
+
+        # STEP 2: Fall back to vector similarity search
+        if not self.embedding_fn:
+            return None
+
+        # Generate embedding for user message
+        query_embedding = self.embedding_fn(user_message)
+
+        # Vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": limit * 10,
+                    "limit": limit,
+                    "filter": {
+                        "user_id": user_id,
+                        "rule_type": "workflow"
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        results = list(self.procedural.aggregate(pipeline))
+
+        if results and results[0].get("score", 0) >= min_score:
+            best_match = results[0]
+
+            # Update usage stats
+            self.procedural.update_one(
+                {"_id": best_match["_id"]},
+                {
+                    "$set": {"last_used": datetime.utcnow()},
+                    "$inc": {"times_used": 1}
+                }
+            )
+
+            best_match["_id"] = str(best_match["_id"])
+            best_match["match_type"] = "semantic"
+            best_match["match_score"] = best_match.get("score", 0)
+            return best_match
 
         return None
 
