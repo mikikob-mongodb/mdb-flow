@@ -209,14 +209,9 @@ def build_project_embedding_text(project_doc: dict) -> str:
     if project_doc.get("description"):
         parts.append(project_doc["description"])
 
-    # Context and notes
+    # Context
     if project_doc.get("context"):
         parts.append(project_doc["context"])
-
-    if project_doc.get("notes"):
-        # Join all notes with separator
-        notes_text = " | ".join(project_doc["notes"])
-        parts.append(notes_text)
 
     # Project updates (status updates over time)
     if project_doc.get("updates"):
