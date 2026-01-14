@@ -785,6 +785,7 @@ def render_chat():
                 "Show me Mike's tasks that are in progress",
                 "What's high priority in AgentOps?",
                 "What tasks are blocked in Project Alpha?",
+                "Find all high-priority memory related tasks that are in-progress",
                 "Find tasks about debugging",
                 "Search for memory-related tasks",
             ],

@@ -1138,25 +1138,29 @@ class RetrievalAgent:
                 "alternatives": scored_candidates[:3]
             }
 
-    def hybrid_search_tasks(self, query: str, limit: int = 5) -> list:
+    def hybrid_search_tasks(self, query: str, limit: int = 5,
+                           status: str = None, priority: str = None,
+                           project_id: str = None) -> list:
         """
-        Hybrid search combining vector + full-text for matching informal voice references.
+        Hybrid search combining vector + full-text with optional filters.
 
         Examples:
             "the debugging doc" → "Create debugging methodologies doc"
-            "checkpointer task" → "Implement MongoDB checkpointer for LangGraph"
-            "voice agent app" → "Build voice agent reference app"
+            "memory", priority="high", status="in_progress" → High-priority in-progress memory tasks
 
         Args:
-            query: Informal task reference from voice input
+            query: Semantic search query
             limit: Maximum number of results to return
+            status: Optional filter by status (todo, in_progress, done)
+            priority: Optional filter by priority (low, medium, high)
+            project_id: Optional filter by project_id
 
         Returns:
             List of task dicts with _id, title, context, status, project_id, score
         """
         import time
 
-        logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}")
+        logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}, status={status}, priority={priority}, project_id={project_id}")
 
         # Track timings for debug panel
         timings = {}
@@ -1207,7 +1211,7 @@ class RetrievalAgent:
                     }
                 }
             },
-            # Filter out test data
+            # Filter out test data and apply optional filters
             {
                 "$match": {
                     "is_test": {"$ne": True}
@@ -1219,12 +1223,26 @@ class RetrievalAgent:
                     "title": 1,
                     "context": 1,
                     "status": 1,
+                    "priority": 1,
                     "project_id": 1,
                     "score": {"$meta": "score"}
                 }
             },
             {"$limit": limit}
         ]
+
+        # Build filter conditions for optional parameters
+        filter_conditions = {"is_test": {"$ne": True}}
+        if status:
+            filter_conditions["status"] = status
+        if priority:
+            filter_conditions["priority"] = priority
+        if project_id:
+            from bson import ObjectId
+            filter_conditions["project_id"] = ObjectId(project_id)
+
+        # Update the match stage with all filters
+        pipeline[1]["$match"] = filter_conditions
 
         # Execute search
         try:

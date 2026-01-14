@@ -60,18 +60,32 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "search_tasks",
-        "description": "Search for tasks using hybrid search (vector + text). Use for informal references like 'the debugging doc', 'checkpointer task', or 'voice agent app'. Returns top matching tasks.",
+        "description": "Search for tasks using hybrid search (vector + text). Use for semantic searches combined with filters. Example: 'high-priority memory tasks that are in-progress' → query='memory', priority='high', status='in_progress'",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The informal task reference or search query"
+                    "description": "The semantic search query (e.g., 'memory', 'debugging', 'video')"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["todo", "in_progress", "done"],
+                    "description": "Optional: Filter results by status"
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "Optional: Filter results by priority"
+                },
+                "project_name": {
+                    "type": "string",
+                    "description": "Optional: Filter results by project name"
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of results (default 5)",
-                    "default": 5
+                    "description": "Maximum number of results (default 10)",
+                    "default": 10
                 }
             },
             "required": ["query"]
@@ -1819,11 +1833,31 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 )
 
             elif tool_name == "search_tasks":
-                # Hybrid search for tasks
+                # Hybrid search for tasks with optional filters
                 query = tool_input["query"]
-                limit = tool_input.get("limit", 5)
+                limit = tool_input.get("limit", 10)
+                status = tool_input.get("status")
+                priority = tool_input.get("priority")
+                project_name = tool_input.get("project_name")
 
-                tasks = self.retrieval_agent.hybrid_search_tasks(query, limit)
+                # Convert project_name to project_id if provided
+                project_id = None
+                if project_name:
+                    from shared.db import get_collection, PROJECTS_COLLECTION
+                    projects_collection = get_collection(PROJECTS_COLLECTION)
+                    project_doc = projects_collection.find_one(
+                        {"name": {"$regex": f"^{project_name}$", "$options": "i"}}
+                    )
+                    if project_doc:
+                        project_id = str(project_doc["_id"])
+
+                tasks = self.retrieval_agent.hybrid_search_tasks(
+                    query,
+                    limit,
+                    status=status,
+                    priority=priority,
+                    project_id=project_id
+                )
 
                 # Convert ObjectId to string for JSON serialization
                 for task in tasks:
