@@ -99,6 +99,9 @@ def init_session_state():
     if "mcp_enabled" not in st.session_state:
         st.session_state.mcp_enabled = False
 
+    if "pending_input" not in st.session_state:
+        st.session_state.pending_input = None
+
     if "mcp_initialized" not in st.session_state:
         st.session_state.mcp_initialized = False
 
@@ -716,8 +719,30 @@ def render_chat():
                         else:
                             st.markdown(f"⚡ `{message['content']}`")
                         st.caption("*Direct MongoDB query*")
+                    elif message.get("streaming"):
+                        # This message is streaming - show with placeholder
+                        st.markdown(message["content"] + "▌")
                     else:
                         st.markdown(message["content"])
+
+        # Process pending input if any (from button clicks or chat input)
+        if st.session_state.get("pending_input"):
+            pending = st.session_state.pending_input
+            st.session_state.pending_input = None
+
+            # Add user message to session state
+            st.session_state.messages.append({
+                "role": "user",
+                "content": pending
+            })
+
+            # Display the user message immediately
+            with chat_container:
+                with st.chat_message("user"):
+                    st.markdown(pending)
+
+            # Now process the input and stream the response
+            handle_input_and_stream(pending, chat_container)
 
         # Chat input
         if prompt := st.chat_input("Try /tasks or ask a question..."):
@@ -830,7 +855,8 @@ def render_chat():
                         label = example if len(example) <= 30 else example[:27] + "..."
                         if st.button(label, key=f"example_{selected_category}_{example_idx}",
                                    use_container_width=True, help=example):
-                            handle_input(example)
+                            # Set pending input so it gets processed inside chat container on next render
+                            st.session_state.pending_input = example
                             st.rerun()
 
     with col_debug:
@@ -838,7 +864,26 @@ def render_chat():
 
 
 def handle_input(prompt: str):
-    """Handle user input - auto-detect natural language queries, slash commands, or use agent."""
+    """
+    Handle user input - defers to next render for processing inside chat container.
+
+    Args:
+        prompt: User input text
+    """
+    # Always defer to next render so processing happens inside chat container
+    st.session_state.pending_input = prompt
+    st.rerun()
+
+
+def handle_input_and_stream(prompt: str, chat_container):
+    """
+    Process user input and stream response inside chat container.
+    User message should already be added to session state before calling this.
+
+    Args:
+        prompt: User input text
+        chat_container: Streamlit container to display response in
+    """
     # First, try to detect natural language queries that map to slash commands
     nl_command = detect_natural_language_query(prompt)
     if nl_command:
@@ -855,8 +900,8 @@ def handle_input(prompt: str):
         # ═════════════════════════════════════════════════════════════════
         # SLASH COMMAND
         # ═════════════════════════════════════════════════════════════════
-        st.session_state.messages.append({
-            "role": "user",
+        # Update the last message (user message) to mark it as slash command
+        st.session_state.messages[-1].update({
             "content": prompt,
             "is_slash_command": True,
             "original_query": original_prompt if nl_command else None
@@ -864,11 +909,17 @@ def handle_input(prompt: str):
 
         result = st.session_state.slash_executor.execute(parsed_command)
 
+        # Add assistant response
         st.session_state.messages.append({
             "role": "assistant",
             "content": result,
             "is_command_result": True
         })
+
+        # Display the result inside chat container
+        with chat_container:
+            with st.chat_message("assistant"):
+                render_command_result(result)
 
         # Add to debug history
         turn_number = len(st.session_state.debug_history) + 1
@@ -893,10 +944,7 @@ def handle_input(prompt: str):
         # ═════════════════════════════════════════════════════════════════
         # AGENT (with optional MCP)
         # ═════════════════════════════════════════════════════════════════
-        st.session_state.messages.append({
-            "role": "user",
-            "content": prompt
-        })
+        # User message already added by caller, don't add again
 
         # Filter history for API (exclude slash commands and results)
         history = [
@@ -906,30 +954,33 @@ def handle_input(prompt: str):
 
         turn_number = len(st.session_state.debug_history) + 1
 
-        # Create placeholder for streaming response
-        response_placeholder = st.empty()
-        full_response = ""
-        debug_info = {}
+        # Stream the response inside chat container
+        with chat_container:
+            with st.chat_message("assistant"):
+                response_placeholder = st.empty()
+                full_response = ""
+                debug_info = {}
 
-        # Stream the response
-        for chunk, chunk_debug in st.session_state.coordinator.process_stream(
-            prompt,
-            history,
-            input_type="text",
-            turn_number=turn_number,
-            session_id=st.session_state.session_id
-        ):
-            full_response += chunk
-            # Show response with cursor while streaming
-            response_placeholder.markdown(full_response + "▌")
+                # Stream the response
+                for chunk, chunk_debug in st.session_state.coordinator.process_stream(
+                    prompt,
+                    history,
+                    input_type="text",
+                    turn_number=turn_number,
+                    session_id=st.session_state.session_id
+                ):
+                    full_response += chunk
+                    # Show response with cursor while streaming
+                    response_placeholder.markdown(full_response + "▌")
 
-            # Capture debug info from last chunk
-            if chunk_debug:
-                debug_info = chunk_debug
+                    # Capture debug info from last chunk
+                    if chunk_debug:
+                        debug_info = chunk_debug
 
-        # Remove cursor and show final response
-        response_placeholder.markdown(full_response)
+                # Remove cursor and show final response
+                response_placeholder.markdown(full_response)
 
+        # Add assistant response to session state
         st.session_state.messages.append({
             "role": "assistant",
             "content": full_response
@@ -938,8 +989,6 @@ def handle_input(prompt: str):
         # Add to debug history
         if st.session_state.coordinator.current_turn:
             st.session_state.debug_history.append(st.session_state.coordinator.current_turn)
-
-    st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════════

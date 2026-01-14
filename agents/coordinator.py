@@ -60,7 +60,7 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "search_tasks",
-        "description": "Search for tasks using hybrid search (vector + text). Use for semantic searches combined with filters. Example: 'high-priority memory tasks that are in-progress' → query='memory', priority='high', status='in_progress'",
+        "description": "Search for tasks using hybrid search (vector + text). Use for semantic searches combined with filters. Example: 'high-priority memory tasks that are in-progress' → query='memory', priority='high', status='in_progress'. For assignee-specific queries like 'Mike's tasks', use assignee='Mike Chen'.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -77,6 +77,10 @@ COORDINATOR_TOOLS = [
                     "type": "string",
                     "enum": ["low", "medium", "high"],
                     "description": "Optional: Filter results by priority"
+                },
+                "assignee": {
+                    "type": "string",
+                    "description": "Optional: Filter results by assignee (partial match, case-insensitive). 'Mike' matches 'Mike Chen', 'sarah' matches 'Sarah Thompson'"
                 },
                 "project_name": {
                     "type": "string",
@@ -1852,6 +1856,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 limit = tool_input.get("limit", 10)
                 status = tool_input.get("status")
                 priority = tool_input.get("priority")
+                assignee = tool_input.get("assignee")
                 project_name = tool_input.get("project_name")
 
                 # Convert project_name to project_id if provided
@@ -1870,7 +1875,8 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     limit,
                     status=status,
                     priority=priority,
-                    project_id=project_id
+                    project_id=project_id,
+                    assignee=assignee
                 )
 
                 # Convert ObjectId to string for JSON serialization

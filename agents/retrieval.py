@@ -1140,13 +1140,14 @@ class RetrievalAgent:
 
     def hybrid_search_tasks(self, query: str, limit: int = 5,
                            status: str = None, priority: str = None,
-                           project_id: str = None) -> list:
+                           project_id: str = None, assignee: str = None) -> list:
         """
         Hybrid search combining vector + full-text with optional filters.
 
         Examples:
             "the debugging doc" → "Create debugging methodologies doc"
             "memory", priority="high", status="in_progress" → High-priority in-progress memory tasks
+            "tasks", assignee="Mike Chen", status="in_progress" → Mike Chen's in-progress tasks
 
         Args:
             query: Semantic search query
@@ -1154,13 +1155,14 @@ class RetrievalAgent:
             status: Optional filter by status (todo, in_progress, done)
             priority: Optional filter by priority (low, medium, high)
             project_id: Optional filter by project_id
+            assignee: Optional filter by assignee (partial match, case-insensitive). "Mike" matches "Mike Chen"
 
         Returns:
-            List of task dicts with _id, title, context, status, project_id, score
+            List of task dicts with _id, title, context, status, priority, assignee, project_id, project_name, score
         """
         import time
 
-        logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}, status={status}, priority={priority}, project_id={project_id}")
+        logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}, status={status}, priority={priority}, project_id={project_id}, assignee={assignee}")
 
         # Track timings for debug panel
         timings = {}
@@ -1172,6 +1174,9 @@ class RetrievalAgent:
         logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions ({timings['embedding_generation']}ms)")
 
         # Build hybrid search pipeline
+        # Use higher multiplier (10x) to get more results before post-filtering
+        search_limit = limit * 10
+
         pipeline = [
             {
                 "$rankFusion": {
@@ -1183,8 +1188,8 @@ class RetrievalAgent:
                                         "index": "vector_index",
                                         "path": "embedding",
                                         "queryVector": query_embedding,
-                                        "numCandidates": 50,
-                                        "limit": limit * 2
+                                        "numCandidates": 100,
+                                        "limit": search_limit
                                     }
                                 }
                             ],
@@ -1199,7 +1204,7 @@ class RetrievalAgent:
                                         }
                                     }
                                 },
-                                {"$limit": limit * 2}
+                                {"$limit": search_limit}
                             ]
                         }
                     },
@@ -1211,7 +1216,7 @@ class RetrievalAgent:
                     }
                 }
             },
-            # Filter out test data and apply optional filters
+            # Filter out test data and apply optional filters AFTER ranking
             {
                 "$match": {
                     "is_test": {"$ne": True}
@@ -1238,6 +1243,7 @@ class RetrievalAgent:
                     "context": 1,
                     "status": 1,
                     "priority": 1,
+                    "assignee": 1,
                     "project_id": 1,
                     "project_name": 1,
                     "score": {"$meta": "score"}
@@ -1246,7 +1252,7 @@ class RetrievalAgent:
             {"$limit": limit}
         ]
 
-        # Build filter conditions for optional parameters
+        # Build filter conditions for post-filtering (after ranking)
         filter_conditions = {"is_test": {"$ne": True}}
         if status:
             filter_conditions["status"] = status
@@ -1255,6 +1261,10 @@ class RetrievalAgent:
         if project_id:
             from bson import ObjectId
             filter_conditions["project_id"] = ObjectId(project_id)
+        if assignee:
+            # Use case-insensitive partial match for assignee
+            # "Mike" matches "Mike Chen", "mike" matches "Mike Chen", etc.
+            filter_conditions["assignee"] = {"$regex": assignee, "$options": "i"}
 
         # Update the match stage with all filters
         pipeline[1]["$match"] = filter_conditions
@@ -1294,7 +1304,7 @@ class RetrievalAgent:
             limit: Maximum number of results to return
 
         Returns:
-            List of project dicts with _id, name, description, context, status, score
+            List of project dicts with _id, name, description, context, status, stakeholders, score
         """
         import time
 
@@ -1362,6 +1372,7 @@ class RetrievalAgent:
                     "description": 1,
                     "context": 1,
                     "status": 1,
+                    "stakeholders": 1,
                     "score": {"$meta": "score"}
                 }
             },
