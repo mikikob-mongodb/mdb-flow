@@ -1744,8 +1744,9 @@ def seed_procedural_memory(db, skip_embeddings: bool = False, clean: bool = Fals
     print("=" * 60)
 
     if clean:
-        deleted = db.memory_procedural.delete_many({
-            "user_id": DEMO_USER_ID
+        deleted = db.memory_long_term.delete_many({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "procedural"
         })
         print(f"\n🗑️  Cleared {deleted.deleted_count} existing procedural memories")
 
@@ -1753,8 +1754,9 @@ def seed_procedural_memory(db, skip_embeddings: bool = False, clean: bool = Fals
 
     # Check for existing procedures
     existing_names = set()
-    for proc in db.memory_procedural.find({
-        "user_id": DEMO_USER_ID
+    for proc in db.memory_long_term.find({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "procedural"
     }, {"name": 1}):
         if "name" in proc:
             existing_names.add(proc["name"])
@@ -1787,7 +1789,7 @@ def seed_procedural_memory(db, skip_embeddings: bool = False, clean: bool = Fals
                 print(f"  ⚠️  Failed to generate embedding: {e}")
                 print(f"      Continuing without embedding for: {proc['name']}")
 
-        db.memory_procedural.insert_one(proc)
+        db.memory_long_term.insert_one(proc)
         print(f"  ✓ Inserted: {proc['name']} ({proc['rule_type']}, used {proc['times_used']}x)")
         inserted_count += 1
 
@@ -1803,8 +1805,9 @@ def seed_semantic_memory(db, clean: bool = False) -> int:
     print("=" * 60)
 
     if clean:
-        deleted = db.memory_semantic.delete_many({
-            "user_id": DEMO_USER_ID
+        deleted = db.memory_long_term.delete_many({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "semantic"
         })
         print(f"\n🗑️  Cleared {deleted.deleted_count} existing semantic memories")
 
@@ -1812,8 +1815,9 @@ def seed_semantic_memory(db, clean: bool = False) -> int:
 
     # Check for existing preferences
     existing_keys = set()
-    for pref in db.memory_semantic.find({
+    for pref in db.memory_long_term.find({
         "user_id": DEMO_USER_ID,
+        "memory_type": "semantic",
         "semantic_type": "preference"
     }, {"key": 1}):
         existing_keys.add(pref["key"])
@@ -1824,7 +1828,7 @@ def seed_semantic_memory(db, clean: bool = False) -> int:
             print(f"  ⏭️  Skipping existing: {pref['key']} = {pref['value']}")
             continue
 
-        db.memory_semantic.insert_one(pref)
+        db.memory_long_term.insert_one(pref)
         print(f"  ✓ Inserted: {pref['key']} = {pref['value']} (confidence: {pref['confidence']}, used {pref['times_used']}x)")
         inserted_count += 1
 
@@ -1840,8 +1844,9 @@ def seed_episodic_memory(db, skip_embeddings: bool = False, clean: bool = False)
     print("=" * 60)
 
     if clean:
-        deleted = db.memory_episodic.delete_many({
-            "user_id": DEMO_USER_ID
+        deleted = db.memory_long_term.delete_many({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "episodic"
         })
         print(f"\n🗑️  Cleared {deleted.deleted_count} existing episodic memories")
 
@@ -1851,8 +1856,9 @@ def seed_episodic_memory(db, skip_embeddings: bool = False, clean: bool = False)
 
     # Check for existing actions by action_type and timestamp (unique combo)
     existing_actions = set()
-    for action in db.memory_episodic.find({
-        "user_id": DEMO_USER_ID
+    for action in db.memory_long_term.find({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "episodic"
     }, {"action_type": 1, "timestamp": 1}):
         existing_actions.add((action["action_type"], action["timestamp"]))
 
@@ -1903,7 +1909,7 @@ def seed_episodic_memory(db, skip_embeddings: bool = False, clean: bool = False)
                 print(f"  ⚠️  Failed to generate embedding: {e}")
                 print(f"      Continuing without embedding for: {action['action_type']}")
 
-        db.memory_episodic.insert_one(action)
+        db.memory_long_term.insert_one(action)
         print(f"  ✓ Inserted: {action['action_type']} - {action['entity'].get('project_name', 'N/A')} ({action['outcome']})")
         inserted_count += 1
 
@@ -2043,9 +2049,10 @@ def clear_collections(db, collections: List[str] = None) -> Dict[str, int]:
         collections = [
             "projects",
             "tasks",
+            "memory_short_term",
+            "memory_long_term",
+            "memory_shared",
             "memory_episodic",
-            "memory_semantic",
-            "memory_procedural",
             "tool_discoveries"
         ]
 
@@ -2099,19 +2106,23 @@ def verify_seed(db) -> Dict[str, Any]:
     # Count documents
     results["counts"]["projects"] = db.projects.count_documents({"user_id": DEMO_USER_ID})
     results["counts"]["tasks"] = db.tasks.count_documents({"user_id": DEMO_USER_ID})
-    results["counts"]["procedural"] = db.memory_procedural.count_documents({
-        "user_id": DEMO_USER_ID
+    results["counts"]["procedural"] = db.memory_long_term.count_documents({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "procedural"
     })
-    results["counts"]["semantic"] = db.memory_semantic.count_documents({
-        "user_id": DEMO_USER_ID
+    results["counts"]["semantic"] = db.memory_long_term.count_documents({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "semantic"
     })
-    results["counts"]["episodic"] = db.memory_episodic.count_documents({
-        "user_id": DEMO_USER_ID
+    results["counts"]["episodic"] = db.memory_long_term.count_documents({
+        "user_id": DEMO_USER_ID,
+        "memory_type": "episodic"
     })
 
     # Check critical items for expanded demo data
-    gtm_template = db.memory_procedural.find_one({
+    gtm_template = db.memory_long_term.find_one({
         "user_id": DEMO_USER_ID,
+        "memory_type": "procedural",
         "rule_type": "template",
         "name": "GTM Roadmap Template"
     })
@@ -2120,8 +2131,9 @@ def verify_seed(db) -> Dict[str, Any]:
         results["missing"].append("GTM Roadmap Template")
         results["success"] = False
 
-    ref_arch_template = db.memory_procedural.find_one({
+    ref_arch_template = db.memory_long_term.find_one({
         "user_id": DEMO_USER_ID,
+        "memory_type": "procedural",
         "rule_type": "template",
         "name": "Reference Architecture Template"
     })
@@ -2160,8 +2172,9 @@ def verify_seed(db) -> Dict[str, Any]:
             results["missing"].append(f"Tasks with status: {status}")
             results["success"] = False
 
-    user_preferences = db.memory_semantic.count_documents({
+    user_preferences = db.memory_long_term.count_documents({
         "user_id": DEMO_USER_ID,
+        "memory_type": "semantic",
         "semantic_type": "preference"
     })
     results["critical_items"]["user_preferences"] = user_preferences > 0
@@ -2211,8 +2224,9 @@ def verify_data(db) -> bool:
     if results['counts']['procedural'] == 0:
         print("  ❌ No procedural memories found")
     else:
-        for proc in db.memory_procedural.find({
-            "user_id": DEMO_USER_ID
+        for proc in db.memory_long_term.find({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "procedural"
         }, {"name": 1, "rule_type": 1}):
             print(f"    • {proc.get('name', 'N/A')} ({proc.get('rule_type', 'unknown')})")
 
@@ -2221,8 +2235,9 @@ def verify_data(db) -> bool:
     if results['counts']['semantic'] == 0:
         print("  ❌ No semantic memories found")
     else:
-        for sem in db.memory_semantic.find({
-            "user_id": DEMO_USER_ID
+        for sem in db.memory_long_term.find({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "semantic"
         }, {"key": 1, "value": 1}):
             print(f"    • {sem.get('key', 'N/A')} = {sem.get('value', 'N/A')}")
 
@@ -2231,8 +2246,9 @@ def verify_data(db) -> bool:
     if results['counts']['episodic'] == 0:
         print("  ❌ No episodic memories found")
     else:
-        for epi in db.memory_episodic.find({
-            "user_id": DEMO_USER_ID
+        for epi in db.memory_long_term.find({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "episodic"
         }, {"action_type": 1, "timestamp": 1}).sort("timestamp", -1):
             print(f"    • {epi.get('action_type', 'N/A')} at {epi.get('timestamp', 'N/A')}")
 
@@ -2299,16 +2315,11 @@ def seed_all(db, clean: bool = False, skip_embeddings: bool = False) -> Dict[str
             "user_id": DEMO_USER_ID,
             "embedding": {"$exists": True}
         })
-        # Count embeddings in episodic and semantic memory
-        episodic_embeddings = db.memory_episodic.count_documents({
+        # Count embeddings in memory_long_term (procedural + episodic)
+        memory_embeddings = db.memory_long_term.count_documents({
             "user_id": DEMO_USER_ID,
             "embedding": {"$exists": True}
         })
-        semantic_embeddings = db.memory_semantic.count_documents({
-            "user_id": DEMO_USER_ID,
-            "embedding": {"$exists": True}
-        })
-        memory_embeddings = episodic_embeddings + semantic_embeddings
         results["embeddings"] = tasks_embeddings + projects_embeddings + memory_embeddings
     else:
         results["embeddings"] = 0

@@ -24,7 +24,7 @@ class TestSemanticMemory:
         self.user_id = "test-user-semantic"
 
         # Clean up
-        self.db.memory_long_term.delete_many({"user_id": self.user_id})
+        self.db.memory_semantic.delete_many({"user_id": self.user_id})
 
     def test_record_preference_new(self):
         """Test recording a new preference."""
@@ -118,7 +118,7 @@ class TestProceduralMemory:
         self.user_id = "test-user-procedural"
 
         # Clean up
-        self.db.memory_long_term.delete_many({"user_id": self.user_id})
+        self.db.memory_procedural.delete_many({"user_id": self.user_id})
 
     def test_record_rule_new(self):
         """Test recording a new rule."""
@@ -204,8 +204,10 @@ class TestMemoryStats:
         self.session_id = "test-session-stats"
 
         # Clean up
-        self.db.memory_long_term.delete_many({"user_id": self.user_id})
-        self.db.memory_short_term.delete_many({"session_id": self.session_id})
+        self.db.memory_episodic.delete_many({"user_id": self.user_id})
+        self.db.memory_semantic.delete_many({"user_id": self.user_id})
+        self.db.memory_procedural.delete_many({"user_id": self.user_id})
+        self.memory.clear_session(self.session_id)  # Clears in-memory working memory
 
     def test_memory_stats_by_type(self):
         """Test stats include all memory types."""
@@ -246,7 +248,9 @@ class TestUserMemoryProfile:
         self.user_id = "test-user-profile"
 
         # Clean up
-        self.db.memory_long_term.delete_many({"user_id": self.user_id})
+        self.db.memory_episodic.delete_many({"user_id": self.user_id})
+        self.db.memory_semantic.delete_many({"user_id": self.user_id})
+        self.db.memory_procedural.delete_many({"user_id": self.user_id})
 
     def test_get_user_memory_profile(self):
         """Test getting complete user profile."""

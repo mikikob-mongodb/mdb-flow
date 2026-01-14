@@ -67,9 +67,9 @@ import seed_demo_data
 COLLECTIONS_TO_CLEAR = [
     "projects",
     "tasks",
-    "memory_short_term",
-    "memory_long_term",
-    "memory_shared",
+    "memory_episodic",
+    "memory_semantic",
+    "memory_procedural",
     "tool_discoveries",
 ]
 
@@ -233,14 +233,19 @@ def setup(db_instance, skip_embeddings: bool = False) -> Dict[str, int]:
         logger.info(f"  semantic memory: {results['semantic']} inserted")
         logger.info(f"  episodic memory: {results['episodic']} inserted")
 
-        # Count embeddings generated
+        # Count embeddings generated (from both episodic and semantic)
         if not skip_embeddings:
-            embeddings_count = db_instance.memory_long_term.count_documents({
+            episodic_embeddings = db_instance.memory_episodic.count_documents({
                 "user_id": DEMO_USER_ID,
                 "embedding": {"$exists": True}
             })
+            semantic_embeddings = db_instance.memory_semantic.count_documents({
+                "user_id": DEMO_USER_ID,
+                "embedding": {"$exists": True}
+            })
+            embeddings_count = episodic_embeddings + semantic_embeddings
             results["embeddings"] = embeddings_count
-            logger.info(f"  embeddings: {embeddings_count} generated")
+            logger.info(f"  embeddings: {embeddings_count} generated (episodic: {episodic_embeddings}, semantic: {semantic_embeddings})")
         else:
             results["embeddings"] = 0
 
@@ -282,9 +287,8 @@ def verify(db_instance) -> bool:
 
     # Check GTM Roadmap Template
     try:
-        gtm_template = db_instance.memory_long_term.find_one({
+        gtm_template = db_instance.memory_procedural.find_one({
             "user_id": DEMO_USER_ID,
-            "memory_type": "procedural",
             "rule_type": "template",
             "name": "GTM Roadmap Template"
         })
@@ -341,9 +345,8 @@ def verify(db_instance) -> bool:
 
     # Check User preferences in semantic memory
     try:
-        preferences_count = db_instance.memory_long_term.count_documents({
+        preferences_count = db_instance.memory_semantic.count_documents({
             "user_id": DEMO_USER_ID,
-            "memory_type": "semantic",
             "semantic_type": "preference"
         })
 
