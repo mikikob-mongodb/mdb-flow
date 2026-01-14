@@ -98,16 +98,6 @@ class MemoryManager:
         except OperationFailure:
             pass
 
-        # Index for procedural memory (rules)
-        try:
-            self.long_term.create_index([
-                ("user_id", ASCENDING),
-                ("memory_type", ASCENDING),
-                ("trigger_pattern", ASCENDING)
-            ])
-        except OperationFailure:
-            pass
-
         # ═══════════════════════════════════════════════════════════════
         # SHARED MEMORY (TTL: 5 minutes)
         # ═══════════════════════════════════════════════════════════════
@@ -151,6 +141,34 @@ class MemoryManager:
             pass
         try:
             self.episodic.create_index([("user_id", ASCENDING), ("generated_at", DESCENDING)])
+        except OperationFailure:
+            pass
+
+        # ═══════════════════════════════════════════════════════════════
+        # PROCEDURAL MEMORY (persistent - workflow patterns and rules)
+        # ═══════════════════════════════════════════════════════════════
+        self.procedural = self.db.memory_procedural
+
+        # Indexes
+        try:
+            self.procedural.create_index([
+                ("user_id", ASCENDING),
+                ("rule_type", ASCENDING),
+                ("trigger_pattern", ASCENDING)
+            ])
+        except OperationFailure:
+            pass
+        try:
+            self.procedural.create_index([
+                ("user_id", ASCENDING),
+                ("times_used", DESCENDING),
+                ("success_rate", DESCENDING)
+            ])
+        except OperationFailure:
+            pass
+        try:
+            # Vector index for semantic workflow search
+            self.procedural.create_index([("embedding", ASCENDING)])
         except OperationFailure:
             pass
 
@@ -1017,9 +1035,8 @@ class MemoryManager:
         # Normalize trigger
         trigger_normalized = trigger.lower().strip()
 
-        existing = self.long_term.find_one({
+        existing = self.procedural.find_one({
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger_normalized
         })
 
@@ -1029,7 +1046,7 @@ class MemoryManager:
             # Update existing rule
             new_confidence = max(existing.get("confidence", 0), confidence)
 
-            self.long_term.update_one(
+            self.procedural.update_one(
                 {"_id": existing["_id"]},
                 {"$set": {
                     "action_type": action,
@@ -1044,7 +1061,6 @@ class MemoryManager:
         # Create new rule
         doc = {
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger_normalized,
             "action_type": action,
             "parameters": parameters or {},
@@ -1054,7 +1070,7 @@ class MemoryManager:
             "created_at": now,
             "updated_at": now
         }
-        result = self.long_term.insert_one(doc)
+        result = self.procedural.insert_one(doc)
         return str(result.inserted_id)
 
     def get_rules(self, user_id: str, min_confidence: float = 0.0) -> list:
@@ -1068,15 +1084,12 @@ class MemoryManager:
         Returns:
             List of rule documents, sorted by times_used (most used first)
         """
-        query = {
-            "user_id": user_id,
-            "memory_type": "procedural"
-        }
+        query = {"user_id": user_id}
 
         if min_confidence > 0:
             query["confidence"] = {"$gte": min_confidence}
 
-        results = list(self.long_term.find(query).sort("times_used", -1))
+        results = list(self.procedural.find(query).sort("times_used", -1))
 
         for r in results:
             r["_id"] = str(r["_id"])
@@ -1099,14 +1112,13 @@ class MemoryManager:
         """
         query = {
             "user_id": user_id,
-            "memory_type": "procedural",
             "rule_type": "workflow"
         }
 
         if min_success_rate > 0:
             query["success_rate"] = {"$gte": min_success_rate}
 
-        results = list(self.long_term.find(query).sort([
+        results = list(self.procedural.find(query).sort([
             ("times_used", -1),  # Most used first
             ("success_rate", -1)  # Then by success rate
         ]))
@@ -1130,9 +1142,8 @@ class MemoryManager:
         import re
 
         # Get all workflows for this user
-        workflows = self.long_term.find({
+        workflows = self.procedural.find({
             "user_id": user_id,
-            "memory_type": "procedural",
             "rule_type": "workflow"
         })
 
@@ -1172,9 +1183,8 @@ class MemoryManager:
         """
         trigger_normalized = trigger.lower().strip()
 
-        doc = self.long_term.find_one({
+        doc = self.procedural.find_one({
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger_normalized
         })
 
@@ -1182,7 +1192,7 @@ class MemoryManager:
             doc["_id"] = str(doc["_id"])
 
             # Increment usage
-            self.long_term.update_one(
+            self.procedural.update_one(
                 {"_id": ObjectId(doc["_id"])},
                 {"$inc": {"times_used": 1}, "$set": {"updated_at": datetime.utcnow()}}
             )
@@ -1191,9 +1201,8 @@ class MemoryManager:
 
     def delete_rule(self, user_id: str, trigger: str) -> bool:
         """Delete a rule by trigger pattern."""
-        result = self.long_term.delete_one({
+        result = self.procedural.delete_one({
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger.lower().strip()
         })
         return result.deleted_count > 0
@@ -1222,10 +1231,7 @@ class MemoryManager:
         Returns:
             Matching rule document or None
         """
-        query = {
-            "user_id": user_id,
-            "memory_type": "procedural"
-        }
+        query = {"user_id": user_id}
 
         if rule_type:
             query["rule_type"] = rule_type
@@ -1234,11 +1240,11 @@ class MemoryManager:
         if name:
             query["name"] = name
 
-        doc = self.long_term.find_one(query)
+        doc = self.procedural.find_one(query)
 
         if doc:
             # Update usage stats
-            self.long_term.update_one(
+            self.procedural.update_one(
                 {"_id": doc["_id"]},
                 {
                     "$inc": {"times_used": 1},
@@ -1289,8 +1295,7 @@ class MemoryManager:
                     "numCandidates": limit * 4,  # Search more candidates for better results
                     "limit": limit,
                     "filter": {
-                        "user_id": user_id,
-                        "memory_type": "procedural"
+                        "user_id": user_id
                     }
                 }
             },
@@ -1301,7 +1306,7 @@ class MemoryManager:
             }
         ]
 
-        results = list(self.long_term.aggregate(pipeline))
+        results = list(self.procedural.aggregate(pipeline))
 
         # Convert ObjectIds to strings
         for r in results:
@@ -1732,9 +1737,9 @@ class MemoryManager:
             "memory_type": "semantic"
         })
 
-        procedural_count = self.long_term.count_documents({
-            "user_id": user_id,
-            "memory_type": "procedural"
+        # Procedural workflows and rules (from dedicated collection)
+        procedural_count = self.procedural.count_documents({
+            "user_id": user_id
         })
 
         # Episodic summaries (task/project activity summaries)
