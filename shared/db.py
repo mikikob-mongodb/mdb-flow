@@ -467,19 +467,31 @@ def get_project(project_id: ObjectId) -> Optional[Project]:
 
 def get_project_by_name(project_name: str) -> Optional[Project]:
     """
-    Get a project by name (case-insensitive exact match).
+    Get a project by name (case-insensitive match).
+
+    Tries exact match first, then partial match if no exact match found.
+    Example: "Alpha" will match "Project Alpha"
 
     Args:
-        project_name: Name of the project
+        project_name: Name of the project (full or partial)
 
     Returns:
         Project model instance or None if not found
     """
     collection = get_collection(PROJECTS_COLLECTION)
+
+    # Try exact match first
     project_doc = collection.find_one({
         "name": {"$regex": f"^{project_name}$", "$options": "i"},
         "is_test": {"$ne": True}
     })
+
+    # If no exact match, try partial match (case-insensitive word boundary)
+    if not project_doc:
+        project_doc = collection.find_one({
+            "name": {"$regex": f"\\b{project_name}\\b", "$options": "i"},
+            "is_test": {"$ne": True}
+        })
 
     if project_doc:
         return Project(**project_doc)
