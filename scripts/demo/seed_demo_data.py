@@ -1885,10 +1885,14 @@ def seed_episodic_summaries(db) -> int:
         print(f"⚠️  Could not initialize memory manager: {e}")
         return 0
 
-    # Check if summaries already exist
-    existing_count = db.memory_episodic.count_documents({})
+    # Check if AI-generated summaries already exist for demo user
+    # (Documents with 'summary' field are AI-generated, not manual episodic memories)
+    existing_count = db.memory_episodic.count_documents({
+        "user_id": DEMO_USER_ID,
+        "summary": {"$exists": True}
+    })
     if existing_count > 0:
-        print(f"  ⏭️  Skipping: {existing_count} summaries already exist")
+        print(f"  ⏭️  Skipping: {existing_count} AI summaries already exist for {DEMO_USER_ID}")
         print(f"     (Use --clean to regenerate)")
         return 0
 
