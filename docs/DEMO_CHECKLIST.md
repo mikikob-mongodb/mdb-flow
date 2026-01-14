@@ -98,7 +98,7 @@ Then:
 - Start app
 - Run demo flow once end-to-end
 
-Record results in `qa/demo_regression.md`:
+Record results in `docs/testing/qa/demo_regression.md`:
 
 | Step | Expected | Actual | Notes | Severity |
 | --- | --- | --- | --- | --- |
