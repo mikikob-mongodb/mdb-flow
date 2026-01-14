@@ -1737,6 +1737,11 @@ class MemoryManager:
             "memory_type": "procedural"
         })
 
+        # Episodic summaries (task/project activity summaries)
+        episodic_summary_count = self.episodic.count_documents({
+            "user_id": user_id
+        })
+
         # Knowledge cache stats
         knowledge_stats = self.get_knowledge_stats(user_id)
 
@@ -1745,11 +1750,11 @@ class MemoryManager:
 
         return {
             "short_term_count": short_term_count,
-            "long_term_count": episodic_count + semantic_count + procedural_count,
+            "long_term_count": episodic_count + episodic_summary_count + semantic_count + procedural_count,
             "shared_pending": shared_pending,
             "by_type": {
                 "working_memory": short_term_count,
-                "episodic_memory": episodic_count,
+                "episodic_memory": episodic_count + episodic_summary_count,
                 "semantic_memory": semantic_count,
                 "procedural_memory": procedural_count,
                 "memory_shared": shared_pending
