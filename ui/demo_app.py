@@ -68,6 +68,16 @@ st.markdown("""
     [data-testid="stMetricValue"] {
         font-size: 1.2rem;
     }
+
+    /* Compact chat input */
+    [data-testid="stChatInput"] {
+        max-height: 60px;
+    }
+
+    [data-testid="stChatInput"] textarea {
+        max-height: 60px;
+        min-height: 40px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
