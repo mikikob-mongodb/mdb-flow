@@ -762,13 +762,13 @@ def render_chat():
                 "/help",
             ],
             "⚡ Slash Commands - Filters": [
-                "/tasks assignee:Mike Chen",
+                "/tasks assignee:Luffy",
                 "/tasks blocked",
                 "/tasks overdue",
                 "/tasks due:today",
                 "/tasks due:week",
                 "/tasks status:in_progress priority:high",
-                "/projects stakeholder:Mike Chen",
+                "/projects stakeholder:Luffy",
             ],
             "⚡ Slash Commands - Search Modes": [
                 "/search agents",
@@ -789,9 +789,9 @@ def render_chat():
                 "What's high priority?",
             ],
             "💬 Natural Language - Assignees": [
-                "What's Sarah working on?",
-                "Show me Mike Chen's tasks",
-                "What is Mike Chen working on that's in progress?",
+                "What's Nami working on?",
+                "Show me Luffy's tasks",
+                "What is Zoro working on that's in progress?",
             ],
             "💬 Natural Language - Temporal": [
                 "What's blocked?",
@@ -803,11 +803,11 @@ def render_chat():
             "💬 Natural Language - Projects": [
                 "Show me AgentOps",
                 "What's in the Voice Agent project?",
-                "What projects is Sarah involved in?",
-                "Show Sarah's active projects",
+                "What projects is Nami involved in?",
+                "Show Nami's active projects",
             ],
             "🤖 LLM Queries - Complex Filters": [
-                "Show me Mike's tasks that are in progress",
+                "Show me Luffy's tasks that are in progress",
                 "What's high priority in AgentOps?",
                 "What tasks are blocked in Project Alpha?",
                 "Find all high-priority memory related tasks that are in-progress",
@@ -822,9 +822,9 @@ def render_chat():
                 "Add a task note to debugging: fixed the race condition",
             ],
             "🤖 LLM Actions - Enrichment Fields": [
-                "Create a task to review security docs, assign to Mike Chen, due next Friday",
+                "Create a task to review security docs, assign to Luffy, due next Friday",
                 "Add a blocker to the migration task: waiting on approval",
-                "Add Mike Chen as a stakeholder to Project Alpha",
+                "Add Luffy as a stakeholder to Project Alpha",
                 "Add a project update to Alpha: completed architecture review",
                 "Add a project note to Voice Agent Architecture: WebSocket latency now 165ms",
             ],

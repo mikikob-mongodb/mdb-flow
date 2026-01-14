@@ -105,7 +105,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["infrastructure", "modernization", "cloud", "cost-optimization", "migration"],
             "priority": "high",
-            "stakeholders": ["Mike Chen", "Sarah Thompson", "DevOps Team", "Finance"],
+            "stakeholders": ["Luffy", "Nami", "Franky's Crew", "Finance"],
             "methods": ["Castlevania Alucard Services", "MongoDB Atlas", "Forgemaster", "MerryCI"],
             "decisions": [
                 "Chose phased migration approach over big-bang to minimize risk",
@@ -138,7 +138,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["voice", "real-time", "demo", "audio", "streaming", "websocket", "developer-day"],
             "priority": "high",
-            "stakeholders": ["Mike Chen", "Developer Relations", "Demo Team"],
+            "stakeholders": ["Luffy", "Straw Hat Relations", "Sunny Demo Crew"],
             "methods": ["WebSocket", "SonarSense STT", "SunnyLabs TTS", "MongoDB Change Streams"],
             "decisions": [
                 "Using WebSocket for bidirectional streaming instead of separate upload/download endpoints",
@@ -171,7 +171,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["open-source", "grandline", "integration", "contribution", "belmontchain"],
             "priority": "medium",
-            "stakeholders": ["Mike Chen", "Open Source Team", "BelmontChain maintainers"],
+            "stakeholders": ["Luffy", "Sypha Circle", "Belmont Guild"],
             "methods": ["Python", "GrandLine", "MongoDB", "pytest"],
             "decisions": [
                 "Implementing full BaseCheckpointSaver interface for compatibility with all GrandLine features",
@@ -204,7 +204,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["presentation", "speaking", "mongodb", "developer-day", "ai-agents"],
             "priority": "high",
-            "stakeholders": ["Mike Chen", "Developer Relations", "Event Team", "Product Marketing"], "methods": ["Keynote", "Live Demo", "MongoDB Atlas", "Streamlit"],
+            "stakeholders": ["Luffy", "Straw Hat Relations", "Grand Line Events", "Product Marketing"], "methods": ["Keynote", "Live Demo", "MongoDB Atlas", "Streamlit"],
             "decisions": [
                 "Focus on practical patterns over theory - show working code and architecture diagrams",
                 "Lead with impressive voice agent demo to hook audience, then explain memory architecture",
@@ -239,7 +239,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["observability", "agentops", "reference-architecture", "open-source", "production"],
             "priority": "high",
-            "stakeholders": ["Mike Chen", "Field Engineering", "Product Marketing"], "methods": ["OpenTelemetry", "LangSmith", "Python", "Docker", "Grafana"],
+            "stakeholders": ["Luffy", "Trevor's Engineers", "Product Marketing"], "methods": ["OpenTelemetry", "LangSmith", "Python", "Docker", "Grafana"],
             "decisions": [
                 "Used OpenTelemetry for vendor-neutral instrumentation instead of proprietary solutions",
                 "Included both self-hosted (Grafana) and SaaS (LangSmith) observability options",
@@ -272,7 +272,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["content", "blog", "memory", "thought-leadership", "technical-writing"],
             "priority": "medium",
-            "stakeholders": ["Mike Chen", "Content Marketing", "Developer Relations"], "methods": ["Technical Writing", "MongoDB", "Python", "Code Examples"],
+            "stakeholders": ["Luffy", "Content Marketing", "Straw Hat Relations"], "methods": ["Robin's Docs", "MongoDB", "Python", "Code Examples"],
             "decisions": [
                 "Publishing on MongoDB blog for SEO benefit rather than Medium/personal blog",
                 "Including companion GitHub repo with full working examples for each pattern",
@@ -306,7 +306,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["gaming", "demo", "vertical", "npc", "memory", "relationships"],
             "priority": "medium",
-            "stakeholders": ["Gaming Sales Team", "Product Marketing", "Mike Chen"], "methods": ["Unity", "MongoDB Atlas", "Vector Search", "LLM Integration"],
+            "stakeholders": ["Gaming Sales Team", "Product Marketing", "Luffy"], "methods": ["Unity", "MongoDB Atlas", "Vector Search", "LLM Integration"],
             "decisions": []
         },
         {
@@ -320,7 +320,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "user_id": DEMO_USER_ID,
             "tags": ["education", "demo", "adaptive-learning", "edtech", "personalization"],
             "priority": "low",
-            "stakeholders": ["EdTech Sales Team", "Mike Chen"], "methods": ["Streamlit", "MongoDB Atlas", "OpenAI GPT-4", "Learning Analytics"],
+            "stakeholders": ["EdTech Sales Team", "Luffy"], "methods": ["Streamlit", "MongoDB Atlas", "OpenAI GPT-4", "Learning Analytics"],
             "decisions": []
         }
     ]
@@ -352,7 +352,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Analyze findings from Q3 infrastructure audit conducted by external consultants. Identify critical issues, assess risk levels, and create prioritized action plan for modernization initiative. Report includes performance benchmarks, cost analysis, and security compliance gaps.",
                 "context": "Audit was commissioned to provide objective assessment before committing to $2M modernization budget. Results will inform migration strategy and timeline.",
                 "tags": ["audit", "review", "analysis"],
-                "assignee": "Mike Chen",
+                "assignee": "Zoro",
                 "notes": [
                     "Key findings: 18 services eligible for cloud migration, 3 require major refactoring",
                     "Performance issues: Database queries 3x slower than industry benchmarks",
@@ -372,7 +372,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Align key stakeholders on modernization approach, migration strategy, and timeline. Present audit findings, proposed architecture, and get buy-in from Finance, Engineering, and Executive leadership.",
                 "context": "Critical to get stakeholder alignment before detailed planning phase. Finance particularly concerned about cost overruns.",
                 "tags": ["meeting", "stakeholders", "alignment"],
-                "assignee": "Sarah Thompson",
+                "assignee": "Nami",
                 "notes": [
                     "Meeting scheduled for Dec 15th, 2 hours allocated",
                     "Attendees: Mike (tech lead), Sarah (PM), Finance VP, CTO, DevOps manager",
@@ -392,7 +392,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Create detailed phased migration timeline with task dependencies, resource allocation, and risk mitigation strategies. Timeline must account for zero-downtime requirements and include rollback plans for each phase.",
                 "context": "Board wants to see detailed timeline before final budget approval. Need to demonstrate we've thought through dependencies and risks.",
                 "tags": ["planning", "timeline", "project-management"],
-                "assignee": "Mike Chen",
+                "assignee": "Luffy",
                 "due_date": now - timedelta(days=3),  # 3 days overdue
                 "blockers": [
                     "Waiting on DevOps team capacity planning for Q1 2026",
@@ -416,7 +416,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Quantify expected ROI and TCO reduction over 3-year period. Build financial model comparing current infrastructure costs vs projected cloud costs including migration expenses. Present results to Finance for final budget approval.",
                 "context": "Finance needs detailed ROI projections before releasing full $2M budget. CFO specifically wants 3-year TCO comparison.",
                 "tags": ["analysis", "roi", "finance"],
-                "assignee": "Sarah Thompson",
+                "assignee": "Nami",
                 "due_date": now + timedelta(days=2),  # Due soon (not overdue)
                 "notes": [
                     "Initial calculations show 42% cost reduction by year 2",
@@ -435,7 +435,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Ensure modernization plan meets SOC2 Type II requirements and doesn't introduce new compliance risks. Review proposed architecture with security team and document compliance controls for each migration phase.",
                 "context": "Company is SOC2 certified and audit is in 4 months. Can't introduce compliance gaps during migration or we risk losing certification.",
                 "tags": ["security", "compliance", "soc2"],
-                "assignee": "Security Team",
+                "assignee": "Alucard Guard",
                 "due_date": now - timedelta(days=5),  # 5 days overdue
                 "blockers": [
                     "Security team backlog is 3 weeks out - may need to escalate for priority review"
@@ -453,7 +453,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Create internal communication strategy for infrastructure modernization rollout. Plan includes: pre-migration announcements, phase-by-phase updates, troubleshooting resources, and success celebration.",
                 "context": "DevOps team stressed about managing user expectations during migration. Good communication can prevent panic when services are temporarily affected.",
                 "tags": ["communication", "planning", "change-management"],
-                "assignee": "Sarah Thompson",
+                "assignee": "Robin",
                 "notes": [
                     "Target audience: Engineering (100 people), Product (30 people), Customer Support (50 people)",
                     "Channels: Slack announcements, email updates, documentation wiki"
@@ -478,7 +478,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Design streaming architecture with WebSocket integration for bidirectional audio. Architecture must support real-time transcription, response generation, and audio playback with <200ms latency. Include conversation state persistence in MongoDB for demo continuity.",
                 "context": "This is the foundational architecture for Developer Day demo. Need to nail the streaming architecture first before building higher-level features.",
                 "tags": ["architecture", "websocket", "streaming", "real-time"],
-                "assignee": "Mike Chen",
+                "assignee": "Sanji",
                 "due_date": now - timedelta(days=1),  # 1 day overdue
                 "notes": [
                     "Architecture decision: Using WebSocket for full-duplex communication instead of HTTP polling",
@@ -502,7 +502,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "description": "Set up real-time speech-to-text with SonarSense Nova 2 API. Implement streaming transcription with interim results for real-time feedback. Handle audio format conversion (browser -> SonarSense) and implement error recovery for network issues.",
                 "context": "SonarSense selected after benchmarking 3 STT providers. Nova 2 model has best accuracy (95%) and lowest latency (140ms) for our use case.",
                 "tags": ["stt", "sonarsense", "integration", "audio"],
-                "assignee": "Mike Chen",
+                "assignee": "Luffy",
                 "notes": [
                     "API integration complete - achieving 140ms transcription latency",
                     "Accuracy testing: 95% on customer support conversations, 88% with background noise",
