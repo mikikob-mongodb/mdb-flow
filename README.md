@@ -95,6 +95,32 @@ Flow Companion can connect to [Model Context Protocol](https://modelcontextproto
 
 **See:** `docs/features/MCP_AGENT.md` for complete architecture documentation, `tests/README_MCP_TESTS.md` for testing guide, and `tests/integration/test_mcp_agent.py` for integration tests.
 
+### Memory Query Tools (Milestone 7)
+
+The agent can now proactively leverage its memory systems via 3 new built-in tools:
+
+**`search_knowledge`**:
+- Searches semantic memory cache before making external API calls
+- Enables cache-before-search pattern to reduce redundant requests
+- Example: "What do we know about gaming use cases?" checks cached research first
+
+**`list_templates`**:
+- Lists available procedural memory templates with phase breakdowns
+- Shows GTM Roadmap, PRD Template, Blog Post templates
+- Example: "What templates do I have?"
+
+**`analyze_tool_discoveries`**:
+- Analyzes MCP tool usage patterns over time (default: 7 days)
+- Generates optimization suggestions:
+  - New built-in tools (if pattern reused 3+ times)
+  - Atlas optimizations (common query patterns)
+  - Template candidates (repeated workflows)
+  - Feature gaps (failed discovery patterns)
+- Example: "What patterns do you see in my tool usage?"
+- Powered by `memory/discovery_analysis.py` module
+
+**Total: 26 built-in tools** across 5 categories (Worklog, Retrieval, Context, Memory, Routing)
+
 ## Tech Stack
 
 - **UI**: Streamlit (main app + evals dashboard)

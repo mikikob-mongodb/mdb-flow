@@ -80,19 +80,57 @@ Agent     Agent          (connects to remote MCP servers)
 - `update_project` - Update project fields
 - `add_note_to_project` - Add note to project
 
-**Retrieval Operations** (6 tools):
+**Retrieval Operations** (9 tools):
 - `get_tasks` - List all tasks with filters
+- `get_task` - Get single task by ID
 - `get_projects` - List all projects
+- `get_project` - Get single project by ID
+- `get_project_by_name` - Get project by name (fuzzy match)
 - `search_tasks` - Hybrid search for tasks
 - `search_projects` - Hybrid search for projects
 - `get_tasks_by_time` - Temporal activity queries
 - `get_action_history` - Long-term memory (if enabled)
 
-**Context Operations** (2 tools):
+**Context Operations** (4 tools):
 - `add_context_to_task` - Update task context
 - `add_context_to_project` - Update project context
 - `add_decision_to_project` - Record decision
 - `add_method_to_project` - Add technology/method
+
+**Memory Tools** (3 tools):
+- `search_knowledge` - Search cached knowledge from previous research/web searches
+- `list_templates` - List available procedural memory templates
+- `analyze_tool_discoveries` - Analyze MCP tool usage patterns for optimization suggestions
+
+**Routing/Coordination** (1 tool):
+- `resolve_disambiguation` - Resolve ambiguous references to tasks/projects
+
+**Total: 26 built-in tools** across 5 categories
+
+#### New Memory Tools (Added 2026-01-14)
+
+**Purpose**: Enable the agent to leverage its memory systems proactively
+
+**`search_knowledge`**:
+- Searches semantic memory cache before making external calls
+- Use case: "What do we know about gaming use cases?" - checks cached research before calling Tavily
+- Returns cached knowledge with source attribution (e.g., "mcp_tavily", cached timestamp)
+- Implements cache-before-search pattern to reduce redundant API calls
+
+**`list_templates`**:
+- Lists available procedural memory templates (GTM, PRD, Blog Post)
+- Shows template phases and estimated task counts
+- Use case: "What templates do I have?" or "Show me available templates"
+
+**`analyze_tool_discoveries`**:
+- Analyzes MCP tool usage patterns over time (default: 7 days)
+- Generates optimization suggestions:
+  - **New built-in tools**: If an MCP discovery is reused 3+ times, suggest promoting to built-in
+  - **Atlas optimizations**: Common query patterns that could benefit from indexes
+  - **Template candidates**: Repeated workflows that should become templates
+  - **Feature gaps**: Failed discoveries indicating missing capabilities
+- Use case: "What patterns do you see in my tool usage?" or "What should we build next?"
+- Powered by `memory/discovery_analysis.py` module
 
 #### Direct Database Calls
 
@@ -937,7 +975,51 @@ class ToolDiscoveryStore:
         """Get frequently used patterns for promotion to static tools"""
 ```
 
-#### 3. Knowledge Cache (`memory/manager.py`)
+#### 3. Discovery Analysis (`memory/discovery_analysis.py`)
+
+**Purpose**: Analyze tool discovery patterns to generate actionable optimization suggestions
+
+**Added**: 2026-01-14 (Milestone 7 enhancement)
+
+**Key Functions**:
+```python
+def analyze_discoveries(db, user_id: str = None, days: int = 7) -> Dict[str, Any]:
+    """
+    Analyze tool discovery patterns and generate suggestions.
+
+    Returns:
+        {
+            "suggested_tools": [...],         # Discoveries to promote to built-in
+            "atlas_optimizations": [...],     # Index/query optimizations
+            "template_candidates": [...],     # Workflow automation opportunities
+            "feature_gaps": [...]             # Failed patterns indicating missing capabilities
+        }
+    """
+
+def _suggest_new_tools(discoveries: List[Dict]) -> List[Dict[str, Any]]:
+    """
+    Suggest new built-in tools based on repeated successful patterns.
+    Logic: If discovery reused 3+ times, it's a candidate for built-in tool.
+    """
+
+def _suggest_atlas_optimizations(discoveries: List[Dict]) -> List[Dict[str, Any]]:
+    """Suggest Atlas optimizations based on query patterns."""
+
+def _suggest_templates(db, user_id, days) -> List[Dict[str, Any]]:
+    """Suggest workflow templates based on repeated action patterns."""
+
+def _identify_feature_gaps(discoveries: List[Dict]) -> List[Dict[str, Any]]:
+    """Identify feature gaps based on failed discoveries."""
+```
+
+**Use Case**: Powers the `analyze_tool_discoveries` tool to answer:
+- "What should we build next based on my usage?"
+- "Are there patterns in how I'm using MCP tools?"
+- "What indexes should I add to improve performance?"
+
+**Integration**: Called by Coordinator when user requests discovery analysis
+
+#### 4. Knowledge Cache (`memory/manager.py`)
 
 **Purpose**: Cache search/research results to avoid redundant MCP API calls
 

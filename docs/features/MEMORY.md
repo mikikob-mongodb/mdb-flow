@@ -692,7 +692,30 @@ When I say "done", complete my current task
 - **🌐 Knowledge Cache** - Cached search results (Milestone 6)
 - **📊 Memory Stats** - Counts by type
 
-**5. Use Disambiguation**:
+**5. Query Memory Tools** (New in Milestone 7):
+
+The agent can now proactively leverage its memory systems via built-in tools:
+
+```
+What do we know about gaming use cases?
+```
+→ Uses `search_knowledge` tool to check cached knowledge before external search
+
+```
+What templates do I have?
+```
+→ Uses `list_templates` tool to show available procedural memory templates
+
+```
+What patterns do you see in my tool usage?
+```
+→ Uses `analyze_tool_discoveries` tool to analyze MCP usage patterns and suggest:
+  - New built-in tools (if pattern reused 3+ times)
+  - Atlas optimizations (common query patterns)
+  - Template candidates (repeated workflows)
+  - Feature gaps (failed discovery patterns)
+
+**6. Use Disambiguation**:
 ```
 Show me tasks for AgentOps
 ```
@@ -779,13 +802,16 @@ cached = memory.get_cached_knowledge(
 
 ## Component Status
 
-**Last Audit:** January 8, 2026
+**Last Audit:** January 14, 2026
 
 | Component | Status | Location |
 |-----------|--------|----------|
 | **Memory Manager** | ✅ Complete | `memory/manager.py` |
+| **Tool Discovery Store** | ✅ Complete | `memory/tool_discoveries.py` |
+| **Discovery Analysis** | ✅ Complete | `memory/discovery_analysis.py` |
 | **Coordinator Integration** | ✅ Complete | `agents/coordinator.py` |
-| **Streamlit UI** | ✅ Complete | `ui/streamlit_app.py` |
+| **Memory Tools** | ✅ Complete | 3 tools: `search_knowledge`, `list_templates`, `analyze_tool_discoveries` |
+| **Streamlit UI** | ✅ Complete | `ui/demo_app.py` |
 | **Unit Tests** | ✅ Complete | `tests/test_memory_types.py` |
 | **Integration Tests** | ✅ Complete | `tests/integration/memory/` |
 | **Database Indexes** | ✅ Complete | `scripts/setup_database.py` |
@@ -793,9 +819,11 @@ cached = memory.get_cached_knowledge(
 | **Evaluation Suite** | ✅ Complete | `evals/test_memory_competencies.py` |
 | **Documentation** | ✅ Complete | This file |
 
-### Coverage Summary
+### Coverage Summary (Updated Milestone 7)
 - **5/5 Memory Types**: Implemented and tested
 - **Knowledge Cache**: Implemented and tested (Milestone 6)
+- **Memory Tools**: 3 tools enable agent to query memory systems (Milestone 7)
+- **Discovery Analysis**: Pattern analysis for optimization suggestions (Milestone 7)
 - **13 Unit Tests**: All passing
 - **14 Integration Tests**: All passing
 - **10 Competencies**: All verified
