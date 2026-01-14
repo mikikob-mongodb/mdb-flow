@@ -265,14 +265,13 @@ def render_task_with_metadata(task):
     header = f"{status_icon} {priority_badge} {task.title} {assignee_badge}{blocker_indicator}{due_indicator}"
 
     with st.expander(header, expanded=False):
-        # Fetch episodic memory summary from Atlas (cached)
-        summary = get_task_episodic_summary(str(task.id)) if task.id else None
-
-        # Display episodic memory summary if available
-        if summary:
-            st.markdown("**🧠 Episodic Memory Summary**")
-            st.info(summary)
-            st.divider()
+        # Fetch and display episodic memory summary if toggle is enabled
+        if st.session_state.get("mem_episodic", True):
+            summary = get_task_episodic_summary(str(task.id)) if task.id else None
+            if summary:
+                st.markdown("**🧠 Episodic Memory Summary**")
+                st.info(summary)
+                st.divider()
 
         # Create two columns for metadata
         col1, col2 = st.columns(2)
@@ -534,14 +533,13 @@ def render_sidebar():
                                     content = update.content
                                 st.caption(f"  • {update_date}: {content[:80]}...")
 
-                        # Fetch project episodic memory summary from Atlas (cached)
-                        summary = get_project_episodic_summary(str(project.id)) if project.id else None
-
-                        # Display project episodic memory summary if available
-                        if summary:
-                            st.markdown("**🧠 Project Episodic Memory**")
-                            st.success(summary)
-                            st.divider()
+                        # Fetch and display project episodic memory if toggle is enabled
+                        if st.session_state.get("mem_episodic", True):
+                            summary = get_project_episodic_summary(str(project.id)) if project.id else None
+                            if summary:
+                                st.markdown("**🧠 Project Episodic Memory**")
+                                st.success(summary)
+                                st.divider()
 
                         if tasks:
                             for task in tasks[:10]:  # Show max 10 tasks per project
