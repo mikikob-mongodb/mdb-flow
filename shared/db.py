@@ -8,7 +8,7 @@ from pymongo.database import Database
 from pymongo.collection import Collection
 
 from shared.config import settings
-from shared.models import Task, Project, Settings, ActivityLogEntry
+from shared.models import Task, Project, Settings, ActivityLogEntry, ProjectUpdate
 
 
 class MongoDB:
@@ -365,12 +365,19 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
         note=note
     ).model_dump()
 
+    # Create project update entry for UI display
+    project_update = ProjectUpdate(
+        date=now,
+        content=note
+    ).model_dump()
+
     result = collection.update_one(
         {"_id": project_id},
         {
             "$push": {
                 "notes": note,
-                "activity_log": activity_entry
+                "activity_log": activity_entry,
+                "updates": project_update
             },
             "$set": {
                 "updated_at": now,
