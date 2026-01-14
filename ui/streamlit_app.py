@@ -369,7 +369,7 @@ def render_context_engineering_toggles():
                 col1.metric("Semantic", by_type.get("semantic_memory", 0))
                 col2.metric("Procedural", by_type.get("procedural_memory", 0))
 
-                st.metric("Shared", by_type.get("memory_shared", 0))
+                st.metric("Handoffs Pending", by_type.get("handoffs_pending", 0))
 
             except Exception as e:
                 st.error(f"Error: {e}")
