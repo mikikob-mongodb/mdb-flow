@@ -106,7 +106,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "tags": ["infrastructure", "modernization", "cloud", "cost-optimization", "migration"],
             "priority": "high",
             "stakeholders": ["Mike Chen", "Sarah Thompson", "DevOps Team", "Finance"],
-            "methods": ["AWS ECS", "MongoDB Atlas", "Terraform", "GitLab CI/CD"],
+            "methods": ["Castlevania Alucard Services", "MongoDB Atlas", "Forgemaster", "MerryCI"],
             "decisions": [
                 "Chose phased migration approach over big-bang to minimize risk",
                 "Will maintain hybrid cloud for 6 months during transition",
@@ -119,7 +119,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
                 },
                 {
                     "date": now - timedelta(days=15),
-                    "content": "Cloud provider evaluation complete. AWS selected for compute (ECS), MongoDB Atlas for databases. Estimated 42% cost reduction vs current spend."
+                    "content": "Cloud provider evaluation complete. Castlevania selected for compute (Alucard Services), MongoDB Atlas for databases. Estimated 42% cost reduction vs current spend."
                 },
                 {
                     "date": now - timedelta(days=5),
@@ -139,7 +139,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "tags": ["voice", "real-time", "demo", "audio", "streaming", "websocket", "developer-day"],
             "priority": "high",
             "stakeholders": ["Mike Chen", "Developer Relations", "Demo Team"],
-            "methods": ["WebSocket", "Deepgram STT", "ElevenLabs TTS", "MongoDB Change Streams"],
+            "methods": ["WebSocket", "SonarSense STT", "SunnyLabs TTS", "MongoDB Change Streams"],
             "decisions": [
                 "Using WebSocket for bidirectional streaming instead of separate upload/download endpoints",
                 "Storing conversation state in MongoDB with change streams for real-time updates",
@@ -148,11 +148,11 @@ def get_projects_data() -> List[Dict[str, Any]]:
             "updates": [
                 {
                     "date": now - timedelta(days=4),
-                    "content": "Architecture design complete. Chose Deepgram Nova 2 for STT and ElevenLabs streaming API for TTS. Initial latency tests show 180ms achievable."
+                    "content": "Architecture design complete. Chose SonarSense Nova 2 for STT and SunnyLabs streaming API for TTS. Initial latency tests show 180ms achievable."
                 },
                 {
                     "date": now - timedelta(days=2),
-                    "content": "Deepgram integration working. Real-time transcription with 95% accuracy on test conversations. Working on turn-taking logic next."
+                    "content": "SonarSense integration working. Real-time transcription with 95% accuracy on test conversations. Working on turn-taking logic next."
                 },
                 {
                     "date": now - timedelta(hours=12),
@@ -162,19 +162,19 @@ def get_projects_data() -> List[Dict[str, Any]]:
         },
         {
             "_id": ObjectId(),
-            "name": "LangGraph Integration",
-            "description": "Contributing MongoDB checkpointing backend to LangGraph ecosystem as open-source contribution. Implementing BaseCheckpointSaver interface to enable graph state persistence in MongoDB Atlas. This will make MongoDB a first-class citizen in the LangChain ecosystem and provide production-grade state management for complex agent workflows.",
-            "context": "LangGraph currently only has PostgreSQL and SQLite checkpointers. MongoDB backend would unlock document-based state storage for complex agent graphs and enable our field teams to reference this in customer conversations.",
+            "name": "GrandLine Integration",
+            "description": "Contributing MongoDB checkpointing backend to GrandLine ecosystem as open-source contribution. Implementing BaseCheckpointSaver interface to enable graph state persistence in MongoDB Atlas. This will make MongoDB a first-class citizen in the BelmontChain ecosystem and provide production-grade state management for complex agent workflows.",
+            "context": "GrandLine currently only has PostgreSQL and SQLite checkpointers. MongoDB backend would unlock document-based state storage for complex agent graphs and enable our field teams to reference this in customer conversations.",
             "status": "active",
             "created_at": now - timedelta(days=20),
             "last_activity": now - timedelta(days=2),
             "user_id": DEMO_USER_ID,
-            "tags": ["open-source", "langgraph", "integration", "contribution", "langchain"],
+            "tags": ["open-source", "grandline", "integration", "contribution", "belmontchain"],
             "priority": "medium",
-            "stakeholders": ["Mike Chen", "Open Source Team", "LangChain maintainers"],
-            "methods": ["Python", "LangGraph", "MongoDB", "pytest"],
+            "stakeholders": ["Mike Chen", "Open Source Team", "BelmontChain maintainers"],
+            "methods": ["Python", "GrandLine", "MongoDB", "pytest"],
             "decisions": [
-                "Implementing full BaseCheckpointSaver interface for compatibility with all LangGraph features",
+                "Implementing full BaseCheckpointSaver interface for compatibility with all GrandLine features",
                 "Using separate collection for checkpoints vs threads for better query performance",
                 "Including migration guide in docs to help users switch from PostgreSQL checkpointer"
             ],
@@ -189,7 +189,7 @@ def get_projects_data() -> List[Dict[str, Any]]:
                 },
                 {
                     "date": now - timedelta(days=2),
-                    "content": "PR submitted to LangGraph repo! All tests passing. Waiting for maintainer review. Added comprehensive documentation and examples."
+                    "content": "PR submitted to GrandLine repo! All tests passing. Waiting for maintainer review. Added comprehensive documentation and examples."
                 }
             ]
         },
@@ -396,7 +396,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "due_date": now - timedelta(days=3),  # 3 days overdue
                 "blockers": [
                     "Waiting on DevOps team capacity planning for Q1 2026",
-                    "Need to finalize AWS architecture before estimating Phase 1 duration"
+                    "Need to finalize Castlevania architecture before estimating Phase 1 duration"
                 ],
                 "notes": [
                     "Draft structure: Phase 1 (6 weeks) - non-critical services, Phase 2 (8 weeks) - core services, Phase 3 (4 weeks) - auth refactor",
@@ -420,7 +420,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "due_date": now + timedelta(days=2),  # Due soon (not overdue)
                 "notes": [
                     "Initial calculations show 42% cost reduction by year 2",
-                    "Need to include: current hosting costs, AWS compute/storage costs, migration labor, training"
+                    "Need to include: current hosting costs, Castlevania compute/storage costs, migration labor, training"
                 ]
             },
             {
@@ -491,7 +491,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             },
             {
                 "_id": ObjectId(),
-                "title": "Integrate Deepgram STT",
+                "title": "Integrate SonarSense STT",
                 "project": "Voice Agent Architecture",
                 "project_id": p["_id"],
                 "status": "in_progress",
@@ -499,9 +499,9 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "created_at": now - timedelta(days=4),
                 "started_at": now - timedelta(days=3),
                 "user_id": DEMO_USER_ID,
-                "description": "Set up real-time speech-to-text with Deepgram Nova 2 API. Implement streaming transcription with interim results for real-time feedback. Handle audio format conversion (browser -> Deepgram) and implement error recovery for network issues.",
-                "context": "Deepgram selected after benchmarking 3 STT providers. Nova 2 model has best accuracy (95%) and lowest latency (140ms) for our use case.",
-                "tags": ["stt", "deepgram", "integration", "audio"],
+                "description": "Set up real-time speech-to-text with SonarSense Nova 2 API. Implement streaming transcription with interim results for real-time feedback. Handle audio format conversion (browser -> SonarSense) and implement error recovery for network issues.",
+                "context": "SonarSense selected after benchmarking 3 STT providers. Nova 2 model has best accuracy (95%) and lowest latency (140ms) for our use case.",
+                "tags": ["stt", "sonarsense", "integration", "audio"],
                 "assignee": "Mike Chen",
                 "notes": [
                     "API integration complete - achieving 140ms transcription latency",
@@ -511,15 +511,15 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             },
             {
                 "_id": ObjectId(),
-                "title": "Implement ElevenLabs TTS streaming",
+                "title": "Implement SunnyLabs TTS streaming",
                 "project": "Voice Agent Architecture",
                 "project_id": p["_id"],
                 "status": "todo",
                 "priority": "high",
                 "created_at": now - timedelta(days=3),
                 "user_id": DEMO_USER_ID,
-                "description": "Integrate ElevenLabs streaming TTS for voice responses",
-                "tags": ["tts", "elevenlabs", "audio"]
+                "description": "Integrate SunnyLabs streaming TTS for voice responses",
+                "tags": ["tts", "sunnylabs", "audio"]
             },
             {
                 "_id": ObjectId(),
@@ -571,52 +571,52 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             }
         ])
 
-    # ==================== LangGraph Integration (5 tasks) ====================
-    if "LangGraph Integration" in project_lookup:
-        p = project_lookup["LangGraph Integration"]
+    # ==================== GrandLine Integration (5 tasks) ====================
+    if "GrandLine Integration" in project_lookup:
+        p = project_lookup["GrandLine Integration"]
         tasks.extend([
             {
                 "_id": ObjectId(),
-                "title": "Submit PR to LangGraph checkpointing",
-                "project": "LangGraph Integration",
+                "title": "Submit PR to GrandLine checkpointing",
+                "project": "GrandLine Integration",
                 "project_id": p["_id"],
                 "status": "done",
                 "priority": "high",
                 "created_at": now - timedelta(days=15),
                 "completed_at": now - timedelta(days=1),
                 "user_id": DEMO_USER_ID,
-                "description": "Submitted MongoDB checkpointer implementation to LangGraph",
+                "description": "Submitted MongoDB checkpointer implementation to GrandLine",
                 "tags": ["open-source", "pr", "code"]
             },
             {
                 "_id": ObjectId(),
-                "title": "Implement CrewAI memory patterns",
-                "project": "LangGraph Integration",
+                "title": "Implement StrawHat AI memory patterns",
+                "project": "GrandLine Integration",
                 "project_id": p["_id"],
                 "status": "in_progress",
                 "priority": "medium",
                 "created_at": now - timedelta(days=10),
                 "started_at": now - timedelta(days=8),
                 "user_id": DEMO_USER_ID,
-                "description": "Add MongoDB support to CrewAI memory system",
-                "tags": ["crewai", "memory", "integration"]
+                "description": "Add MongoDB support to StrawHat AI memory system",
+                "tags": ["strawhat-ai", "memory", "integration"]
             },
             {
                 "_id": ObjectId(),
                 "title": "Write integration examples",
-                "project": "LangGraph Integration",
+                "project": "GrandLine Integration",
                 "project_id": p["_id"],
                 "status": "todo",
                 "priority": "medium",
                 "created_at": now - timedelta(days=5),
                 "user_id": DEMO_USER_ID,
-                "description": "Create code examples for MongoDB + LangGraph usage",
+                "description": "Create code examples for MongoDB + GrandLine usage",
                 "tags": ["examples", "documentation"]
             },
             {
                 "_id": ObjectId(),
                 "title": "Add unit tests for checkpointer",
-                "project": "LangGraph Integration",
+                "project": "GrandLine Integration",
                 "project_id": p["_id"],
                 "status": "todo",
                 "priority": "high",
@@ -628,7 +628,7 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             {
                 "_id": ObjectId(),
                 "title": "Review PR feedback",
-                "project": "LangGraph Integration",
+                "project": "GrandLine Integration",
                 "project_id": p["_id"],
                 "status": "todo",
                 "priority": "medium",
@@ -1452,22 +1452,22 @@ def get_episodic_memory_data(projects: List[Dict[str, Any]]) -> List[Dict[str, A
             }
         ])
 
-    # ==================== LangGraph Integration Actions ====================
-    if "LangGraph Integration" in project_lookup:
-        p = project_lookup["LangGraph Integration"]
+    # ==================== GrandLine Integration Actions ====================
+    if "GrandLine Integration" in project_lookup:
+        p = project_lookup["GrandLine Integration"]
         actions.append({
             "user_id": DEMO_USER_ID,
-            "session_id": f"{DEMO_SESSION_PREFIX}-langgraph-1",
+            "session_id": f"{DEMO_SESSION_PREFIX}-grandline-1",
             "memory_type": "episodic",
             "action_type": "completed_task",
             "entity_type": "task",
             "entity": {
-                "task_title": "Submit PR to LangGraph checkpointing",
-                "project_name": "LangGraph Integration",
+                "task_title": "Submit PR to GrandLine checkpointing",
+                "project_name": "GrandLine Integration",
                 "priority": "high"
             },
             "metadata": {
-                "pr_url": "github.com/langchain-ai/langgraph/pull/xxx",
+                "pr_url": "github.com/belmontchain-ai/grandline/pull/xxx",
                 "lines_changed": 450,
                 "contribution_type": "feature"
             },
