@@ -1214,18 +1214,18 @@ Use this memory context to:
             "complete_task": lambda task_id: self.worklog_agent._complete_task(task_id),
             "stop_task": lambda task_id: self.worklog_agent._update_task(task_id, status="todo"),
             "get_task": lambda task_id: self.worklog_agent._get_task(task_id),
-            "add_note_to_task": lambda task_id, note: self.worklog_agent._add_note_to_task(task_id, note),
+            "add_note_to_task": lambda task_id, note: self.worklog_agent._add_note("task", task_id, note),
 
             # Project operations
             "create_project": lambda **kwargs: self.worklog_agent._create_project(**kwargs),
             "update_project": lambda **kwargs: self.worklog_agent._update_project(**kwargs),
             "get_project": lambda project_id: self.worklog_agent._get_project(project_id),
 
-            # Search operations
-            "search_tasks": lambda **kwargs: self.worklog_agent._search_tasks(**kwargs),
-            "search_projects": lambda **kwargs: self.worklog_agent._search_projects(**kwargs),
-            "get_tasks": lambda **kwargs: self.worklog_agent._get_tasks(**kwargs),
-            "get_projects": lambda **kwargs: self.worklog_agent._get_projects(**kwargs),
+            # Search operations - use retrieval agent for search
+            "search_tasks": lambda query, limit=10, **kwargs: self.retrieval_agent.hybrid_search_tasks(query, limit, **kwargs),
+            "search_projects": lambda query, limit=5: self.retrieval_agent.hybrid_search_projects(query, limit),
+            "get_tasks": lambda **kwargs: self.worklog_agent._list_tasks(**kwargs),
+            "get_projects": lambda **kwargs: self.worklog_agent._list_projects(**kwargs),
         }
 
     def _classify_multi_step_intent(self, user_message: str) -> dict:
