@@ -3071,6 +3071,56 @@ Execute the rule action: {rule_match['action']}
         else:
             return final_text.strip()
 
+    def process_stream(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1, optimizations: Optional[Dict[str, bool]] = None, session_id: Optional[str] = None):
+        """
+        Process a user message and stream the response word-by-word.
+
+        This provides a streaming UX by:
+        1. Executing all tool calls normally (synchronous)
+        2. Streaming the final text response word-by-word
+
+        Args:
+            Same as process()
+
+        Yields:
+            Tuples of (text_chunk, debug_info) where debug_info is only populated on the last chunk
+        """
+        import time as time_module
+
+        # Get the full response first (with all tool execution)
+        result = self.process(
+            user_message=user_message,
+            conversation_history=conversation_history,
+            input_type=input_type,
+            turn_number=turn_number,
+            optimizations=optimizations,
+            return_debug=True,
+            session_id=session_id
+        )
+
+        # Extract response and debug info
+        if isinstance(result, dict):
+            response_text = result.get("response", "")
+            debug_info = result.get("debug", {})
+        else:
+            response_text = result
+            debug_info = {}
+
+        # Stream the response word-by-word
+        words = response_text.split(' ')
+        for i, word in enumerate(words):
+            # Add space after word (except for last word)
+            chunk = word + (' ' if i < len(words) - 1 else '')
+
+            # Yield chunk with debug info only on last chunk
+            if i == len(words) - 1:
+                yield (chunk, debug_info)
+            else:
+                yield (chunk, None)
+
+            # Small delay for visual effect (optional)
+            time_module.sleep(0.01)
+
 
 # Global coordinator instance with memory manager
 try:

@@ -70,6 +70,54 @@ class LLMService:
         logger.debug(f"LLM response preview: {response_text[:200]}...")
         return response_text
 
+    def generate_stream(
+        self,
+        messages: List[Dict[str, str]],
+        system: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 1.0,
+        **kwargs
+    ):
+        """
+        Generate a streaming response from Claude.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            system: Optional system prompt
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            **kwargs: Additional parameters to pass to the API
+
+        Yields:
+            Text chunks as they arrive from the API
+        """
+        logger.debug(f"LLM generate_stream: {len(messages)} message(s), max_tokens={max_tokens}, temp={temperature}")
+        if messages:
+            logger.debug(f"Last message preview: {messages[-1]['content'][:100]}...")
+
+        # Strip non-API fields from messages
+        clean_messages = [
+            {"role": m["role"], "content": m["content"]}
+            for m in messages
+        ]
+
+        params = {
+            "model": self.model,
+            "messages": clean_messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            **kwargs
+        }
+
+        if system:
+            params["system"] = system
+
+        logger.debug(f"Calling Anthropic API (streaming) with model={self.model}")
+
+        with self.client.messages.stream(**params) as stream:
+            for text in stream.text_stream:
+                yield text
+
     def chat(
         self,
         user_message: str,

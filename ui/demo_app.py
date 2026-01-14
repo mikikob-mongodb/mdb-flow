@@ -906,27 +906,33 @@ def handle_input(prompt: str):
 
         turn_number = len(st.session_state.debug_history) + 1
 
-        # Process through coordinator
-        result = st.session_state.coordinator.process(
+        # Create placeholder for streaming response
+        response_placeholder = st.empty()
+        full_response = ""
+        debug_info = {}
+
+        # Stream the response
+        for chunk, chunk_debug in st.session_state.coordinator.process_stream(
             prompt,
             history,
             input_type="text",
             turn_number=turn_number,
-            session_id=st.session_state.session_id,
-            return_debug=True
-        )
+            session_id=st.session_state.session_id
+        ):
+            full_response += chunk
+            # Show response with cursor while streaming
+            response_placeholder.markdown(full_response + "▌")
 
-        # Handle response
-        if isinstance(result, dict):
-            response = result.get("response", "")
-            debug_info = result.get("debug", {})
-        else:
-            response = result
-            debug_info = {}
+            # Capture debug info from last chunk
+            if chunk_debug:
+                debug_info = chunk_debug
+
+        # Remove cursor and show final response
+        response_placeholder.markdown(full_response)
 
         st.session_state.messages.append({
             "role": "assistant",
-            "content": response
+            "content": full_response
         })
 
         # Add to debug history
