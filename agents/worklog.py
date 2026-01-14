@@ -50,7 +50,7 @@ class WorklogAgent:
         return [
             {
                 "name": "create_task",
-                "description": "Create a new task with optional context, notes, priority, and status",
+                "description": "Create a new task. IMPORTANT: Use dedicated parameters for assignee, due_date, and blockers - do NOT put these in the context field.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -80,6 +80,19 @@ class WorklogAgent:
                             "type": "string",
                             "enum": ["todo", "in_progress", "done"],
                             "description": "Task status (defaults to 'todo')"
+                        },
+                        "assignee": {
+                            "type": "string",
+                            "description": "Person or team responsible for this task. REQUIRED when user says 'assign to X', 'for X', etc. Use full name (e.g. 'Sarah Thompson' not 'Sarah'). DO NOT put in context field."
+                        },
+                        "blockers": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of blockers preventing progress on this task. DO NOT put in context field."
+                        },
+                        "due_date": {
+                            "type": "string",
+                            "description": "Due date when user says 'due X'. Pass natural language as-is (e.g., 'in 5 days', 'tomorrow', 'next Friday'). DO NOT put in context field."
                         }
                     },
                     "required": ["title"]
@@ -87,7 +100,7 @@ class WorklogAgent:
             },
             {
                 "name": "update_task",
-                "description": "Update an existing task's fields",
+                "description": "Update an existing task's fields including assignee, blockers, and due date",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -116,6 +129,19 @@ class WorklogAgent:
                         "project_id": {
                             "type": "string",
                             "description": "New project ID"
+                        },
+                        "assignee": {
+                            "type": "string",
+                            "description": "New assignee. Use this parameter when changing who is responsible. DO NOT put in context field."
+                        },
+                        "blockers": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Updated list of blockers (replaces existing blockers). DO NOT put in context field."
+                        },
+                        "due_date": {
+                            "type": "string",
+                            "description": "New due date in natural language (e.g., 'in 5 days', 'tomorrow') or ISO format. DO NOT put in context field."
                         }
                     },
                     "required": ["task_id"]
@@ -141,7 +167,7 @@ class WorklogAgent:
             },
             {
                 "name": "create_project",
-                "description": "Create a new project",
+                "description": "Create a new project with optional description, context, and stakeholders",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -156,6 +182,11 @@ class WorklogAgent:
                         "context": {
                             "type": "string",
                             "description": "Rich context about the project"
+                        },
+                        "stakeholders": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of stakeholders (people or teams involved in the project)"
                         }
                     },
                     "required": ["name"]
@@ -163,7 +194,7 @@ class WorklogAgent:
             },
             {
                 "name": "update_project",
-                "description": "Update an existing project's fields",
+                "description": "Update an existing project's fields including stakeholders",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -187,6 +218,11 @@ class WorklogAgent:
                             "type": "string",
                             "enum": ["active", "archived"],
                             "description": "Project status"
+                        },
+                        "stakeholders": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Updated list of stakeholders (replaces existing)"
                         }
                     },
                     "required": ["project_id"]
@@ -272,6 +308,78 @@ class WorklogAgent:
                         }
                     },
                     "required": ["project_id", "method"]
+                }
+            },
+            {
+                "name": "add_blocker",
+                "description": "Add a blocker to a task",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {
+                            "type": "string",
+                            "description": "Task ID (MongoDB ObjectId as string)"
+                        },
+                        "blocker": {
+                            "type": "string",
+                            "description": "Description of what is blocking progress"
+                        }
+                    },
+                    "required": ["task_id", "blocker"]
+                }
+            },
+            {
+                "name": "remove_blocker",
+                "description": "Remove a blocker from a task",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {
+                            "type": "string",
+                            "description": "Task ID (MongoDB ObjectId as string)"
+                        },
+                        "blocker": {
+                            "type": "string",
+                            "description": "Blocker text to remove (must match exactly)"
+                        }
+                    },
+                    "required": ["task_id", "blocker"]
+                }
+            },
+            {
+                "name": "add_stakeholder",
+                "description": "Add a stakeholder to a project",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "Project ID (MongoDB ObjectId as string)"
+                        },
+                        "stakeholder": {
+                            "type": "string",
+                            "description": "Name of stakeholder (person or team)"
+                        }
+                    },
+                    "required": ["project_id", "stakeholder"]
+                }
+            },
+            {
+                "name": "add_project_update",
+                "description": "Add a status update to a project",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "Project ID (MongoDB ObjectId as string)"
+                        },
+                        "update_content": {
+                            "type": "string",
+                            "description": "Status update content describing recent progress or changes"
+                        }
+                    },
+                    "required": ["project_id", "update_content"]
                 }
             },
             {
@@ -376,6 +484,14 @@ class WorklogAgent:
                 return self._add_decision(**tool_input)
             elif tool_name == "add_method":
                 return self._add_method(**tool_input)
+            elif tool_name == "add_blocker":
+                return self._add_blocker(**tool_input)
+            elif tool_name == "remove_blocker":
+                return self._remove_blocker(**tool_input)
+            elif tool_name == "add_stakeholder":
+                return self._add_stakeholder(**tool_input)
+            elif tool_name == "add_project_update":
+                return self._add_project_update(**tool_input)
             elif tool_name == "list_tasks":
                 return self._list_tasks(**tool_input)
             elif tool_name == "list_projects":
@@ -396,9 +512,19 @@ class WorklogAgent:
         context: str = "",
         notes: Optional[List[str]] = None,
         priority: Optional[Literal["low", "medium", "high"]] = None,
-        status: Literal["todo", "in_progress", "done"] = "todo"
+        status: Literal["todo", "in_progress", "done"] = "todo",
+        assignee: Optional[str] = None,
+        blockers: Optional[List[str]] = None,
+        due_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create a new task."""
+        from shared.embeddings import build_task_embedding_text
+
+        # Parse due_date if provided
+        parsed_due_date = None
+        if due_date:
+            parsed_due_date = self._parse_due_date(due_date)
+
         # Create task model
         task = Task(
             title=title,
@@ -406,11 +532,15 @@ class WorklogAgent:
             context=context,
             notes=notes or [],
             priority=priority,
-            status=status
+            status=status,
+            assignee=assignee,
+            blockers=blockers or [],
+            due_date=parsed_due_date
         )
 
-        # Generate embedding from title + context
-        embedding_text = f"{title}\n{context}".strip()
+        # Generate embedding from comprehensive task data
+        task_doc = task.model_dump(by_alias=True)
+        embedding_text = build_task_embedding_text(task_doc)
         task.embedding = embed_document(embedding_text)
 
         # Create in database
@@ -431,7 +561,10 @@ class WorklogAgent:
         status: Optional[Literal["todo", "in_progress", "done"]] = None,
         priority: Optional[Literal["low", "medium", "high"]] = None,
         context: Optional[str] = None,
-        project_id: Optional[str] = None
+        project_id: Optional[str] = None,
+        assignee: Optional[str] = None,
+        blockers: Optional[List[str]] = None,
+        due_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """Update an existing task."""
         import time
@@ -468,12 +601,29 @@ class WorklogAgent:
             updates["project_id"] = ObjectId(project_id)
             changes.append(f"moved to project {project_id}")
 
-        # Re-generate embedding if title or context changed
-        if title is not None or context is not None:
+        if assignee is not None:
+            updates["assignee"] = assignee
+            changes.append(f"assignee changed to '{assignee}'")
+
+        if blockers is not None:
+            updates["blockers"] = blockers
+            changes.append(f"blockers updated ({len(blockers)} blocker(s))")
+
+        if due_date is not None:
+            parsed_due_date = self._parse_due_date(due_date)
+            updates["due_date"] = parsed_due_date
+            changes.append(f"due date set to {parsed_due_date.strftime('%Y-%m-%d') if parsed_due_date else 'none'}")
+
+        # Re-generate embedding if any content fields changed
+        if any(field is not None for field in [title, context, assignee, blockers, due_date]):
+            from shared.embeddings import build_task_embedding_text
             start = time.time()
-            new_title = title if title is not None else current_task.title
-            new_context = context if context is not None else current_task.context
-            embedding_text = f"{new_title}\n{new_context}".strip()
+
+            # Build updated task document for embedding
+            updated_task_doc = current_task.model_dump(by_alias=True)
+            updated_task_doc.update(updates)
+
+            embedding_text = build_task_embedding_text(updated_task_doc)
             updates["embedding"] = embed_document(embedding_text)
             timings["embedding_generation"] = int((time.time() - start) * 1000)
 
@@ -530,18 +680,23 @@ class WorklogAgent:
         self,
         name: str,
         description: str = "",
-        context: str = ""
+        context: str = "",
+        stakeholders: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Create a new project."""
+        from shared.embeddings import build_project_embedding_text
+
         # Create project model
         project = Project(
             name=name,
             description=description,
-            context=context
+            context=context,
+            stakeholders=stakeholders or []
         )
 
-        # Generate embedding from name + description
-        embedding_text = f"{name}\n{description}".strip()
+        # Generate embedding from comprehensive project data
+        project_doc = project.model_dump(by_alias=True)
+        embedding_text = build_project_embedding_text(project_doc)
         project.embedding = embed_document(embedding_text)
 
         # Create in database
@@ -561,7 +716,8 @@ class WorklogAgent:
         name: Optional[str] = None,
         description: Optional[str] = None,
         context: Optional[str] = None,
-        status: Optional[Literal["active", "archived"]] = None
+        status: Optional[Literal["active", "archived"]] = None,
+        stakeholders: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Update an existing project."""
         project_oid = ObjectId(project_id)
@@ -585,15 +741,23 @@ class WorklogAgent:
             updates["context"] = context
             changes.append("context updated")
 
+        if stakeholders is not None:
+            updates["stakeholders"] = stakeholders
+            changes.append(f"stakeholders updated ({len(stakeholders)} stakeholder(s))")
+
         if status is not None:
             updates["status"] = status
             changes.append(f"status changed to '{status}'")
 
-        # Re-generate embedding if name or description changed
-        if name is not None or description is not None:
-            new_name = name if name is not None else current_project.name
-            new_desc = description if description is not None else current_project.description
-            embedding_text = f"{new_name}\n{new_desc}".strip()
+        # Re-generate embedding if any content fields changed
+        if any(field is not None for field in [name, description, context, stakeholders]):
+            from shared.embeddings import build_project_embedding_text
+
+            # Build updated project document for embedding
+            updated_project_doc = current_project.model_dump(by_alias=True)
+            updated_project_doc.update(updates)
+
+            embedding_text = build_project_embedding_text(updated_project_doc)
             updates["embedding"] = embed_document(embedding_text)
 
         # Update in database
@@ -690,6 +854,185 @@ class WorklogAgent:
             "success": success,
             "message": "Method added to project"
         }
+
+    def _add_blocker(self, task_id: str, blocker: str) -> Dict[str, Any]:
+        """Add a blocker to a task."""
+        task_oid = ObjectId(task_id)
+        task = db_get_task(task_oid)
+
+        if not task:
+            return {"success": False, "error": "Task not found"}
+
+        # Add blocker to list
+        current_blockers = task.blockers or []
+        if blocker not in current_blockers:
+            current_blockers.append(blocker)
+
+            success = db_update_task(
+                task_oid,
+                {"blockers": current_blockers},
+                "blocker_added",
+                f"Blocker added: {blocker}"
+            )
+
+            return {
+                "success": success,
+                "message": f"Blocker added to task",
+                "blocker": blocker
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Blocker already exists"
+            }
+
+    def _remove_blocker(self, task_id: str, blocker: str) -> Dict[str, Any]:
+        """Remove a blocker from a task."""
+        task_oid = ObjectId(task_id)
+        task = db_get_task(task_oid)
+
+        if not task:
+            return {"success": False, "error": "Task not found"}
+
+        # Remove blocker from list
+        current_blockers = task.blockers or []
+        if blocker in current_blockers:
+            current_blockers.remove(blocker)
+
+            success = db_update_task(
+                task_oid,
+                {"blockers": current_blockers},
+                "blocker_removed",
+                f"Blocker removed: {blocker}"
+            )
+
+            return {
+                "success": success,
+                "message": f"Blocker removed from task",
+                "blocker": blocker
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Blocker not found"
+            }
+
+    def _add_stakeholder(self, project_id: str, stakeholder: str) -> Dict[str, Any]:
+        """Add a stakeholder to a project."""
+        project_oid = ObjectId(project_id)
+        project = db_get_project(project_oid)
+
+        if not project:
+            return {"success": False, "error": "Project not found"}
+
+        # Add stakeholder to list
+        current_stakeholders = project.stakeholders or []
+        if stakeholder not in current_stakeholders:
+            current_stakeholders.append(stakeholder)
+
+            success = db_update_project(
+                project_oid,
+                {"stakeholders": current_stakeholders},
+                "stakeholder_added",
+                f"Stakeholder added: {stakeholder}"
+            )
+
+            return {
+                "success": success,
+                "message": f"Stakeholder added to project",
+                "stakeholder": stakeholder
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Stakeholder already exists"
+            }
+
+    def _add_project_update(self, project_id: str, update_content: str) -> Dict[str, Any]:
+        """Add a status update to a project."""
+        project_oid = ObjectId(project_id)
+        project = db_get_project(project_oid)
+
+        if not project:
+            return {"success": False, "error": "Project not found"}
+
+        # Create new update
+        new_update = {
+            "date": datetime.utcnow(),
+            "content": update_content
+        }
+
+        # Add to updates list
+        current_updates = project.updates or []
+        current_updates.append(new_update)
+
+        success = db_update_project(
+            project_oid,
+            {"updates": current_updates},
+            "update_added",
+            f"Status update added"
+        )
+
+        return {
+            "success": success,
+            "message": "Status update added to project",
+            "update": new_update
+        }
+
+    def _parse_due_date(self, due_date_str: str) -> Optional[datetime]:
+        """Parse a due date string into a datetime object.
+
+        Supports:
+        - ISO format: "2024-12-31"
+        - Relative: "in 3 days", "next Friday", "tomorrow"
+
+        Args:
+            due_date_str: Date string to parse
+
+        Returns:
+            Parsed datetime or None if parsing fails
+        """
+        from dateutil import parser
+        from dateutil.relativedelta import relativedelta
+        import re
+
+        due_date_str = due_date_str.strip().lower()
+
+        try:
+            # Try ISO format first
+            if re.match(r'\d{4}-\d{2}-\d{2}', due_date_str):
+                return datetime.fromisoformat(due_date_str)
+
+            # Handle relative dates
+            now = datetime.utcnow()
+
+            if due_date_str == "today":
+                return now.replace(hour=23, minute=59, second=59)
+            elif due_date_str == "tomorrow":
+                return (now + relativedelta(days=1)).replace(hour=23, minute=59, second=59)
+            elif due_date_str.startswith("in ") and "day" in due_date_str:
+                # "in 3 days"
+                match = re.search(r'in (\d+) day', due_date_str)
+                if match:
+                    days = int(match.group(1))
+                    return (now + relativedelta(days=days)).replace(hour=23, minute=59, second=59)
+            elif due_date_str.startswith("in ") and "week" in due_date_str:
+                # "in 2 weeks"
+                match = re.search(r'in (\d+) week', due_date_str)
+                if match:
+                    weeks = int(match.group(1))
+                    return (now + relativedelta(weeks=weeks)).replace(hour=23, minute=59, second=59)
+            elif "next" in due_date_str:
+                # "next friday", "next week"
+                # Use dateutil parser for natural language
+                return parser.parse(due_date_str, fuzzy=True)
+
+            # Fall back to dateutil parser
+            return parser.parse(due_date_str, fuzzy=True)
+
+        except Exception as e:
+            logger.warning(f"Failed to parse due date '{due_date_str}': {e}")
+            return None
 
     def _list_tasks(
         self,
@@ -1046,7 +1389,23 @@ class WorklogAgent:
         # System prompt for the agent
         system_prompt = """You are a helpful task and project management assistant.
 You have access to tools for creating, updating, and managing tasks and projects.
-Use the appropriate tools to help users manage their work.
+
+⚠️ CRITICAL: You MUST use tools to perform ALL data operations. NEVER respond with text-only
+confirmations like "✓ Created task X". If you don't call a tool, nothing happens in the database.
+Always call the actual tool (create_task, update_task, etc.) and report the tool's response.
+
+IMPORTANT - Task and Project Fields:
+Tasks support these enrichment fields:
+- assignee: Person or team responsible (use when user mentions "assign to X", "for X", "X's task")
+- due_date: Deadline in ISO format or natural language ("tomorrow", "next Friday", "in 3 days")
+- blockers: List of blockers preventing progress
+- priority: low, medium, or high
+- status: todo, in_progress, or done
+
+Projects support these enrichment fields:
+- stakeholders: List of people/teams involved
+- updates: Status updates with timestamps
+- context: Rich background information
 
 When users ask about their tasks or projects:
 - ALWAYS use the list_tasks or list_projects tools to check what exists
@@ -1054,10 +1413,32 @@ When users ask about their tasks or projects:
 - Report the actual results from the tools
 
 When creating or updating tasks/projects:
-- Extract relevant information from the user's message
-- Ask for clarification if needed before using tools
-- Provide clear confirmation of actions taken
-- Be proactive in suggesting task organization
+- Extract ALL relevant information from the user's message (assignee, due date, priority, etc.)
+- Use the enrichment fields directly in create_task and update_task tools
+- Parse natural language dates into ISO format or relative expressions
+- Ask for clarification ONLY if critical information is missing (e.g., which project for a new task)
+- Provide clear confirmation of actions taken with all field values
+
+CRITICAL: When a user says "assign to Mike Chen, due tomorrow", you MUST use the assignee and due_date
+parameters in the create_task tool. DO NOT say these fields don't exist or add them to context/description
+as a workaround.
+
+Example - CORRECT tool usage:
+User: "Create a high priority task for API documentation, assign to Sarah, due in 5 days"
+Tool call: create_task(
+    title="API documentation",
+    project_id="<project_id>",
+    priority="high",
+    assignee="Sarah Thompson",
+    due_date="in 5 days"
+)
+
+Example - WRONG (do NOT do this):
+User: "Create a task, assign to Mike, due tomorrow"
+Tool call: create_task(
+    title="task",
+    context="Assigned to: Mike, Due: tomorrow"  ❌ WRONG - use assignee and due_date parameters!
+)
 
 Always use the tools to perform actual operations - don't just describe what you would do."""
 
@@ -1065,16 +1446,29 @@ Always use the tools to perform actual operations - don't just describe what you
         max_iterations = 5
         iteration = 0
 
+        # Detect if this is an action request that requires tool use
+        action_keywords = ['create', 'update', 'complete', 'start', 'add', 'mark', 'assign', 'change', 'delete', 'remove']
+        requires_tool = any(keyword in user_message.lower() for keyword in action_keywords)
+
         while iteration < max_iterations:
             iteration += 1
+
+            # Force tool use on first iteration for action requests
+            llm_kwargs = {}
+            if iteration == 1 and requires_tool:
+                llm_kwargs['tool_choice'] = {"type": "any"}  # Force the model to use a tool
+                logger.info(f"🔧 Forcing tool use for action request: {user_message[:50]}")
 
             # Call Claude with tools
             response = self.llm.generate_with_tools(
                 messages=messages,
                 tools=self.tools,
                 system=system_prompt,
-                max_tokens=4096
+                max_tokens=4096,
+                **llm_kwargs
             )
+
+            logger.info(f"📊 Response stop_reason: {response.stop_reason}")
 
             # Check if we're done (no tool use)
             if response.stop_reason == "end_turn":

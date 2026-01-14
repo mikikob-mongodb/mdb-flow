@@ -1083,6 +1083,82 @@ class MemoryManager:
 
         return results
 
+    def get_workflows(self, user_id: str, min_success_rate: float = 0.0) -> list:
+        """
+        Get all workflow patterns (Procedural Memory) for a user.
+
+        Workflows are multi-step operation patterns that guide the agent
+        through complex sequences like "create task then start it".
+
+        Args:
+            user_id: User identifier
+            min_success_rate: Minimum success rate threshold (0.0-1.0)
+
+        Returns:
+            List of workflow documents, sorted by times_used and success_rate
+        """
+        query = {
+            "user_id": user_id,
+            "memory_type": "procedural",
+            "rule_type": "workflow"
+        }
+
+        if min_success_rate > 0:
+            query["success_rate"] = {"$gte": min_success_rate}
+
+        results = list(self.long_term.find(query).sort([
+            ("times_used", -1),  # Most used first
+            ("success_rate", -1)  # Then by success rate
+        ]))
+
+        for r in results:
+            r["_id"] = str(r["_id"])
+
+        return results
+
+    def get_workflow_for_pattern(self, user_id: str, user_message: str) -> Optional[dict]:
+        """
+        Get workflow matching a trigger pattern in the user's message.
+
+        Args:
+            user_id: User identifier
+            user_message: User's input text
+
+        Returns:
+            Matching workflow or None
+        """
+        import re
+
+        # Get all workflows for this user
+        workflows = self.long_term.find({
+            "user_id": user_id,
+            "memory_type": "procedural",
+            "rule_type": "workflow"
+        })
+
+        # Check each workflow's trigger pattern
+        for workflow in workflows:
+            trigger_pattern = workflow.get("trigger_pattern", "")
+            if trigger_pattern:
+                try:
+                    if re.search(trigger_pattern, user_message, re.IGNORECASE):
+                        # Update last_used timestamp
+                        from datetime import datetime
+                        self.long_term.update_one(
+                            {"_id": workflow["_id"]},
+                            {
+                                "$set": {"last_used": datetime.utcnow()},
+                                "$inc": {"times_used": 1}
+                            }
+                        )
+                        workflow["_id"] = str(workflow["_id"])
+                        return workflow
+                except re.error:
+                    # Invalid regex pattern, skip
+                    continue
+
+        return None
+
     def get_rule_for_trigger(self, user_id: str, trigger: str) -> Optional[dict]:
         """
         Get the rule matching a trigger pattern.

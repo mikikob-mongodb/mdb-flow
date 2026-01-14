@@ -135,6 +135,76 @@ class RetrievalAgent:
                     },
                     "required": ["project_id"]
                 }
+            },
+            {
+                "name": "search_by_assignee",
+                "description": "Find tasks assigned to a specific person or team",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "assignee": {
+                            "type": "string",
+                            "description": "Name of the person or team"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["todo", "in_progress", "done"],
+                            "description": "Optional: Filter by task status"
+                        }
+                    },
+                    "required": ["assignee"]
+                }
+            },
+            {
+                "name": "search_blocked_tasks",
+                "description": "Find all tasks that have blockers (are blocked)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "Optional: Filter by project ID"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "search_by_due_date",
+                "description": "Find tasks by due date (overdue, due soon, due this week, etc.)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "filter": {
+                            "type": "string",
+                            "enum": ["overdue", "due_today", "due_this_week", "due_next_week", "all"],
+                            "description": "Due date filter to apply"
+                        },
+                        "assignee": {
+                            "type": "string",
+                            "description": "Optional: Filter by assignee"
+                        }
+                    },
+                    "required": ["filter"]
+                }
+            },
+            {
+                "name": "search_by_stakeholder",
+                "description": "Find projects where a specific person or team is a stakeholder",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "stakeholder": {
+                            "type": "string",
+                            "description": "Name of the stakeholder (person or team)"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "planned", "completed", "archived"],
+                            "description": "Optional: Filter by project status"
+                        }
+                    },
+                    "required": ["stakeholder"]
+                }
             }
         ]
 
@@ -160,6 +230,14 @@ class RetrievalAgent:
                 return self._search_incomplete(**tool_input)
             elif tool_name == "search_progress":
                 return self._search_progress(**tool_input)
+            elif tool_name == "search_by_assignee":
+                return self._search_by_assignee(**tool_input)
+            elif tool_name == "search_blocked_tasks":
+                return self._search_blocked_tasks(**tool_input)
+            elif tool_name == "search_by_due_date":
+                return self._search_by_due_date(**tool_input)
+            elif tool_name == "search_by_stakeholder":
+                return self._search_by_stakeholder(**tool_input)
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
@@ -620,6 +698,177 @@ class RetrievalAgent:
             result["since_date"] = since_date
 
         return result
+
+    def _search_by_assignee(
+        self,
+        assignee: str,
+        status: Optional[Literal["todo", "in_progress", "done"]] = None
+    ) -> Dict[str, Any]:
+        """
+        Find tasks assigned to a specific person or team.
+
+        Args:
+            assignee: Name of the person or team
+            status: Optional status filter
+
+        Returns:
+            List of tasks assigned to the person/team
+        """
+        tasks_collection = get_collection(TASKS_COLLECTION)
+
+        # Build query
+        query = {"assignee": assignee}
+        if status:
+            query["status"] = status
+
+        # Find matching tasks
+        tasks = list(tasks_collection.find(query).sort("due_date", 1).limit(50))
+
+        # Convert ObjectId to string
+        for task in tasks:
+            task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return {
+            "success": True,
+            "assignee": assignee,
+            "status_filter": status,
+            "count": len(tasks),
+            "tasks": tasks
+        }
+
+    def _search_blocked_tasks(
+        self,
+        project_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Find all tasks that have blockers.
+
+        Args:
+            project_id: Optional project ID filter
+
+        Returns:
+            List of blocked tasks
+        """
+        tasks_collection = get_collection(TASKS_COLLECTION)
+
+        # Build query
+        query = {"blockers": {"$exists": True, "$ne": []}}
+        if project_id:
+            query["project_id"] = ObjectId(project_id)
+
+        # Find matching tasks
+        tasks = list(tasks_collection.find(query).sort("priority", -1).limit(50))
+
+        # Convert ObjectId to string
+        for task in tasks:
+            task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return {
+            "success": True,
+            "project_id_filter": project_id,
+            "count": len(tasks),
+            "tasks": tasks
+        }
+
+    def _search_by_due_date(
+        self,
+        filter: Literal["overdue", "due_today", "due_this_week", "due_next_week", "all"],
+        assignee: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Find tasks by due date.
+
+        Args:
+            filter: Due date filter to apply
+            assignee: Optional assignee filter
+
+        Returns:
+            List of tasks matching the due date filter
+        """
+        from datetime import datetime, timedelta
+
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        now = datetime.utcnow()
+
+        # Build query
+        query = {"due_date": {"$exists": True, "$ne": None}}
+
+        if filter == "overdue":
+            query["due_date"] = {"$lt": now}
+            query["status"] = {"$ne": "done"}
+        elif filter == "due_today":
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            query["due_date"] = {"$gte": start_of_day, "$lte": end_of_day}
+        elif filter == "due_this_week":
+            end_of_week = now + timedelta(days=(7 - now.weekday()))
+            query["due_date"] = {"$gte": now, "$lte": end_of_week}
+        elif filter == "due_next_week":
+            start_of_next_week = now + timedelta(days=(7 - now.weekday() + 1))
+            end_of_next_week = start_of_next_week + timedelta(days=7)
+            query["due_date"] = {"$gte": start_of_next_week, "$lte": end_of_next_week}
+        # "all" - no date filter, just has due_date
+
+        if assignee:
+            query["assignee"] = assignee
+
+        # Find matching tasks
+        tasks = list(tasks_collection.find(query).sort("due_date", 1).limit(50))
+
+        # Convert ObjectId to string
+        for task in tasks:
+            task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return {
+            "success": True,
+            "filter": filter,
+            "assignee_filter": assignee,
+            "count": len(tasks),
+            "tasks": tasks
+        }
+
+    def _search_by_stakeholder(
+        self,
+        stakeholder: str,
+        status: Optional[Literal["active", "planned", "completed", "archived"]] = None
+    ) -> Dict[str, Any]:
+        """
+        Find projects where a specific person or team is a stakeholder.
+
+        Args:
+            stakeholder: Name of the stakeholder
+            status: Optional status filter
+
+        Returns:
+            List of projects with the stakeholder
+        """
+        projects_collection = get_collection(PROJECTS_COLLECTION)
+
+        # Build query
+        query = {"stakeholders": stakeholder}
+        if status:
+            query["status"] = status
+
+        # Find matching projects
+        projects = list(projects_collection.find(query).sort("last_activity", -1).limit(50))
+
+        # Convert ObjectId to string
+        for project in projects:
+            project["_id"] = str(project["_id"])
+
+        return {
+            "success": True,
+            "stakeholder": stakeholder,
+            "status_filter": status,
+            "count": len(projects),
+            "projects": projects
+        }
 
     def fuzzy_match_task(
         self,

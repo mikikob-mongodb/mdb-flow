@@ -153,14 +153,12 @@ def get_all_projects_with_tasks() -> List[Dict[str, Any]]:
     return projects_with_tasks
 
 
-def get_memory_stats() -> Dict[str, int]:
+@st.cache_data(ttl=5)  # Cache memory stats for 5 seconds
+def get_memory_stats(session_id: str, user_id: str) -> Dict[str, int]:
     """Get memory statistics from the coordinator."""
     if coordinator and coordinator.memory:
         try:
-            stats = coordinator.memory.get_memory_stats(
-                st.session_state.session_id,
-                st.session_state.user_id
-            )
+            stats = coordinator.memory.get_memory_stats(session_id, user_id)
             by_type = stats.get("by_type", {})
             return {
                 "working": by_type.get("working_memory", 0),
@@ -195,44 +193,48 @@ def get_priority_badge(priority: str) -> str:
     return ""
 
 
-def get_task_episodic_summary(task: Task) -> Optional[str]:
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_task_episodic_summary(task_id: str) -> Optional[str]:
     """Retrieve latest episodic memory summary from Atlas for a task.
 
     Args:
-        task: Task model with id
+        task_id: Task ID as string
 
     Returns:
         Summary string or None if not found
     """
-    if not task.id:
+    if not task_id:
         return None
 
     try:
+        from bson import ObjectId
         summary_doc = memory_manager.get_latest_episodic_summary(
             entity_type="task",
-            entity_id=task.id
+            entity_id=ObjectId(task_id)
         )
         return summary_doc["summary"] if summary_doc else None
     except Exception as e:
         return None
 
 
-def get_project_episodic_summary(project: Project) -> Optional[str]:
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_project_episodic_summary(project_id: str) -> Optional[str]:
     """Retrieve latest episodic memory summary from Atlas for a project.
 
     Args:
-        project: Project model with id
+        project_id: Project ID as string
 
     Returns:
         Summary string or None if not found
     """
-    if not project.id:
+    if not project_id:
         return None
 
     try:
+        from bson import ObjectId
         summary_doc = memory_manager.get_latest_episodic_summary(
             entity_type="project",
-            entity_id=project.id
+            entity_id=ObjectId(project_id)
         )
         return summary_doc["summary"] if summary_doc else None
     except Exception as e:
@@ -243,14 +245,28 @@ def render_task_with_metadata(task):
     """Render a task as a collapsible expander with full metadata."""
     from datetime import datetime
 
-    # Build header: status icon + priority + title
+    # Build header: status icon + priority + title + assignee badge
     status_icon = get_status_icon(task.status)
     priority_badge = get_priority_badge(task.priority) if task.priority else ""
-    header = f"{status_icon} {priority_badge} {task.title}"
+    assignee_badge = f"👤 {task.assignee}" if task.assignee else ""
+
+    # Add blocker indicator to header if task is blocked
+    blocker_indicator = " 🚧" if (task.blockers and len(task.blockers) > 0) else ""
+
+    # Add due date indicator if overdue
+    due_indicator = ""
+    if task.due_date and task.status != "done":
+        now = datetime.utcnow()
+        if task.due_date < now:
+            due_indicator = " ⚠️ OVERDUE"
+        elif (task.due_date - now).days <= 1:
+            due_indicator = " 📅 Due soon"
+
+    header = f"{status_icon} {priority_badge} {task.title} {assignee_badge}{blocker_indicator}{due_indicator}"
 
     with st.expander(header, expanded=False):
-        # Fetch episodic memory summary from Atlas
-        summary = get_task_episodic_summary(task)
+        # Fetch episodic memory summary from Atlas (cached)
+        summary = get_task_episodic_summary(str(task.id)) if task.id else None
 
         # Display episodic memory summary if available
         if summary:
@@ -269,11 +285,26 @@ def render_task_with_metadata(task):
                 st.caption("**Priority:**")
                 st.text(task.priority.title())
 
+            if task.assignee:
+                st.caption("**Assignee:**")
+                st.text(task.assignee)
+
             st.caption("**Created:**")
             created_date = task.created_at.strftime("%Y-%m-%d") if task.created_at else "N/A"
             st.text(created_date)
 
         with col2:
+            if task.due_date:
+                st.caption("**Due Date:**")
+                due_date_str = task.due_date.strftime("%Y-%m-%d")
+                now = datetime.utcnow()
+                if task.due_date < now and task.status != "done":
+                    st.error(f"⚠️ {due_date_str} (OVERDUE)")
+                elif (task.due_date - now).days <= 3:
+                    st.warning(f"📅 {due_date_str} (Soon)")
+                else:
+                    st.text(due_date_str)
+
             if task.started_at:
                 st.caption("**Started:**")
                 started_date = task.started_at.strftime("%Y-%m-%d")
@@ -287,6 +318,13 @@ def render_task_with_metadata(task):
             st.caption("**ID:**")
             task_id = str(task.id)[:8] if task.id else "N/A"
             st.text(task_id)
+
+        # Show blockers if available (prominent display)
+        if task.blockers and len(task.blockers) > 0:
+            st.divider()
+            st.caption(f"**🚧 Blockers ({len(task.blockers)}):**")
+            for blocker in task.blockers:
+                st.error(f"• {blocker}")
 
         # Show context if available
         if task.context:
@@ -418,7 +456,7 @@ def render_sidebar():
 
             # Collapsible memory stats
             with st.expander("📊 Memory Stats", expanded=False):
-                stats = get_memory_stats()
+                stats = get_memory_stats(st.session_state.session_id, st.session_state.user_id)
                 stat_cols = st.columns(5)
                 stat_data = [
                     ("Working", stats.get("working", 0)),
@@ -476,8 +514,28 @@ def render_sidebar():
                         if project.status:
                             st.caption(f"Status: {project.status.title()}")
 
-                        # Fetch project episodic memory summary from Atlas
-                        summary = get_project_episodic_summary(project)
+                        # Display stakeholders if available
+                        if project.stakeholders and len(project.stakeholders) > 0:
+                            stakeholders_text = ", ".join(project.stakeholders)
+                            st.caption(f"👥 Stakeholders: {stakeholders_text}")
+
+                        # Display recent updates if available
+                        if project.updates and len(project.updates) > 0:
+                            st.caption(f"📝 Recent Updates ({len(project.updates)}):")
+                            # Show last 2 updates
+                            for update in project.updates[-2:]:
+                                # Handle both dict and ProjectUpdate object
+                                if isinstance(update, dict):
+                                    update_date = update["date"].strftime("%m/%d") if isinstance(update.get("date"), datetime) else "N/A"
+                                    content = update.get("content", "")
+                                else:
+                                    # ProjectUpdate object
+                                    update_date = update.date.strftime("%m/%d") if isinstance(update.date, datetime) else "N/A"
+                                    content = update.content
+                                st.caption(f"  • {update_date}: {content[:80]}...")
+
+                        # Fetch project episodic memory summary from Atlas (cached)
+                        summary = get_project_episodic_summary(str(project.id)) if project.id else None
 
                         # Display project episodic memory summary if available
                         if summary:
@@ -591,6 +649,9 @@ def render_debug_panel():
 
             if is_slash:
                 st.info("⚡ **Slash Command** - Direct MongoDB (no LLM)")
+                # Show conversion if natural language was detected
+                if turn.get("converted_command"):
+                    st.success(f"💬 Natural language detected\n\n→ Converted to: `{turn['converted_command']}`")
             else:
                 st.info("🤖 **Agent** - Claude + tools")
 
@@ -655,7 +716,12 @@ def render_chat():
                     if message.get("is_command_result"):
                         render_command_result(message["content"])
                     elif message.get("is_slash_command"):
-                        st.markdown(f"⚡ `{message['content']}`")
+                        # If natural language was converted, show original query first
+                        if message.get("original_query") and message.get("original_query") != message["content"]:
+                            st.markdown(f'"{message["original_query"]}"')
+                            st.caption(f"→ Converted to: ⚡ `{message['content']}`")
+                        else:
+                            st.markdown(f"⚡ `{message['content']}`")
                         st.caption("*Direct MongoDB query*")
                     else:
                         st.markdown(message["content"])
@@ -663,6 +729,58 @@ def render_chat():
         # Chat input
         if prompt := st.chat_input("Try /tasks or ask a question..."):
             handle_input(prompt)
+
+        # Suggested prompts
+        header_col, shuffle_col = st.columns([5, 1])
+        with header_col:
+            st.caption("💡 **Try these:**")
+        with shuffle_col:
+            if st.button("🔄", key="shuffle_suggestions", help="Show different suggestions"):
+                import random
+                suggestions = [
+                    # Tier 1: Slash commands (new fields)
+                    ("/tasks assignee:Mike Chen", "⚡ Mike's tasks"),
+                    ("/tasks assignee:Sarah", "⚡ Sarah's tasks"),
+                    ("/tasks blocked", "⚡ Blocked tasks"),
+                    ("/tasks overdue", "⚡ Overdue tasks"),
+                    ("/tasks due:today", "⚡ Due today"),
+                    ("/tasks due:week", "⚡ Due this week"),
+                    ("/projects stakeholder:Mike Chen", "⚡ Mike's projects"),
+                    # Tier 2: Natural language → slash (new fields)
+                    ("What's Sarah working on?", "💬 Sarah's tasks"),
+                    ("What's blocked?", "💬 Blocked tasks"),
+                    ("What's overdue?", "💬 Overdue tasks"),
+                    ("What's due today?", "💬 Due today"),
+                    ("Show me Mike's projects", "💬 Mike's projects"),
+                    # Tier 3: LLM queries (complex filters)
+                    ("Show me Mike's tasks that are in progress", "🤖 Complex query"),
+                    ("What tasks are blocked in Project Alpha?", "🤖 Project blockers"),
+                    ("What projects is Sarah involved in?", "🤖 Stakeholder search"),
+                    # Tier 4: LLM actions (new fields)
+                    ("Create a task to review PR, assign to Sarah, due tomorrow", "🤖 Create task"),
+                    ("Add a blocker to the migration task: waiting on approval", "🤖 Add blocker"),
+                    ("Add Mike as a stakeholder to Voice Agent project", "🤖 Add stakeholder"),
+                ]
+                st.session_state.current_suggestions = random.sample(suggestions, 4)
+                st.rerun()
+
+        # Show suggestions
+        import random
+        if 'current_suggestions' not in st.session_state:
+            suggestions = [
+                ("/tasks assignee:Mike Chen", "⚡ Mike's tasks"),
+                ("What's Sarah working on?", "💬 Sarah's tasks"),
+                ("What's blocked?", "💬 Blocked tasks"),
+                ("Show me Mike's tasks that are in progress", "🤖 Complex query"),
+            ]
+            st.session_state.current_suggestions = suggestions
+
+        cols = st.columns(4)
+        for idx, (suggestion, label) in enumerate(st.session_state.current_suggestions):
+            with cols[idx]:
+                if st.button(label, key=f"suggest_{idx}", use_container_width=True, help=suggestion):
+                    handle_input(suggestion)
+                    st.rerun()
 
     with col_debug:
         render_debug_panel()
@@ -689,7 +807,8 @@ def handle_input(prompt: str):
         st.session_state.messages.append({
             "role": "user",
             "content": prompt,
-            "is_slash_command": True
+            "is_slash_command": True,
+            "original_query": original_prompt if nl_command else None
         })
 
         result = st.session_state.slash_executor.execute(parsed_command)
@@ -702,14 +821,16 @@ def handle_input(prompt: str):
 
         # Add to debug history
         turn_number = len(st.session_state.debug_history) + 1
+        debug_user_input = original_prompt if nl_command else prompt
         st.session_state.debug_history.append({
             "turn": turn_number,
-            "user_input": prompt,
+            "user_input": debug_user_input,
             "timestamp": datetime.now().strftime("%H:%M:%S"),
             "is_slash_command": True,
+            "converted_command": prompt if nl_command else None,
             "tool_calls": [{
                 "name": f"slash_{parsed_command['command']}",
-                "input": {"command": prompt},
+                "input": {"command": prompt, "original": debug_user_input},
                 "output": f"Success" if result.get("success") else f"Error: {result.get('error')}",
                 "duration_ms": result.get("duration_ms", 0),
                 "success": result.get("success", False)

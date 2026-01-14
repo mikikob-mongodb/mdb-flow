@@ -74,7 +74,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.db import MongoDB
 from memory.manager import MemoryManager
-from shared.embeddings import embed_document
+from shared.embeddings import embed_document, build_task_embedding_text, build_project_embedding_text
 from bson import ObjectId
 
 # =============================================================================
@@ -97,96 +97,276 @@ def get_projects_data() -> List[Dict[str, Any]]:
         {
             "_id": ObjectId(),
             "name": "Project Alpha",
-            "description": "Q4 infrastructure modernization initiative focusing on cloud migration and cost optimization",
+            "description": "Q4 infrastructure modernization initiative focusing on cloud migration and cost optimization. This multi-phase project aims to reduce TCO by 40% while improving system reliability and compliance. We're targeting migration of 15 core services to a hybrid cloud architecture by end of Q1 2026.",
+            "context": "Legacy infrastructure running on bare metal is becoming cost-prohibitive and limiting our ability to scale. Board approved $2M budget for modernization based on projected 3-year ROI.",
             "status": "active",
             "created_at": now - timedelta(days=30),
             "last_activity": now - timedelta(days=1),
             "user_id": DEMO_USER_ID,
-            "tags": ["infrastructure", "modernization", "cloud"],
-            "priority": "high"
+            "tags": ["infrastructure", "modernization", "cloud", "cost-optimization", "migration"],
+            "priority": "high",
+            "stakeholders": ["Mike Chen", "Sarah Thompson", "DevOps Team", "Finance"],
+            "notes": [
+                "Decision: Going with AWS for compute and MongoDB Atlas for data layer after evaluating 3 cloud providers",
+                "Risk identified: Legacy authentication system may need significant refactoring during migration",
+                "Stakeholder feedback: Finance wants monthly cost tracking dashboard to monitor savings"
+            ],
+            "methods": ["AWS ECS", "MongoDB Atlas", "Terraform", "GitLab CI/CD"],
+            "decisions": [
+                "Chose phased migration approach over big-bang to minimize risk",
+                "Will maintain hybrid cloud for 6 months during transition",
+                "DevOps team to own migration execution with external consulting support"
+            ],
+            "updates": [
+                {
+                    "date": now - timedelta(days=25),
+                    "content": "Project kickoff completed. Infrastructure audit revealed 18 services eligible for migration, 3 requiring major refactoring."
+                },
+                {
+                    "date": now - timedelta(days=15),
+                    "content": "Cloud provider evaluation complete. AWS selected for compute (ECS), MongoDB Atlas for databases. Estimated 42% cost reduction vs current spend."
+                },
+                {
+                    "date": now - timedelta(days=5),
+                    "content": "Phase 1 timeline approved: 6 weeks for non-critical services migration. Security compliance review scheduled for next week."
+                }
+            ]
         },
         {
             "_id": ObjectId(),
             "name": "Voice Agent Architecture",
-            "description": "Real-time audio processing demo with streaming TTS and STT integration",
+            "description": "Real-time audio processing demo with streaming TTS and STT integration for MongoDB Developer Day. Building production-ready reference architecture with WebSocket-based bidirectional audio streaming, conversation state management, and latency optimization. Target: sub-200ms end-to-end latency for natural conversational experience.",
+            "context": "Developer Day needs compelling voice agent demo to showcase MongoDB's real-time capabilities and checkpointing for conversation state. This will be the flagship demo for the event.",
             "status": "active",
             "created_at": now - timedelta(days=5),
             "last_activity": now - timedelta(hours=12),
             "user_id": DEMO_USER_ID,
-            "tags": ["voice", "real-time", "demo", "audio"],
-            "priority": "high"
+            "tags": ["voice", "real-time", "demo", "audio", "streaming", "websocket", "developer-day"],
+            "priority": "high",
+            "stakeholders": ["Mike Chen", "Developer Relations", "Demo Team"],
+            "notes": [
+                "Tech stack decision: Deepgram for STT (fastest in benchmarks), ElevenLabs for TTS (best voice quality)",
+                "Performance target: <200ms latency for conversational feel - requires careful optimization",
+                "Demo scenario: Customer support bot that can handle interruptions and multi-turn conversations"
+            ],
+            "methods": ["WebSocket", "Deepgram STT", "ElevenLabs TTS", "MongoDB Change Streams"],
+            "decisions": [
+                "Using WebSocket for bidirectional streaming instead of separate upload/download endpoints",
+                "Storing conversation state in MongoDB with change streams for real-time updates",
+                "Building web interface instead of mobile to reduce demo complexity"
+            ],
+            "updates": [
+                {
+                    "date": now - timedelta(days=4),
+                    "content": "Architecture design complete. Chose Deepgram Nova 2 for STT and ElevenLabs streaming API for TTS. Initial latency tests show 180ms achievable."
+                },
+                {
+                    "date": now - timedelta(days=2),
+                    "content": "Deepgram integration working. Real-time transcription with 95% accuracy on test conversations. Working on turn-taking logic next."
+                },
+                {
+                    "date": now - timedelta(hours=12),
+                    "content": "Conversation state management implemented with MongoDB. Testing interruption handling - need to improve response cancellation logic."
+                }
+            ]
         },
         {
             "_id": ObjectId(),
             "name": "LangGraph Integration",
-            "description": "Contributing MongoDB checkpointing backend to LangGraph ecosystem",
+            "description": "Contributing MongoDB checkpointing backend to LangGraph ecosystem as open-source contribution. Implementing BaseCheckpointSaver interface to enable graph state persistence in MongoDB Atlas. This will make MongoDB a first-class citizen in the LangChain ecosystem and provide production-grade state management for complex agent workflows.",
+            "context": "LangGraph currently only has PostgreSQL and SQLite checkpointers. MongoDB backend would unlock document-based state storage for complex agent graphs and enable our field teams to reference this in customer conversations.",
             "status": "active",
             "created_at": now - timedelta(days=20),
             "last_activity": now - timedelta(days=2),
             "user_id": DEMO_USER_ID,
-            "tags": ["open-source", "langgraph", "integration"],
-            "priority": "medium"
+            "tags": ["open-source", "langgraph", "integration", "contribution", "langchain"],
+            "priority": "medium",
+            "stakeholders": ["Mike Chen", "Open Source Team", "LangChain maintainers"],
+            "notes": [
+                "LangChain team expressed interest in MongoDB checkpointer - they'll fast-track review if we submit clean PR",
+                "Implementation challenge: Need to map LangGraph's tuple-based checkpoint keys to MongoDB document structure",
+                "Performance consideration: Using MongoDB change streams for graph state updates could enable real-time monitoring"
+            ],
+            "methods": ["Python", "LangGraph", "MongoDB", "pytest"],
+            "decisions": [
+                "Implementing full BaseCheckpointSaver interface for compatibility with all LangGraph features",
+                "Using separate collection for checkpoints vs threads for better query performance",
+                "Including migration guide in docs to help users switch from PostgreSQL checkpointer"
+            ],
+            "updates": [
+                {
+                    "date": now - timedelta(days=18),
+                    "content": "Initial implementation complete. All BaseCheckpointSaver methods implemented with MongoDB-specific optimizations."
+                },
+                {
+                    "date": now - timedelta(days=10),
+                    "content": "Test suite passing 47/50 tests. Debugging serialization issues with complex nested state objects."
+                },
+                {
+                    "date": now - timedelta(days=2),
+                    "content": "PR submitted to LangGraph repo! All tests passing. Waiting for maintainer review. Added comprehensive documentation and examples."
+                }
+            ]
         },
         {
             "_id": ObjectId(),
             "name": "Developer Day Presentation",
-            "description": "MongoDB Developer Day talk on agentic memory systems and retrieval patterns",
+            "description": "MongoDB Developer Day talk on agentic memory systems and retrieval patterns for AI applications. 30-minute technical deep-dive covering 5-tier memory architecture, episodic memory implementation, and semantic search optimization techniques. Target audience: senior developers building production AI systems.",
+            "context": "MongoDB Developer Day is January 15th with 800+ expected attendees. This is a key opportunity to position MongoDB as the database for AI agents and showcase our expertise in agentic architectures.",
             "status": "active",
             "created_at": now - timedelta(days=15),
             "last_activity": now,
             "user_id": DEMO_USER_ID,
-            "tags": ["presentation", "speaking", "mongodb"],
-            "priority": "high"
+            "tags": ["presentation", "speaking", "mongodb", "developer-day", "ai-agents"],
+            "priority": "high",
+            "stakeholders": ["Mike Chen", "Developer Relations", "Event Team", "Product Marketing"],
+            "notes": [
+                "Presentation slot: 2:30 PM on main stage - prime time slot right after lunch",
+                "Demo requirements: Need working voice agent demo + memory visualization dashboard",
+                "Audience level: Mostly senior devs familiar with AI but may not know memory patterns deeply"
+            ],
+            "methods": ["Keynote", "Live Demo", "MongoDB Atlas", "Streamlit"],
+            "decisions": [
+                "Focus on practical patterns over theory - show working code and architecture diagrams",
+                "Lead with impressive voice agent demo to hook audience, then explain memory architecture",
+                "Keep slides minimal (15 max) - spend more time on live demo and code walkthrough"
+            ],
+            "updates": [
+                {
+                    "date": now - timedelta(days=12),
+                    "content": "Outline approved by Dev Rel. Structure: 5 min intro, 10 min architecture deep-dive, 10 min live demo, 5 min Q&A."
+                },
+                {
+                    "date": now - timedelta(days=7),
+                    "content": "Slides 60% complete. Working on memory architecture diagrams. Need to finalize demo script this week."
+                },
+                {
+                    "date": now,
+                    "content": "Full dry run completed. Timing good at 28 minutes. Feedback: add more context on why episodic memory matters. Revising intro section."
+                }
+            ]
         },
 
         # Recently Completed Projects
         {
             "_id": ObjectId(),
             "name": "AgentOps Starter Kit",
-            "description": "Reference implementation for agent observability with OpenTelemetry and LangSmith",
+            "description": "Reference implementation for agent observability with OpenTelemetry and LangSmith integration. Production-ready starter kit that demonstrates best practices for instrumenting AI agents with distributed tracing, metrics collection, and LLM call monitoring. Released as open-source template repository with comprehensive documentation.",
+            "context": "Customers repeatedly asking how to monitor AI agents in production. Built this starter kit to provide reference architecture that field teams can demo and customers can fork.",
             "status": "completed",
             "created_at": now - timedelta(days=35),
             "completed_at": now - timedelta(days=7),
             "last_activity": now - timedelta(days=7),
             "user_id": DEMO_USER_ID,
-            "tags": ["observability", "agentops", "reference-architecture"],
-            "priority": "high"
+            "tags": ["observability", "agentops", "reference-architecture", "open-source", "production"],
+            "priority": "high",
+            "stakeholders": ["Mike Chen", "Field Engineering", "Product Marketing"],
+            "notes": [
+                "Shipped with 3 example agents: RAG, tool-calling, and multi-agent workflow",
+                "Documentation includes deployment guide for AWS, GCP, and Azure",
+                "LangSmith team featured it in their newsletter - good partnership signal"
+            ],
+            "methods": ["OpenTelemetry", "LangSmith", "Python", "Docker", "Grafana"],
+            "decisions": [
+                "Used OpenTelemetry for vendor-neutral instrumentation instead of proprietary solutions",
+                "Included both self-hosted (Grafana) and SaaS (LangSmith) observability options",
+                "Kept codebase minimal (<500 lines) to make it easy to understand and fork"
+            ],
+            "updates": [
+                {
+                    "date": now - timedelta(days=28),
+                    "content": "Initial implementation complete. All 3 example agents instrumented with OpenTelemetry traces and metrics."
+                },
+                {
+                    "date": now - timedelta(days=14),
+                    "content": "Documentation complete including architecture diagrams and deployment guides. Ready for review."
+                },
+                {
+                    "date": now - timedelta(days=7),
+                    "content": "Released v1.0! Published to GitHub, added to MongoDB AI resources page. Already seeing 20+ stars and 3 community PRs."
+                }
+            ]
         },
         {
             "_id": ObjectId(),
             "name": "Memory Engineering Blog Series",
-            "description": "Thought leadership content on context engineering and memory patterns for AI agents",
+            "description": "Thought leadership content on context engineering and memory patterns for AI agents. 4-part technical blog series covering working memory, episodic memory, semantic memory, and procedural memory implementations. Written for senior developers building production AI systems with concrete code examples and MongoDB-specific optimizations.",
+            "context": "Need to establish MongoDB thought leadership in AI agent space. Blog series positions us as experts in agent memory architecture while providing practical value to developer community.",
             "status": "completed",
             "created_at": now - timedelta(days=60),
             "completed_at": now - timedelta(days=25),
             "last_activity": now - timedelta(days=25),
             "user_id": DEMO_USER_ID,
-            "tags": ["content", "blog", "memory", "thought-leadership"],
-            "priority": "medium"
+            "tags": ["content", "blog", "memory", "thought-leadership", "technical-writing"],
+            "priority": "medium",
+            "stakeholders": ["Mike Chen", "Content Marketing", "Developer Relations"],
+            "notes": [
+                "Each post ~2000 words with working code examples and MongoDB queries",
+                "SEO research shows 'agent memory patterns' has growing search volume",
+                "Cross-promotion planned with LangChain and LlamaIndex communities"
+            ],
+            "methods": ["Technical Writing", "MongoDB", "Python", "Code Examples"],
+            "decisions": [
+                "Publishing on MongoDB blog for SEO benefit rather than Medium/personal blog",
+                "Including companion GitHub repo with full working examples for each pattern",
+                "Targeting senior developer audience - assuming familiarity with LLMs and databases"
+            ],
+            "updates": [
+                {
+                    "date": now - timedelta(days=50),
+                    "content": "Outlines complete for all 4 posts. Part 1 (Working Memory) first draft done, in review with Dev Rel."
+                },
+                {
+                    "date": now - timedelta(days=35),
+                    "content": "Parts 1 and 2 published! Great engagement: 5K views, 200+ shares. Comments asking for more real-world examples."
+                },
+                {
+                    "date": now - timedelta(days=25),
+                    "content": "Series complete! Part 4 published. Total series: 15K views, featured in 3 AI newsletters. Companion repo has 150 stars."
+                }
+            ]
         },
 
         # Planned Projects
         {
             "_id": ObjectId(),
             "name": "Gaming NPC Memory Demo",
-            "description": "Domain-specific hero demo showcasing persistent NPC memory and relationship tracking for gaming vertical",
+            "description": "Domain-specific hero demo showcasing persistent NPC memory and relationship tracking for gaming vertical. Build playable RPG demo where NPCs remember conversations, player actions, and relationship history using MongoDB's memory patterns. Designed to resonate with game developers and showcase MongoDB's fit for gaming use cases.",
+            "context": "Gaming is a strategic vertical for MongoDB. This demo will showcase how MongoDB's flexible schema and memory patterns enable rich NPC behavior that would be difficult with traditional game databases.",
             "status": "planned",
             "created_at": now - timedelta(days=3),
             "last_activity": now - timedelta(days=3),
             "user_id": DEMO_USER_ID,
-            "tags": ["gaming", "demo", "vertical", "npc"],
-            "priority": "medium"
+            "tags": ["gaming", "demo", "vertical", "npc", "memory", "relationships"],
+            "priority": "medium",
+            "stakeholders": ["Gaming Sales Team", "Product Marketing", "Mike Chen"],
+            "notes": [
+                "Target: GDC 2026 (March) for initial demo - 10 weeks to build",
+                "NPC behaviors: remember past conversations, react to player reputation, evolve relationships over time",
+                "Technical challenge: Real-time NPC memory retrieval needs to be <50ms to not impact gameplay"
+            ],
+            "methods": ["Unity", "MongoDB Atlas", "Vector Search", "LLM Integration"],
+            "decisions": []
         },
         {
             "_id": ObjectId(),
             "name": "Education Tutor Demo",
-            "description": "Adaptive tutoring reference app with student knowledge tracking and personalized learning paths",
+            "description": "Adaptive tutoring reference app with student knowledge tracking and personalized learning paths. AI tutor that maintains detailed student models including knowledge gaps, learning style preferences, and progress history. Demonstrates how MongoDB's memory patterns enable personalized education at scale.",
+            "context": "Education technology is another strategic vertical. This demo will show how MongoDB enables personalized learning experiences that adapt to each student's needs and learning history.",
             "status": "planned",
             "created_at": now - timedelta(days=1),
             "last_activity": now - timedelta(days=1),
             "user_id": DEMO_USER_ID,
-            "tags": ["education", "demo", "adaptive-learning"],
-            "priority": "low"
+            "tags": ["education", "demo", "adaptive-learning", "edtech", "personalization"],
+            "priority": "low",
+            "stakeholders": ["EdTech Sales Team", "Mike Chen"],
+            "notes": [
+                "Scope: Math tutoring for middle school - narrow domain makes AI behavior more reliable",
+                "Student model: track mastery of 50+ concepts, preferred explanation styles, common misconceptions",
+                "Privacy requirements: Need to ensure COPPA compliance for student data"
+            ],
+            "methods": ["Streamlit", "MongoDB Atlas", "OpenAI GPT-4", "Learning Analytics"],
+            "decisions": []
         }
     ]
 
@@ -214,8 +394,15 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "created_at": now - timedelta(days=25),
                 "completed_at": now - timedelta(days=20),
                 "user_id": DEMO_USER_ID,
-                "description": "Analyze findings from Q3 infrastructure audit",
-                "tags": ["audit", "review"]
+                "description": "Analyze findings from Q3 infrastructure audit conducted by external consultants. Identify critical issues, assess risk levels, and create prioritized action plan for modernization initiative. Report includes performance benchmarks, cost analysis, and security compliance gaps.",
+                "context": "Audit was commissioned to provide objective assessment before committing to $2M modernization budget. Results will inform migration strategy and timeline.",
+                "tags": ["audit", "review", "analysis"],
+                "assignee": "Mike Chen",
+                "notes": [
+                    "Key findings: 18 services eligible for cloud migration, 3 require major refactoring",
+                    "Performance issues: Database queries 3x slower than industry benchmarks",
+                    "Security gaps: 7 high-priority vulnerabilities identified in authentication layer"
+                ]
             },
             {
                 "_id": ObjectId(),
@@ -227,8 +414,15 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "created_at": now - timedelta(days=20),
                 "completed_at": now - timedelta(days=15),
                 "user_id": DEMO_USER_ID,
-                "description": "Align key stakeholders on modernization approach",
-                "tags": ["meeting", "stakeholders"]
+                "description": "Align key stakeholders on modernization approach, migration strategy, and timeline. Present audit findings, proposed architecture, and get buy-in from Finance, Engineering, and Executive leadership.",
+                "context": "Critical to get stakeholder alignment before detailed planning phase. Finance particularly concerned about cost overruns.",
+                "tags": ["meeting", "stakeholders", "alignment"],
+                "assignee": "Sarah Thompson",
+                "notes": [
+                    "Meeting scheduled for Dec 15th, 2 hours allocated",
+                    "Attendees: Mike (tech lead), Sarah (PM), Finance VP, CTO, DevOps manager",
+                    "Outcome: Unanimous approval for phased approach, monthly cost reporting requirement added"
+                ]
             },
             {
                 "_id": ObjectId(),
@@ -240,8 +434,20 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "created_at": now - timedelta(days=10),
                 "started_at": now - timedelta(days=8),
                 "user_id": DEMO_USER_ID,
-                "description": "Create phased migration timeline with dependencies",
-                "tags": ["planning", "timeline"]
+                "description": "Create detailed phased migration timeline with task dependencies, resource allocation, and risk mitigation strategies. Timeline must account for zero-downtime requirements and include rollback plans for each phase.",
+                "context": "Board wants to see detailed timeline before final budget approval. Need to demonstrate we've thought through dependencies and risks.",
+                "tags": ["planning", "timeline", "project-management"],
+                "assignee": "Mike Chen",
+                "due_date": now - timedelta(days=3),  # 3 days overdue
+                "blockers": [
+                    "Waiting on DevOps team capacity planning for Q1 2026",
+                    "Need to finalize AWS architecture before estimating Phase 1 duration"
+                ],
+                "notes": [
+                    "Draft structure: Phase 1 (6 weeks) - non-critical services, Phase 2 (8 weeks) - core services, Phase 3 (4 weeks) - auth refactor",
+                    "Dependencies mapped: Auth service must be last due to system-wide impact",
+                    "Risk: Holiday freeze in December will delay start by 2 weeks"
+                ]
             },
             {
                 "_id": ObjectId(),
@@ -252,8 +458,15 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "priority": "high",
                 "created_at": now - timedelta(days=3),
                 "user_id": DEMO_USER_ID,
-                "description": "Quantify expected ROI and TCO reduction",
-                "tags": ["analysis", "roi"]
+                "description": "Quantify expected ROI and TCO reduction over 3-year period. Build financial model comparing current infrastructure costs vs projected cloud costs including migration expenses. Present results to Finance for final budget approval.",
+                "context": "Finance needs detailed ROI projections before releasing full $2M budget. CFO specifically wants 3-year TCO comparison.",
+                "tags": ["analysis", "roi", "finance"],
+                "assignee": "Sarah Thompson",
+                "due_date": now + timedelta(days=2),  # Due soon (not overdue)
+                "notes": [
+                    "Initial calculations show 42% cost reduction by year 2",
+                    "Need to include: current hosting costs, AWS compute/storage costs, migration labor, training"
+                ]
             },
             {
                 "_id": ObjectId(),
@@ -264,8 +477,14 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "priority": "high",
                 "created_at": now - timedelta(days=2),
                 "user_id": DEMO_USER_ID,
-                "description": "Ensure modernization meets SOC2 requirements",
-                "tags": ["security", "compliance"]
+                "description": "Ensure modernization plan meets SOC2 Type II requirements and doesn't introduce new compliance risks. Review proposed architecture with security team and document compliance controls for each migration phase.",
+                "context": "Company is SOC2 certified and audit is in 4 months. Can't introduce compliance gaps during migration or we risk losing certification.",
+                "tags": ["security", "compliance", "soc2"],
+                "assignee": "Security Team",
+                "due_date": now - timedelta(days=5),  # 5 days overdue
+                "blockers": [
+                    "Security team backlog is 3 weeks out - may need to escalate for priority review"
+                ]
             },
             {
                 "_id": ObjectId(),
@@ -276,8 +495,14 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "priority": "low",
                 "created_at": now - timedelta(days=1),
                 "user_id": DEMO_USER_ID,
-                "description": "Create internal communication strategy for rollout",
-                "tags": ["communication", "planning"]
+                "description": "Create internal communication strategy for infrastructure modernization rollout. Plan includes: pre-migration announcements, phase-by-phase updates, troubleshooting resources, and success celebration.",
+                "context": "DevOps team stressed about managing user expectations during migration. Good communication can prevent panic when services are temporarily affected.",
+                "tags": ["communication", "planning", "change-management"],
+                "assignee": "Sarah Thompson",
+                "notes": [
+                    "Target audience: Engineering (100 people), Product (30 people), Customer Support (50 people)",
+                    "Channels: Slack announcements, email updates, documentation wiki"
+                ]
             }
         ])
 
@@ -295,8 +520,19 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "created_at": now - timedelta(days=5),
                 "started_at": now - timedelta(days=4),
                 "user_id": DEMO_USER_ID,
-                "description": "Design streaming architecture with WebSocket integration",
-                "tags": ["architecture", "websocket", "streaming"]
+                "description": "Design streaming architecture with WebSocket integration for bidirectional audio. Architecture must support real-time transcription, response generation, and audio playback with <200ms latency. Include conversation state persistence in MongoDB for demo continuity.",
+                "context": "This is the foundational architecture for Developer Day demo. Need to nail the streaming architecture first before building higher-level features.",
+                "tags": ["architecture", "websocket", "streaming", "real-time"],
+                "assignee": "Mike Chen",
+                "due_date": now - timedelta(days=1),  # 1 day overdue
+                "notes": [
+                    "Architecture decision: Using WebSocket for full-duplex communication instead of HTTP polling",
+                    "State storage: MongoDB change streams for real-time conversation updates",
+                    "Latency target: <200ms end-to-end for natural conversation feel"
+                ],
+                "blockers": [
+                    "Need to decide: Server-side audio buffering strategy to minimize latency"
+                ]
             },
             {
                 "_id": ObjectId(),
@@ -308,8 +544,15 @@ def get_tasks_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "created_at": now - timedelta(days=4),
                 "started_at": now - timedelta(days=3),
                 "user_id": DEMO_USER_ID,
-                "description": "Set up real-time speech-to-text with Deepgram API",
-                "tags": ["stt", "deepgram", "integration"]
+                "description": "Set up real-time speech-to-text with Deepgram Nova 2 API. Implement streaming transcription with interim results for real-time feedback. Handle audio format conversion (browser -> Deepgram) and implement error recovery for network issues.",
+                "context": "Deepgram selected after benchmarking 3 STT providers. Nova 2 model has best accuracy (95%) and lowest latency (140ms) for our use case.",
+                "tags": ["stt", "deepgram", "integration", "audio"],
+                "assignee": "Mike Chen",
+                "notes": [
+                    "API integration complete - achieving 140ms transcription latency",
+                    "Accuracy testing: 95% on customer support conversations, 88% with background noise",
+                    "Next: Implement punctuation and capitalization post-processing"
+                ]
             },
             {
                 "_id": ObjectId(),
@@ -730,6 +973,132 @@ def get_procedural_memory_data() -> List[Dict[str, Any]]:
     now = datetime.utcnow()
 
     return [
+        # ═════════════════════════════════════════════════════════════════
+        # WORKFLOWS - Multi-step operation patterns
+        # ═════════════════════════════════════════════════════════════════
+
+        {
+            "user_id": DEMO_USER_ID,
+            "memory_type": "procedural",
+            "rule_type": "workflow",
+            "name": "Create Task and Start Workflow",
+            "description": "Pattern for creating a task and immediately starting work on it",
+            "trigger_pattern": r"create.*task.*(?:then|and)\s+start",
+            "workflow": {
+                "steps": [
+                    {
+                        "step": 1,
+                        "action": "create_task",
+                        "extract_from_user": ["title", "project_name", "priority", "assignee", "due_date"],
+                        "capture_result": "task_id"
+                    },
+                    {
+                        "step": 2,
+                        "action": "start_task",
+                        "use_captured": {"task_id": "step_1.task_id"},
+                        "description": "Mark the newly created task as in_progress"
+                    }
+                ],
+                "success_criteria": "Both tools return success=true"
+            },
+            "examples": [
+                "Create a task for API docs, assign to Sarah, due tomorrow, then start it",
+                "Create high priority task for testing and start working on it"
+            ],
+            "times_used": 0,
+            "success_rate": 1.0,
+            "created_at": now,
+            "last_used": None,
+            "updated_at": now
+        },
+
+        {
+            "user_id": DEMO_USER_ID,
+            "memory_type": "procedural",
+            "rule_type": "workflow",
+            "name": "Query and Complete Workflow",
+            "description": "Pattern for finding tasks and completing the first/selected one",
+            "trigger_pattern": r"(show|what\'s|list).*(?:then|and)\s+(complete|mark.*done|finish)",
+            "workflow": {
+                "steps": [
+                    {
+                        "step": 1,
+                        "action": "get_tasks",
+                        "extract_from_user": ["status", "priority"],
+                        "capture_result": "tasks"
+                    },
+                    {
+                        "step": 2,
+                        "action": "confirm_selection",
+                        "description": "Show results and ask user which task to complete",
+                        "wait_for_user": True
+                    },
+                    {
+                        "step": 3,
+                        "action": "complete_task",
+                        "use_captured": {"task_id": "step_2.selected_task_id"}
+                    }
+                ],
+                "success_criteria": "Task status changes to done"
+            },
+            "examples": [
+                "Show me what's overdue, then complete the first one",
+                "What's blocked? Mark the top one as done"
+            ],
+            "times_used": 0,
+            "success_rate": 1.0,
+            "created_at": now,
+            "last_used": None,
+            "updated_at": now
+        },
+
+        {
+            "user_id": DEMO_USER_ID,
+            "memory_type": "procedural",
+            "rule_type": "workflow",
+            "name": "Search and Add Note Workflow",
+            "description": "Pattern for finding a task and adding a note to it",
+            "trigger_pattern": r"add.*note.*to|note.*on.*task",
+            "workflow": {
+                "steps": [
+                    {
+                        "step": 1,
+                        "action": "search_tasks",
+                        "extract_from_user": ["task_reference"],
+                        "capture_result": "tasks"
+                    },
+                    {
+                        "step": 2,
+                        "action": "confirm_selection",
+                        "description": "Ask which task if multiple matches",
+                        "wait_for_user": True
+                    },
+                    {
+                        "step": 3,
+                        "action": "add_note_to_task",
+                        "use_captured": {
+                            "task_id": "step_2.selected_task_id",
+                            "note": "user_input.note_content"
+                        }
+                    }
+                ],
+                "success_criteria": "Note appears in task's notes array"
+            },
+            "examples": [
+                "Add a note to the migration task: completed phase 1",
+                "Note on API docs task: reviewed by Sarah"
+            ],
+            "times_used": 0,
+            "success_rate": 1.0,
+            "created_at": now,
+            "last_used": None,
+            "updated_at": now
+        },
+
+        # ═════════════════════════════════════════════════════════════════
+        # TEMPLATES - Project and task generation patterns
+        # ═════════════════════════════════════════════════════════════════
+
         # GTM Roadmap Template (critical for presentation finale)
         {
             "user_id": DEMO_USER_ID,
@@ -1282,9 +1651,11 @@ def seed_projects(db, clean: bool = False, skip_embeddings: bool = False) -> int
 
         # Generate embedding for semantic search
         if not skip_embeddings:
-            # Create searchable text: name + description
-            # Enables queries like: "infrastructure project" → Project Alpha
-            searchable_text = f"{project['name']} {project['description']}"
+            # Create comprehensive searchable text including:
+            # name, description, context, notes, updates, stakeholders, methods, decisions
+            # Enables richer queries like: "infrastructure project" → Project Alpha
+            # "what's Mike working on" → projects with Mike as stakeholder
+            searchable_text = build_project_embedding_text(project)
 
             try:
                 project["embedding"] = embed_document(searchable_text)
@@ -1339,11 +1710,11 @@ def seed_tasks(db, clean: bool = False, skip_embeddings: bool = False) -> int:
 
         # Generate embedding for semantic search
         if not skip_embeddings:
-            # Create searchable text: title + description (if exists)
-            # Enables queries like: "debugging task" → Create debugging methodologies doc
-            searchable_text = task['title']
-            if task.get('description'):
-                searchable_text += f" {task['description']}"
+            # Create comprehensive searchable text including:
+            # title, description, context, notes, blockers, assignee, priority
+            # Enables richer queries like: "debugging task" → Create debugging methodologies doc
+            # "what's blocking Mike's work" → tasks with blockers assigned to Mike
+            searchable_text = build_task_embedding_text(task)
 
             try:
                 task["embedding"] = embed_document(searchable_text)

@@ -6,6 +6,12 @@ This directory contains comprehensive session summaries documenting the developm
 
 ### January 2026
 
+- **[2026-01-13-enrichment-fields-procedural-memory.md](./2026-01-13-enrichment-fields-procedural-memory.md)** - Enrichment field display & procedural memory expansion
+  - Fixed compound query pattern (assignee + status)
+  - Dynamic table columns for enrichment fields (assignee, due_date, blockers, stakeholders)
+  - Updated tool result compression to preserve enrichment data
+  - Created 4 comprehensive procedural memory documents (32 workflow patterns cataloged)
+
 - **[2026-01-13-episodic-memory-implementation.md](./2026-01-13-episodic-memory-implementation.md)** - Episodic memory storage in Atlas
   - Phase 1: On-demand UI generation
   - Phase 2: Persistent storage with auto-generation hooks

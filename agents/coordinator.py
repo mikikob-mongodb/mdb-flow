@@ -176,7 +176,7 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "create_task",
-        "description": "Create a new task in a project. Requires project name - no orphan tasks allowed. Use when user says 'create a task', 'add a task', 'make a new task', etc.",
+        "description": "Create a new task in a project. IMPORTANT: Use assignee, due_date, and blockers parameters when mentioned - do NOT put them in context. Returns task_id in result which can be used with start_task, complete_task, or add_note_to_task for multi-step operations (e.g., create then start).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -195,7 +195,20 @@ COORDINATOR_TOOLS = [
                 },
                 "context": {
                     "type": "string",
-                    "description": "Optional context/description for the task"
+                    "description": "Optional context/description for the task. Do NOT use this for assignee, due_date, or blockers."
+                },
+                "assignee": {
+                    "type": "string",
+                    "description": "Person or team responsible. REQUIRED when user says 'assign to X'. Use full name (e.g., 'Sarah Thompson'). Do NOT put in context."
+                },
+                "due_date": {
+                    "type": "string",
+                    "description": "Due date when user says 'due X'. Pass natural language as-is (e.g., 'in 5 days', 'tomorrow'). Do NOT put in context."
+                },
+                "blockers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of blockers preventing progress. Do NOT put in context."
                 }
             },
             "required": ["title", "project_name"]
@@ -203,7 +216,7 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "update_task",
-        "description": "Update an existing task's title, priority, context, status, or move it to a different project.",
+        "description": "Update an existing task's fields including assignee, due_date, and blockers. Do NOT put these in context.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -222,7 +235,7 @@ COORDINATOR_TOOLS = [
                 },
                 "context": {
                     "type": "string",
-                    "description": "New or additional context"
+                    "description": "New or additional context. Do NOT use for assignee, due_date, or blockers."
                 },
                 "status": {
                     "type": "string",
@@ -232,6 +245,19 @@ COORDINATOR_TOOLS = [
                 "project_name": {
                     "type": "string",
                     "description": "Move task to this project (will look up by name)"
+                },
+                "assignee": {
+                    "type": "string",
+                    "description": "New assignee. Use when changing who is responsible. Do NOT put in context."
+                },
+                "due_date": {
+                    "type": "string",
+                    "description": "New due date in natural language (e.g., 'in 5 days', 'tomorrow'). Do NOT put in context."
+                },
+                "blockers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Updated list of blockers (replaces existing). Do NOT put in context."
                 }
             },
             "required": ["task_id"]
@@ -629,6 +655,31 @@ class CoordinatorAgent:
                 }
                 action_desc = action_descriptions.get(rule['action_type'], rule['action_type'])
                 parts.append(f"  • When user says \"{rule['trigger_pattern']}\" → {action_desc}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # WORKFLOWS (Procedural Memory - Multi-step patterns)
+        # ═══════════════════════════════════════════════════════════════
+
+        workflows = self.memory.get_workflows(self.user_id)
+        if workflows:
+            parts.append("")  # Blank line separator
+            parts.append("Available Workflows (Procedural Memory):")
+            for workflow in workflows[:3]:  # Limit to top 3 most relevant
+                parts.append(f"  • {workflow['name']}: {workflow['description']}")
+                steps = workflow.get('workflow', {}).get('steps', [])
+                if steps:
+                    parts.append(f"    Steps:")
+                    for step in steps[:3]:  # Show first 3 steps
+                        action = step.get('action', 'unknown')
+                        desc = step.get('description', '')
+                        if desc:
+                            parts.append(f"      {step['step']}. {action} - {desc}")
+                        else:
+                            parts.append(f"      {step['step']}. {action}")
+                examples = workflow.get('examples', [])
+                if examples:
+                    parts.append(f"    Examples: \"{examples[0]}\"")
+                parts.append("")  # Blank line after each workflow
 
         # ═══════════════════════════════════════════════════════════════
         # DISAMBIGUATION (Short-term pending selections)
@@ -1801,6 +1852,9 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 project_name = tool_input["project_name"]
                 priority = tool_input.get("priority", "medium")
                 context = tool_input.get("context", "")
+                assignee = tool_input.get("assignee")
+                due_date = tool_input.get("due_date")
+                blockers = tool_input.get("blockers")
 
                 # Look up project by name
                 projects = self.retrieval_agent.hybrid_search_projects(project_name, limit=1)
@@ -1818,7 +1872,10 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         title=title,
                         project_id=str(project_id),
                         priority=priority,
-                        context=context
+                        context=context,
+                        assignee=assignee,
+                        due_date=due_date,
+                        blockers=blockers
                     )
 
             elif tool_name == "update_task":
@@ -1829,6 +1886,9 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 context = tool_input.get("context")
                 status = tool_input.get("status")
                 project_name = tool_input.get("project_name")
+                assignee = tool_input.get("assignee")
+                due_date = tool_input.get("due_date")
+                blockers = tool_input.get("blockers")
 
                 # Look up project if moving to different project
                 project_id = None
@@ -1851,7 +1911,10 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         priority=priority,
                         context=context,
                         status=status,
-                        project_id=project_id
+                        project_id=project_id,
+                        assignee=assignee,
+                        due_date=due_date,
+                        blockers=blockers
                     )
 
             elif tool_name == "stop_task":
@@ -2335,6 +2398,40 @@ Execute the rule action: {rule_match['action']}
                 logger.info(f"🔔 Rule triggered: '{rule_match['trigger']}' → {rule_match['action']}")
 
         # ═══════════════════════════════════════════════════════════════
+        # WORKFLOW MATCHING: Check for multi-step procedural patterns
+        # ═══════════════════════════════════════════════════════════════
+
+        workflow_match = None
+        if self.memory_config.get("context_injection") and self.memory:
+            workflow_match = self.memory.get_workflow_for_pattern(self.user_id, user_message)
+            if workflow_match:
+                # Inject workflow execution guide into system prompt
+                workflow_steps = workflow_match.get('workflow', {}).get('steps', [])
+                steps_text = "\n".join([
+                    f"  {step['step']}. {step['action']} - {step.get('description', 'Execute this action')}"
+                    for step in workflow_steps[:5]  # Show first 5 steps
+                ])
+
+                workflow_directive = f"""
+
+<workflow_match>
+MATCHED WORKFLOW: "{workflow_match['name']}"
+{workflow_match['description']}
+
+Follow these steps:
+{steps_text}
+
+IMPORTANT:
+- Extract task_id from create_task result and use it in start_task
+- Execute steps sequentially using multiple tool calls
+- Each tool call will return results you can use in the next step
+</workflow_match>
+"""
+                system_prompt += workflow_directive
+                self.memory_ops["workflow_matched"] = workflow_match['name']
+                logger.info(f"🔄 Workflow matched: '{workflow_match['name']}' with {len(workflow_steps)} steps")
+
+        # ═══════════════════════════════════════════════════════════════
         # MULTI-STEP ROUTING: Check if request contains multiple steps
         # ═══════════════════════════════════════════════════════════════
 
@@ -2524,6 +2621,16 @@ Execute the rule action: {rule_match['action']}
         logger.info(f"📊 System prompt length: {len(system_prompt)} chars")
         logger.info("=" * 80)
 
+        # Detect if this is an action request that requires tool use
+        user_message = messages[-1].get('content', '') if messages else ''
+        action_keywords = ['create', 'update', 'complete', 'start', 'add', 'mark', 'assign', 'change', 'delete', 'remove', 'show', 'list', 'what', 'get']
+        requires_tool = any(keyword in user_message.lower() for keyword in action_keywords)
+
+        llm_kwargs = {}
+        if requires_tool:
+            llm_kwargs['tool_choice'] = {"type": "any"}  # Force tool use
+            logger.info("🔧 Forcing tool use for action/query request")
+
         llm_start = time.time()
         response = self.llm.generate_with_tools(
             messages=messages,
@@ -2531,7 +2638,8 @@ Execute the rule action: {rule_match['action']}
             system=system_prompt,
             max_tokens=4096,
             temperature=0.3,
-            cache_prompts=cache_prompts
+            cache_prompts=cache_prompts,
+            **llm_kwargs
         )
         llm_duration = int((time.time() - llm_start) * 1000)
 

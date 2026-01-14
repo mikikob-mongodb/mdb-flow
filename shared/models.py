@@ -35,6 +35,16 @@ class ActivityLogEntry(BaseModel):
         json_encoders = {datetime: lambda v: v.isoformat()}
 
 
+class ProjectUpdate(BaseModel):
+    """Status update for a project."""
+
+    date: datetime
+    content: str
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
 class Task(BaseModel):
     """Task data model."""
 
@@ -46,6 +56,11 @@ class Task(BaseModel):
     context: str = ""
     notes: List[str] = Field(default_factory=list)
     activity_log: List[ActivityLogEntry] = Field(default_factory=list)
+
+    # New enrichment fields
+    assignee: Optional[str] = None  # Who's responsible
+    blockers: List[str] = Field(default_factory=list)  # What's blocking progress
+    due_date: Optional[datetime] = None  # When it's due
 
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -88,6 +103,10 @@ class Project(BaseModel):
     methods: List[str] = Field(default_factory=list)  # Technologies/approaches
     decisions: List[str] = Field(default_factory=list)
     activity_log: List[ActivityLogEntry] = Field(default_factory=list)
+
+    # New enrichment fields
+    stakeholders: List[str] = Field(default_factory=list)  # Who's involved
+    updates: List[ProjectUpdate] = Field(default_factory=list)  # Status updates
 
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
