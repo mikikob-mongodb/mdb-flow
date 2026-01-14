@@ -173,7 +173,7 @@ class MCPAgent:
 
         Returns:
             Dict with: success, result, source, discovery_id, mcp_server,
-            tool_used, execution_time_ms
+            tool_used, execution_time_ms, cached (optional)
         """
         start = time.time()
 
@@ -187,6 +187,45 @@ class MCPAgent:
                 "error": "No MCP servers connected",
                 "source": "failed"
             }
+
+        # 0. Check semantic memory cache FIRST (before making external calls)
+        if user_id and self.memory:
+            cached_knowledge = self.memory.search_knowledge(
+                user_id=user_id,
+                query=user_request,
+                limit=3
+            )
+
+            # If we have a high-confidence cache hit, return it
+            if cached_knowledge and len(cached_knowledge) > 0:
+                best_match = cached_knowledge[0]
+                cache_score = best_match.get("score", 0)
+
+                if cache_score >= 0.8:
+                    logger.info(
+                        f"📚 Cache HIT for '{user_request[:50]}...' "
+                        f"(score: {cache_score:.2f})"
+                    )
+                    execution_time = int((time.time() - start) * 1000)
+
+                    # Format cached results
+                    cached_results = [best_match.get("result", "")]
+
+                    return {
+                        "success": True,
+                        "result": cached_results,
+                        "source": "semantic_cache",
+                        "cached": True,
+                        "cache_score": cache_score,
+                        "original_source": best_match.get("source", "unknown"),
+                        "cached_at": best_match.get("created_at"),
+                        "execution_time_ms": execution_time
+                    }
+                else:
+                    logger.debug(
+                        f"Cache score too low ({cache_score:.2f}), "
+                        f"will make fresh search"
+                    )
 
         # 1. Check for similar previous discovery
         previous = self.discovery_store.find_similar_discovery(
@@ -242,11 +281,37 @@ class MCPAgent:
             f"(success={success}, {execution_time}ms)"
         )
 
+        # 5. Cache successful results to semantic memory for future use
+        if success and user_id and self.memory and result.get("content"):
+            try:
+                # Format result content for caching
+                content = result.get("content", [])
+                if isinstance(content, list):
+                    result_text = "\n".join(str(item) for item in content)
+                else:
+                    result_text = str(content)
+
+                # Cache the knowledge
+                self.memory.cache_knowledge(
+                    user_id=user_id,
+                    query=user_request,
+                    results=result_text,
+                    source=f"mcp_{solution['mcp_server']}"
+                )
+                logger.info(
+                    f"🆕 Cached new knowledge from {solution['mcp_server']} "
+                    f"for query: '{user_request[:50]}...'"
+                )
+            except Exception as e:
+                # Don't fail the request if caching fails
+                logger.error(f"Failed to cache knowledge: {e}")
+
         return {
             "success": success,
             "result": result.get("content"),
             "error": result.get("error"),
             "source": "new_discovery",
+            "cached": False,  # This is a new discovery, not from cache
             "discovery_id": discovery_id,
             "mcp_server": solution["mcp_server"],
             "tool_used": solution["tool_used"],

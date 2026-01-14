@@ -518,6 +518,14 @@ The selection number is 1-based (1 = first result, 2 = second result, etc.)""",
             },
             "required": ["selection"]
         }
+    },
+    {
+        "name": "list_templates",
+        "description": "List all available project templates with their phases and task counts. Use when user asks 'what templates do I have', 'show me templates', 'list templates', or 'what project templates are available'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
     }
 ]
 
@@ -838,33 +846,75 @@ Use this memory context to:
         # ═══════════════════════════════════════════════════════════════
 
         msg_lower = user_message.lower()
+        import re
 
-        # Focus project preference
+        # Focus/context setting patterns (expanded for natural language)
         focus_patterns = [
+            ("i'm focusing on", "explicit"),
+            ("i am focusing on", "explicit"),
             ("focusing on", "explicit"),
             ("focus on", "explicit"),
+            ("i'm working on", "explicit"),
+            ("i am working on", "explicit"),
             ("working on", "inferred"),
             ("let's work on", "explicit"),
             ("i want to work on", "explicit"),
-            ("switch to", "explicit")
+            ("switch to", "explicit"),
+            ("i'm building", "explicit"),
+            ("i am building", "explicit"),
+            ("building", "inferred"),
+            ("set focus to", "explicit"),
+            ("set context to", "explicit"),
+            ("my focus is", "explicit"),
+            ("my context is", "explicit")
         ]
 
         for pattern, source in focus_patterns:
             if pattern in msg_lower:
-                # Extract project name (simple extraction)
-                words_after = msg_lower.split(pattern)[1].strip().split()[:3]
-                project_name = " ".join(words_after).strip(".,!?")
+                # Extract focus/context (better extraction with regex)
+                rest_of_message = msg_lower.split(pattern, 1)[1].strip()
 
-                # Save to long-term semantic memory
-                if self.memory and self.user_id and project_name:
-                    self.memory.record_preference(
-                        user_id=self.user_id,
-                        key="focus_project",
-                        value=project_name,
-                        source=source,
-                        confidence=0.9 if source == "explicit" else 0.7
-                    )
-                    self.memory_ops["preference_recorded"] = True
+                # Try to extract quoted text first (e.g., "gaming demo")
+                quote_match = re.search(r'["\']([^"\']+)["\']', rest_of_message)
+                if quote_match:
+                    focus_text = quote_match.group(1)
+                else:
+                    # Extract until punctuation or common stop words
+                    words = rest_of_message.split()
+                    stop_words = {'for', 'with', 'using', 'and', 'or', 'but', 'because'}
+                    focus_words = []
+                    for word in words[:5]:  # Limit to 5 words
+                        cleaned = word.strip(".,!?;:")
+                        if cleaned in stop_words:
+                            break
+                        focus_words.append(cleaned)
+                    focus_text = " ".join(focus_words)
+
+                if focus_text and len(focus_text) > 1:
+                    # Update WORKING MEMORY (session context) immediately
+                    updates["focus"] = focus_text
+                    updates["context"] = focus_text
+
+                    # Also try to detect if it's a project name
+                    # (contains words like "project", "demo", "app", etc.)
+                    if any(word in focus_text for word in ["project", "demo", "app", "system"]):
+                        updates["current_project"] = focus_text
+
+                    # Save to long-term semantic memory
+                    if self.memory and self.user_id:
+                        self.memory.record_preference(
+                            user_id=self.user_id,
+                            key="focus_context",
+                            value=focus_text,
+                            source=source,
+                            confidence=0.9 if source == "explicit" else 0.7
+                        )
+                        self.memory_ops["preference_recorded"] = True
+
+                        logger.info(
+                            f"📌 Context set via natural language: '{focus_text}' "
+                            f"(pattern: '{pattern}')"
+                        )
                 break
 
         # Priority preference
@@ -2157,6 +2207,44 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                 "success": False,
                                 "error": f"Invalid selection {selection}. Valid options: 1-{len(pending.get('results', []))}"
                             }
+
+            elif tool_name == "list_templates":
+                # List all available project templates
+                if not self.memory or not self.user_id:
+                    result = {
+                        "success": False,
+                        "error": "Memory not available or user not set"
+                    }
+                else:
+                    # Get all templates from procedural memory
+                    templates = list(self.db.memory_procedural.find({
+                        "user_id": self.user_id,
+                        "rule_type": "template"
+                    }))
+
+                    # Format templates for display
+                    formatted_templates = []
+                    for tmpl in templates:
+                        phases = tmpl.get("phases", [])
+                        total_tasks = sum(len(phase.get("tasks", [])) for phase in phases)
+
+                        formatted_templates.append({
+                            "name": tmpl.get("name", "Unnamed Template"),
+                            "description": tmpl.get("description", ""),
+                            "phases": len(phases),
+                            "total_tasks": total_tasks,
+                            "phase_names": [p.get("name", "") for p in phases],
+                            "trigger": tmpl.get("trigger", ""),
+                            "times_used": tmpl.get("times_used", 0)
+                        })
+
+                    result = {
+                        "success": True,
+                        "templates": formatted_templates,
+                        "count": len(formatted_templates)
+                    }
+
+                    logger.info(f"📋 Listed {len(formatted_templates)} templates for user {self.user_id}")
 
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
