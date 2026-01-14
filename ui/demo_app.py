@@ -431,41 +431,32 @@ def render_sidebar():
             memory_enabled = st.toggle("", value=True, key="memory_master")
 
         if memory_enabled:
-            # Compact 2-column grid of all 5 memory types
-            col1, col2 = st.columns(2)
-            with col1:
-                working = st.checkbox("Working", value=True, key="mem_working",
-                                     help="Session context (2hr TTL)")
-                episodic = st.checkbox("Episodic", value=True, key="mem_episodic",
-                                      help="Action history (persistent)")
-                semantic = st.checkbox("Semantic", value=True, key="mem_semantic",
-                                      help="Learned preferences (persistent)")
-            with col2:
-                procedural = st.checkbox("Procedural", value=True, key="mem_procedural",
-                                        help="Templates & workflows (persistent)")
-                shared = st.checkbox("Shared", value=True, key="mem_shared",
-                                    help="Agent handoffs (5min TTL)")
+            # 3 persistent memory types
+            episodic = st.checkbox("Episodic", value=True, key="mem_episodic",
+                                  help="Action history (persistent)")
+            semantic = st.checkbox("Semantic", value=True, key="mem_semantic",
+                                  help="Learned preferences (persistent)")
+            procedural = st.checkbox("Procedural", value=True, key="mem_procedural",
+                                    help="Templates & workflows (persistent)")
 
             # Update coordinator memory config
-            # Map individual toggles to coordinator's expected format
+            # Working and shared memory always enabled when memory is on
             if coordinator:
                 coordinator.memory_config = {
-                    "short_term": working,  # Working memory
+                    "short_term": True,  # Working memory always on
                     "long_term": episodic or semantic or procedural,  # Any long-term memory type
-                    "shared": shared,  # Shared memory
+                    "shared": True,  # Shared memory always on
                     "context_injection": True  # Always inject when memory enabled
                 }
 
             # Collapsible memory stats
             with st.expander("📊 Memory Stats", expanded=False):
                 stats = get_memory_stats(st.session_state.session_id, st.session_state.user_id)
-                stat_cols = st.columns(5)
+                stat_cols = st.columns(3)
                 stat_data = [
-                    ("Working", stats.get("working", 0)),
                     ("Episodic", stats.get("episodic", 0)),
                     ("Semantic", stats.get("semantic", 0)),
-                    ("Procedural", stats.get("procedural", 0)),
-                    ("Shared", stats.get("shared", 0))
+                    ("Procedural", stats.get("procedural", 0))
                 ]
                 for col, (name, value) in zip(stat_cols, stat_data):
                     with col:
