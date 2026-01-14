@@ -51,6 +51,7 @@ class MemoryManager:
         # Session context, handoffs, and disambiguation now handled in-memory
         # No database collection needed
         self._session_contexts = {}  # session_id -> context dict
+        self._agent_working = {}  # (session_id, agent_id) -> working memory dict
         self._handoffs = {}  # handoff_id -> handoff dict
         self._disambiguations = {}  # session_id -> disambiguation dict
 
@@ -133,23 +134,17 @@ class MemoryManager:
             pass
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHORT-TERM: SESSION CONTEXT
+    # WORKING MEMORY: SESSION CONTEXT (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def read_session_context(self, session_id: str) -> Optional[Dict]:
-        """Read session-level context."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "memory_type": "session_context"
-        })
-        return doc.get("context") if doc else None
+        """Read session-level context from in-memory storage."""
+        session_data = self._session_contexts.get(session_id, {})
+        return session_data.get("context")
 
     def update_session_context(self, session_id: str, updates: Dict,
                                user_id: str = None) -> None:
-        """Merge updates into session context."""
-        now = datetime.utcnow()
-        expires = now + timedelta(hours=2)
-
+        """Merge updates into session context (in-memory)."""
         # Get existing context
         existing = self.read_session_context(session_id) or {}
 
@@ -162,149 +157,110 @@ class MemoryManager:
             else:
                 existing[key] = value
 
-        self.short_term.update_one(
-            {"session_id": session_id, "memory_type": "session_context"},
-            {
-                "$set": {
-                    "context": existing,
-                    "updated_at": now,
-                    "expires_at": expires
-                },
-                "$setOnInsert": {
-                    "created_at": now,
-                    "user_id": user_id,
-                    "agent_id": None
-                }
-            },
-            upsert=True
-        )
+        # Store in memory
+        if session_id not in self._session_contexts:
+            self._session_contexts[session_id] = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "created_at": datetime.utcnow()
+            }
+
+        self._session_contexts[session_id]["context"] = existing
+        self._session_contexts[session_id]["updated_at"] = datetime.utcnow()
 
     def clear_session_context(self, session_id: str) -> None:
-        """Clear session context."""
-        self.short_term.delete_one({
-            "session_id": session_id,
-            "memory_type": "session_context"
-        })
+        """Clear session context from in-memory storage."""
+        if session_id in self._session_contexts:
+            del self._session_contexts[session_id]
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHORT-TERM: AGENT WORKING MEMORY
+    # WORKING MEMORY: AGENT WORKING MEMORY (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def read_agent_working(self, session_id: str, agent_id: str) -> Optional[Dict]:
-        """Read agent's working memory."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "agent_id": agent_id,
-            "memory_type": "agent_working"
-        })
-        return doc.get("working") if doc else None
+        """Read agent's working memory from in-memory storage."""
+        key = (session_id, agent_id)
+        agent_data = self._agent_working.get(key, {})
+        return agent_data.get("working")
 
     def update_agent_working(self, session_id: str, agent_id: str,
                             updates: Dict) -> None:
-        """Update agent's working memory."""
-        now = datetime.utcnow()
-        expires = now + timedelta(hours=2)
+        """Update agent's working memory in in-memory storage."""
+        key = (session_id, agent_id)
 
-        self.short_term.update_one(
-            {
+        # Get existing working memory
+        existing = self.read_agent_working(session_id, agent_id) or {}
+
+        # Apply updates
+        for k, v in updates.items():
+            existing[k] = v
+
+        # Store back
+        if key not in self._agent_working:
+            self._agent_working[key] = {
                 "session_id": session_id,
                 "agent_id": agent_id,
-                "memory_type": "agent_working"
-            },
-            {
-                "$set": {
-                    **{f"working.{k}": v for k, v in updates.items()},
-                    "updated_at": now,
-                    "expires_at": expires
-                },
-                "$setOnInsert": {
-                    "created_at": now,
-                    "memory_type": "agent_working"
-                }
-            },
-            upsert=True
-        )
+                "created_at": datetime.utcnow()
+            }
+
+        self._agent_working[key]["working"] = existing
+        self._agent_working[key]["updated_at"] = datetime.utcnow()
 
     def clear_agent_working(self, session_id: str, agent_id: str) -> None:
-        """Clear agent's working memory."""
-        self.short_term.delete_one({
-            "session_id": session_id,
-            "agent_id": agent_id,
-            "memory_type": "agent_working"
-        })
+        """Clear agent's working memory from in-memory storage."""
+        key = (session_id, agent_id)
+        if key in self._agent_working:
+            del self._agent_working[key]
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHORT-TERM: DISAMBIGUATION
+    # WORKING MEMORY: DISAMBIGUATION (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def store_disambiguation(self, session_id: str, query: str,
                             results: List[Dict], source_agent: str) -> None:
-        """Store search results for disambiguation."""
+        """Store search results for disambiguation in in-memory storage."""
         now = datetime.utcnow()
-        expires = now + timedelta(hours=2)
 
         # Add index to each result
         indexed_results = [
             {"index": i, **r} for i, r in enumerate(results[:5])
         ]
 
-        self.short_term.update_one(
-            {"session_id": session_id, "memory_type": "disambiguation"},
-            {
-                "$set": {
-                    "disambiguation": {
-                        "query": query,
-                        "results": indexed_results,
-                        "awaiting_selection": True,
-                        "source_agent": source_agent,
-                        "created_at": now
-                    },
-                    "updated_at": now,
-                    "expires_at": expires
-                },
-                "$setOnInsert": {
-                    "created_at": now,
-                    "agent_id": None
-                }
-            },
-            upsert=True
-        )
+        self._disambiguations[session_id] = {
+            "session_id": session_id,
+            "query": query,
+            "results": indexed_results,
+            "awaiting_selection": True,
+            "source_agent": source_agent,
+            "created_at": now,
+            "updated_at": now
+        }
 
     def resolve_disambiguation(self, session_id: str, index: int) -> Optional[Dict]:
-        """Resolve disambiguation by index."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "memory_type": "disambiguation"
-        })
+        """Resolve disambiguation by index from in-memory storage."""
+        disambiguation = self._disambiguations.get(session_id)
 
-        if not doc:
+        if not disambiguation:
             return None
 
-        results = doc.get("disambiguation", {}).get("results", [])
+        results = disambiguation.get("results", [])
         if index < 0 or index >= len(results):
             return None
 
         selected = results[index]
 
         # Mark as resolved
-        self.short_term.update_one(
-            {"_id": doc["_id"]},
-            {"$set": {
-                "disambiguation.awaiting_selection": False,
-                "disambiguation.selected_index": index
-            }}
-        )
+        disambiguation["awaiting_selection"] = False
+        disambiguation["selected_index"] = index
 
         return selected
 
     def get_pending_disambiguation(self, session_id: str) -> Optional[Dict]:
-        """Get pending disambiguation if any."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "memory_type": "disambiguation",
-            "disambiguation.awaiting_selection": True
-        })
-        return doc.get("disambiguation") if doc else None
+        """Get pending disambiguation if any from in-memory storage."""
+        disambiguation = self._disambiguations.get(session_id)
+        if disambiguation and disambiguation.get("awaiting_selection"):
+            return disambiguation
+        return None
 
     # ═══════════════════════════════════════════════════════════════════
     # LONG-TERM: RECORDING ACTIONS
@@ -729,7 +685,7 @@ class MemoryManager:
         return "\n".join(parts)
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHARED: WRITING HANDOFFS
+    # WORKING MEMORY: WRITING HANDOFFS (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def write_handoff(self, session_id: str, user_id: str,
@@ -737,7 +693,7 @@ class MemoryManager:
                       handoff_type: str, payload: Dict,
                       chain_id: str = None, parent_handoff_id: str = None,
                       priority: str = "normal") -> str:
-        """Write a handoff for another agent."""
+        """Write a handoff for another agent to in-memory storage."""
 
         handoff_id = str(uuid.uuid4())
         chain_id = chain_id or str(uuid.uuid4())
@@ -746,7 +702,7 @@ class MemoryManager:
         # Calculate sequence in chain
         sequence = 1
         if parent_handoff_id:
-            parent = self.shared.find_one({"handoff_id": parent_handoff_id})
+            parent = self._handoffs.get(parent_handoff_id)
             if parent:
                 sequence = parent.get("sequence", 0) + 1
 
@@ -765,76 +721,85 @@ class MemoryManager:
             "parent_handoff_id": parent_handoff_id,
             "sequence": sequence,
             "created_at": now,
-            "consumed_at": None,
-            "expires_at": now + timedelta(minutes=5)
+            "consumed_at": None
         }
 
-        self.shared.insert_one(doc)
+        self._handoffs[handoff_id] = doc
         return handoff_id
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHARED: READING HANDOFFS
+    # WORKING MEMORY: READING HANDOFFS (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def read_handoff(self, session_id: str, target_agent: str,
                      handoff_type: str = None, consume: bool = True) -> Optional[Dict]:
-        """Read a handoff (optionally consuming it)."""
+        """Read a handoff from in-memory storage (optionally consuming it)."""
 
-        query = {
-            "session_id": session_id,
-            "target_agent": target_agent,
-            "status": "pending"
-        }
+        # Filter matching handoffs
+        matching = [
+            h for h in self._handoffs.values()
+            if h["session_id"] == session_id
+            and h["target_agent"] == target_agent
+            and h["status"] == "pending"
+            and (handoff_type is None or h["handoff_type"] == handoff_type)
+        ]
 
-        if handoff_type:
-            query["handoff_type"] = handoff_type
+        if not matching:
+            return None
 
-        sort = [("priority", DESCENDING), ("created_at", ASCENDING)]
+        # Sort by priority (descending) then created_at (ascending)
+        priority_order = {"high": 3, "normal": 2, "low": 1}
+        matching.sort(
+            key=lambda h: (-priority_order.get(h["priority"], 2), h["created_at"])
+        )
+
+        doc = matching[0]
 
         if consume:
-            doc = self.shared.find_one_and_update(
-                query,
-                {"$set": {
-                    "status": "consumed",
-                    "consumed_at": datetime.utcnow()
-                }},
-                sort=sort
-            )
-        else:
-            doc = self.shared.find_one(query, sort=sort)
+            doc["status"] = "consumed"
+            doc["consumed_at"] = datetime.utcnow()
 
         return doc
 
     def read_all_pending(self, session_id: str, target_agent: str) -> List[Dict]:
-        """Read all pending handoffs for an agent (without consuming)."""
+        """Read all pending handoffs for an agent from in-memory storage (without consuming)."""
 
-        cursor = self.shared.find({
-            "session_id": session_id,
-            "target_agent": target_agent,
-            "status": "pending"
-        }).sort([("priority", DESCENDING), ("created_at", ASCENDING)])
+        matching = [
+            h for h in self._handoffs.values()
+            if h["session_id"] == session_id
+            and h["target_agent"] == target_agent
+            and h["status"] == "pending"
+        ]
 
-        return list(cursor)
+        # Sort by priority (descending) then created_at (ascending)
+        priority_order = {"high": 3, "normal": 2, "low": 1}
+        matching.sort(
+            key=lambda h: (-priority_order.get(h["priority"], 2), h["created_at"])
+        )
+
+        return matching
 
     def check_pending(self, session_id: str, target_agent: str) -> bool:
-        """Check if there are pending handoffs."""
-        return self.shared.count_documents({
-            "session_id": session_id,
-            "target_agent": target_agent,
-            "status": "pending"
-        }) > 0
+        """Check if there are pending handoffs in in-memory storage."""
+        return any(
+            h["session_id"] == session_id
+            and h["target_agent"] == target_agent
+            and h["status"] == "pending"
+            for h in self._handoffs.values()
+        )
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHARED: CHAIN OPERATIONS
+    # WORKING MEMORY: CHAIN OPERATIONS (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def get_chain(self, chain_id: str) -> List[Dict]:
-        """Get all handoffs in a chain."""
-        cursor = self.shared.find({"chain_id": chain_id}).sort("sequence", ASCENDING)
-        return list(cursor)
+        """Get all handoffs in a chain from in-memory storage."""
+        matching = [h for h in self._handoffs.values() if h["chain_id"] == chain_id]
+        matching.sort(key=lambda h: h["sequence"])
+        return matching
 
     def get_chain_status(self, chain_id: str) -> Dict:
-        """Get status summary for a chain."""
+        """Get status summary for a chain from in-memory storage."""
         handoffs = self.get_chain(chain_id)
 
         return {
@@ -851,11 +816,10 @@ class MemoryManager:
         }
 
     def mark_error(self, handoff_id: str, error: str) -> None:
-        """Mark a handoff as errored."""
-        self.shared.update_one(
-            {"handoff_id": handoff_id},
-            {"$set": {"status": "error", "error": error}}
-        )
+        """Mark a handoff as errored in in-memory storage."""
+        if handoff_id in self._handoffs:
+            self._handoffs[handoff_id]["status"] = "error"
+            self._handoffs[handoff_id]["error"] = error
 
     # ═══════════════════════════════════════════════════════════════════
     # LONG-TERM: SEMANTIC MEMORY (Preferences)
@@ -1780,12 +1744,15 @@ class MemoryManager:
     def get_memory_stats(self, session_id: str, user_id: str) -> Dict:
         """Get memory statistics including all memory types."""
 
-        # Short-term and shared counts
-        short_term_count = self.short_term.count_documents({"session_id": session_id})
-        shared_pending = self.shared.count_documents({
-            "session_id": session_id,
-            "status": "pending"
-        })
+        # Working memory counts (in-memory)
+        session_count = 1 if session_id in self._session_contexts else 0
+        agent_working_count = sum(1 for k in self._agent_working.keys() if k[0] == session_id)
+        disambiguation_count = 1 if session_id in self._disambiguations else 0
+        handoff_pending = sum(
+            1 for h in self._handoffs.values()
+            if h["session_id"] == session_id and h["status"] == "pending"
+        )
+        working_memory_count = session_count + agent_working_count + disambiguation_count
 
         # Long-term breakdown by memory_type
         episodic_count = self.episodic.count_documents({
@@ -1813,15 +1780,15 @@ class MemoryManager:
         action_counts = self._get_action_counts(user_id)
 
         return {
-            "short_term_count": short_term_count,
+            "working_memory_count": working_memory_count,
             "long_term_count": episodic_count + episodic_summary_count + semantic_count + procedural_count,
-            "shared_pending": shared_pending,
+            "handoff_pending": handoff_pending,
             "by_type": {
-                "working_memory": short_term_count,
+                "working_memory": working_memory_count,
                 "episodic_memory": episodic_count + episodic_summary_count,
                 "semantic_memory": semantic_count,
                 "procedural_memory": procedural_count,
-                "memory_shared": shared_pending
+                "handoffs_pending": handoff_pending
             },
             "knowledge_cache": knowledge_stats,
             "action_counts": action_counts
@@ -1839,10 +1806,39 @@ class MemoryManager:
         return {r["_id"]: r["count"] for r in results if r["_id"]}
 
     def clear_session(self, session_id: str) -> Dict[str, int]:
-        """Clear all memory for a session (for testing/demo reset)."""
-        short = self.short_term.delete_many({"session_id": session_id})
-        shared = self.shared.delete_many({"session_id": session_id})
+        """Clear all memory for a session from in-memory storage (for testing/demo reset)."""
+        # Clear session contexts
+        session_deleted = 0
+        if session_id in self._session_contexts:
+            del self._session_contexts[session_id]
+            session_deleted = 1
+
+        # Clear agent working memory
+        agent_deleted = 0
+        keys_to_delete = [k for k in self._agent_working.keys() if k[0] == session_id]
+        for key in keys_to_delete:
+            del self._agent_working[key]
+            agent_deleted += 1
+
+        # Clear disambiguation
+        disambiguation_deleted = 0
+        if session_id in self._disambiguations:
+            del self._disambiguations[session_id]
+            disambiguation_deleted = 1
+
+        # Clear handoffs
+        handoff_deleted = 0
+        handoff_ids_to_delete = [
+            hid for hid, h in self._handoffs.items()
+            if h["session_id"] == session_id
+        ]
+        for hid in handoff_ids_to_delete:
+            del self._handoffs[hid]
+            handoff_deleted += 1
+
         return {
-            "short_term_deleted": short.deleted_count,
-            "shared_deleted": shared.deleted_count
+            "session_contexts_deleted": session_deleted,
+            "agent_working_deleted": agent_deleted,
+            "disambiguation_deleted": disambiguation_deleted,
+            "handoffs_deleted": handoff_deleted
         }
