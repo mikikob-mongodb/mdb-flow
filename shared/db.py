@@ -465,6 +465,27 @@ def get_project(project_id: ObjectId) -> Optional[Project]:
     return None
 
 
+def get_project_by_name(project_name: str) -> Optional[Project]:
+    """
+    Get a project by name (case-insensitive exact match).
+
+    Args:
+        project_name: Name of the project
+
+    Returns:
+        Project model instance or None if not found
+    """
+    collection = get_collection(PROJECTS_COLLECTION)
+    project_doc = collection.find_one({
+        "name": {"$regex": f"^{project_name}$", "$options": "i"},
+        "is_test": {"$ne": True}
+    })
+
+    if project_doc:
+        return Project(**project_doc)
+    return None
+
+
 # Settings helper functions
 
 def get_settings(user_id: str = "default") -> Optional[Settings]:

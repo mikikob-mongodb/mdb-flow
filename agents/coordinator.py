@@ -464,6 +464,20 @@ COORDINATOR_TOOLS = [
         }
     },
     {
+        "name": "get_project_by_name",
+        "description": "Get a project by exact name match (case-insensitive). Faster and more precise than search_projects when you know the exact project name. Example: 'Alpha' matches 'Project Alpha'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_name": {
+                    "type": "string",
+                    "description": "Exact name of the project (case-insensitive)"
+                }
+            },
+            "required": ["project_name"]
+        }
+    },
+    {
         "name": "get_action_history",
         "description": """Get history of past actions from long-term memory. Supports both filter-based and semantic search.
 
@@ -2103,6 +2117,23 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 # Get single project by ID
                 project_id = tool_input["project_id"]
                 result = self.worklog_agent._get_project(project_id)
+
+            elif tool_name == "get_project_by_name":
+                # Get project by exact name match
+                from shared.db import get_project_by_name
+                project_name = tool_input["project_name"]
+                project = get_project_by_name(project_name)
+
+                if project:
+                    result = {
+                        "success": True,
+                        "project": project.model_dump(by_alias=True)
+                    }
+                else:
+                    result = {
+                        "success": False,
+                        "error": f"Project '{project_name}' not found. Use get_projects or search_projects to see available projects."
+                    }
 
             elif tool_name == "get_action_history":
                 # Query long-term memory for action history using new API
