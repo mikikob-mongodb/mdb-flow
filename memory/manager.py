@@ -1222,11 +1222,11 @@ class MemoryManager:
                     continue
 
         # STEP 2: Fall back to vector similarity search
-        if not self.embedding_fn:
+        if not self.embed:
             return None
 
         # Generate embedding for user message
-        query_embedding = self.embedding_fn(user_message)
+        query_embedding = self.embed(user_message)
 
         # Vector search pipeline
         pipeline = [
@@ -1379,12 +1379,12 @@ class MemoryManager:
         Returns:
             List of matching rule documents with similarity scores
         """
-        if not self.embedding_fn:
+        if not self.embed:
             # Fallback to text search if no embedding function
             return []
 
         # Generate embedding for query
-        query_embedding = self.embedding_fn(query)
+        query_embedding = self.embed(query)
 
         # Vector search pipeline
         pipeline = [
