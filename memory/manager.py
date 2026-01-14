@@ -46,91 +46,32 @@ class MemoryManager:
         from pymongo.errors import OperationFailure
 
         # ═══════════════════════════════════════════════════════════════
-        # SHORT-TERM MEMORY (TTL: 2 hours)
+        # WORKING MEMORY (In-memory session state - not persisted)
         # ═══════════════════════════════════════════════════════════════
-        self.short_term = self.db.memory_short_term
-
-        # Indexes (silently ignore if already exist with different options)
-        try:
-            self.short_term.create_index("expires_at", expireAfterSeconds=0)
-        except OperationFailure:
-            pass  # Index exists with different options
-        try:
-            self.short_term.create_index([("session_id", ASCENDING), ("memory_type", ASCENDING)])
-        except OperationFailure:
-            pass
-        try:
-            self.short_term.create_index([("session_id", ASCENDING), ("agent_id", ASCENDING)])
-        except OperationFailure:
-            pass
+        # Session context, handoffs, and disambiguation now handled in-memory
+        # No database collection needed
+        self._session_contexts = {}  # session_id -> context dict
+        self._handoffs = {}  # handoff_id -> handoff dict
+        self._disambiguations = {}  # session_id -> disambiguation dict
 
         # ═══════════════════════════════════════════════════════════════
-        # LONG-TERM MEMORY (persistent)
-        # ═══════════════════════════════════════════════════════════════
-        self.long_term = self.db.memory_long_term
-
-        # Indexes
-        try:
-            self.long_term.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
-        except OperationFailure:
-            pass
-        try:
-            self.long_term.create_index([("user_id", ASCENDING), ("action_type", ASCENDING)])
-        except OperationFailure:
-            pass
-        try:
-            self.long_term.create_index([("user_id", ASCENDING), ("source_agent", ASCENDING)])
-        except OperationFailure:
-            pass
-        try:
-            self.long_term.create_index([("user_id", ASCENDING), ("entity.project_name", ASCENDING)])
-        except OperationFailure:
-            pass
-
-        # Index for semantic memory (preferences)
-        try:
-            self.long_term.create_index([
-                ("user_id", ASCENDING),
-                ("memory_type", ASCENDING),
-                ("semantic_type", ASCENDING),
-                ("key", ASCENDING)
-            ])
-        except OperationFailure:
-            pass
-
-        # ═══════════════════════════════════════════════════════════════
-        # SHARED MEMORY (TTL: 5 minutes)
-        # ═══════════════════════════════════════════════════════════════
-        self.shared = self.db.memory_shared
-
-        # Indexes
-        try:
-            self.shared.create_index("expires_at", expireAfterSeconds=0)
-        except OperationFailure:
-            pass
-        try:
-            self.shared.create_index("handoff_id", unique=True)
-        except OperationFailure:
-            pass
-        try:
-            self.shared.create_index([
-                ("session_id", ASCENDING),
-                ("target_agent", ASCENDING),
-                ("status", ASCENDING)
-            ])
-        except OperationFailure:
-            pass
-        try:
-            self.shared.create_index("chain_id")
-        except OperationFailure:
-            pass
-
-        # ═══════════════════════════════════════════════════════════════
-        # EPISODIC MEMORY (persistent - AI-generated activity summaries)
+        # EPISODIC MEMORY (persistent - actions and events)
         # ═══════════════════════════════════════════════════════════════
         self.episodic = self.db.memory_episodic
 
-        # Indexes
+        # Indexes for actions/events
+        try:
+            self.episodic.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.episodic.create_index([("user_id", ASCENDING), ("action_type", ASCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.episodic.create_index([("user_id", ASCENDING), ("source_agent", ASCENDING)])
+        except OperationFailure:
+            pass
         try:
             self.episodic.create_index([
                 ("entity_type", ASCENDING),
@@ -139,8 +80,27 @@ class MemoryManager:
             ])
         except OperationFailure:
             pass
+
+        # ═══════════════════════════════════════════════════════════════
+        # SEMANTIC MEMORY (persistent - knowledge cache and preferences)
+        # ═══════════════════════════════════════════════════════════════
+        self.semantic = self.db.memory_semantic
+
+        # Indexes for knowledge and preferences
         try:
-            self.episodic.create_index([("user_id", ASCENDING), ("generated_at", DESCENDING)])
+            self.semantic.create_index([
+                ("user_id", ASCENDING),
+                ("semantic_type", ASCENDING),
+                ("key", ASCENDING)
+            ])
+        except OperationFailure:
+            pass
+        try:
+            self.semantic.create_index([("user_id", ASCENDING), ("query", ASCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.semantic.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
         except OperationFailure:
             pass
 
@@ -356,7 +316,7 @@ class MemoryManager:
                       triggered_by: str = "user",
                       handoff_id: str = None,
                       generate_embedding: bool = True) -> str:
-        """Record an action to long-term memory."""
+        """Record an action to episodic memory."""
 
         # Build embedding text
         embedding_text = self._build_embedding_text(
@@ -387,7 +347,7 @@ class MemoryManager:
             "created_at": datetime.utcnow()
         }
 
-        result = self.long_term.insert_one(doc)
+        result = self.episodic.insert_one(doc)
         return str(result.inserted_id)
 
     def _build_embedding_text(self, action_type: str, entity_type: str,
@@ -481,7 +441,7 @@ class MemoryManager:
             query["entity.project_name"] = project_name
 
         # Execute query
-        cursor = self.long_term.find(query).sort("timestamp", DESCENDING).limit(limit)
+        cursor = self.episodic.find(query).sort("timestamp", DESCENDING).limit(limit)
 
         results = []
         for doc in cursor:
@@ -593,7 +553,7 @@ class MemoryManager:
 
         # Execute search
         try:
-            results = list(self.long_term.aggregate(pipeline))
+            results = list(self.episodic.aggregate(pipeline))
 
             # Convert ObjectIds to strings
             for doc in results:
@@ -916,7 +876,7 @@ class MemoryManager:
         Returns:
             Document ID
         """
-        existing = self.long_term.find_one({
+        existing = self.semantic.find_one({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "preference",
@@ -931,7 +891,7 @@ class MemoryManager:
             if source == "explicit":
                 new_confidence = max(new_confidence, 0.9)
 
-            self.long_term.update_one(
+            self.semantic.update_one(
                 {"_id": existing["_id"]},
                 {"$set": {
                     "value": value,
@@ -956,7 +916,7 @@ class MemoryManager:
             "created_at": now,
             "updated_at": now
         }
-        result = self.long_term.insert_one(doc)
+        result = self.semantic.insert_one(doc)
         return str(result.inserted_id)
 
     def get_preferences(self, user_id: str, min_confidence: float = 0.0) -> list:
@@ -979,7 +939,7 @@ class MemoryManager:
         if min_confidence > 0:
             query["confidence"] = {"$gte": min_confidence}
 
-        results = list(self.long_term.find(query).sort("confidence", -1))
+        results = list(self.semantic.find(query).sort("confidence", -1))
 
         # Convert ObjectId to string
         for r in results:
@@ -989,7 +949,7 @@ class MemoryManager:
 
     def get_preference(self, user_id: str, key: str) -> Optional[dict]:
         """Get a specific preference by key."""
-        doc = self.long_term.find_one({
+        doc = self.semantic.find_one({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "preference",
@@ -1003,7 +963,7 @@ class MemoryManager:
 
     def delete_preference(self, user_id: str, key: str) -> bool:
         """Delete a preference."""
-        result = self.long_term.delete_one({
+        result = self.semantic.delete_one({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "preference",
@@ -1451,7 +1411,7 @@ class MemoryManager:
         """
         Cache search/research results as knowledge.
 
-        Stored in memory_long_term with:
+        Stored in memory_semantic with:
         - memory_type: "semantic"
         - semantic_type: "knowledge"
 
@@ -1491,7 +1451,7 @@ class MemoryManager:
             "created_at": now
         }
 
-        result = self.long_term.insert_one(doc)
+        result = self.semantic.insert_one(doc)
         return str(result.inserted_id)
 
     def get_cached_knowledge(
@@ -1563,7 +1523,7 @@ class MemoryManager:
         ]
 
         try:
-            results = list(self.long_term.aggregate(pipeline))
+            results = list(self.semantic.aggregate(pipeline))
         except Exception as e:
             from shared.logger import get_logger
             logger = get_logger("memory")
@@ -1576,7 +1536,7 @@ class MemoryManager:
         doc = results[0]
 
         # Increment access count
-        self.long_term.update_one(
+        self.semantic.update_one(
             {"_id": doc["_id"]},
             {
                 "$inc": {"times_accessed": 1},
@@ -1635,7 +1595,7 @@ class MemoryManager:
         ]
 
         try:
-            return list(self.long_term.aggregate(pipeline))
+            return list(self.semantic.aggregate(pipeline))
         except Exception as e:
             from shared.logger import get_logger
             logger = get_logger("memory")
@@ -1652,7 +1612,7 @@ class MemoryManager:
         Returns:
             Count of deleted documents
         """
-        result = self.long_term.delete_many({
+        result = self.semantic.delete_many({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "knowledge"
@@ -1671,13 +1631,13 @@ class MemoryManager:
         """
         now = datetime.now(timezone.utc)
 
-        total = self.long_term.count_documents({
+        total = self.semantic.count_documents({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "knowledge"
         })
 
-        fresh = self.long_term.count_documents({
+        fresh = self.semantic.count_documents({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "knowledge",
@@ -1828,14 +1788,12 @@ class MemoryManager:
         })
 
         # Long-term breakdown by memory_type
-        episodic_count = self.long_term.count_documents({
-            "user_id": user_id,
-            "memory_type": {"$nin": ["semantic", "procedural"]}  # Actions (episodic)
+        episodic_count = self.episodic.count_documents({
+            "user_id": user_id
         })
 
-        semantic_count = self.long_term.count_documents({
-            "user_id": user_id,
-            "memory_type": "semantic"
+        semantic_count = self.semantic.count_documents({
+            "user_id": user_id
         })
 
         # Procedural workflows and rules (from dedicated collection)
@@ -1873,12 +1831,11 @@ class MemoryManager:
         """Get counts by action type (episodic memory only)."""
         pipeline = [
             {"$match": {
-                "user_id": user_id,
-                "memory_type": {"$nin": ["semantic", "procedural"]}  # Only episodic
+                "user_id": user_id
             }},
             {"$group": {"_id": "$action_type", "count": {"$sum": 1}}}
         ]
-        results = list(self.long_term.aggregate(pipeline))
+        results = list(self.episodic.aggregate(pipeline))
         return {r["_id"]: r["count"] for r in results if r["_id"]}
 
     def clear_session(self, session_id: str) -> Dict[str, int]:
