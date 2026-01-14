@@ -745,11 +745,17 @@ def render_chat():
                 "/tasks status:in_progress priority:high",
                 "/projects stakeholder:Mike Chen",
             ],
-            "⚡ Slash Commands - Search": [
+            "⚡ Slash Commands - Search Modes": [
                 "/search debugging",
-                "/search vector memory",
-                "/search text checkpointer",
-                "/search projects agent",
+                "/search hybrid debugging",
+                "/search vector debugging",
+                "/search text debugging",
+                "/search hybrid memory systems",
+                "/search vector finding bugs and errors",
+                "/search text API endpoint",
+                "/search projects vector agent intelligence",
+                "/search projects text MongoDB Atlas",
+                "/search hybrid tasks about performance",
             ],
             "💬 Natural Language - Status": [
                 "What's urgent?",
