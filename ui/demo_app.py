@@ -687,12 +687,30 @@ def render_debug_panel():
                     with st.expander("📥 Input", expanded=False):
                         st.json(call["input"])
 
-                # Show output preview
-                output = call.get('output', 'N/A')
-                if isinstance(output, str) and len(output) > 100:
-                    st.caption(f"**Output:** {output[:100]}...")
+                # Special handling for search_knowledge results
+                if call.get('name') == 'search_knowledge' and isinstance(call.get('output'), dict):
+                    knowledge_data = call['output']
+                    knowledge_items = knowledge_data.get('knowledge', [])
+
+                    if knowledge_items:
+                        st.caption(f"**Found {len(knowledge_items)} knowledge entries:**")
+                        with st.expander("📚 Cached Knowledge", expanded=True):
+                            for idx, item in enumerate(knowledge_items[:3], 1):  # Show top 3
+                                st.markdown(f"**{idx}. {item.get('topic', 'Unknown')}** (score: {item.get('score', 0):.3f})")
+                                st.caption(f"**Content:** {item.get('content', '')[:200]}..." if len(item.get('content', '')) > 200 else f"**Content:** {item.get('content', '')}")
+                                st.caption(f"🏷️ Tags: {', '.join(item.get('tags', []))}")
+                                st.caption(f"📊 Confidence: {item.get('confidence', 0):.2f} | 👁️ Accessed: {item.get('times_accessed', 0)}× | 📅 Cached: {item.get('cached_at', 'N/A')[:10]}")
+                                if idx < len(knowledge_items[:3]):
+                                    st.markdown("---")
+                    else:
+                        st.caption("**Output:** No cached knowledge found")
                 else:
-                    st.caption(f"**Output:** {output}")
+                    # Show output preview for other tools
+                    output = call.get('output', 'N/A')
+                    if isinstance(output, str) and len(output) > 100:
+                        st.caption(f"**Output:** {output[:100]}...")
+                    else:
+                        st.caption(f"**Output:** {output}")
 
                 # Show breakdown if available
                 if call.get("breakdown"):
