@@ -290,7 +290,7 @@ class MCPAgent:
             if cached_knowledge and len(cached_knowledge) > 0:
                 best_match = cached_knowledge[0]
                 cache_score = best_match.get("score", 0)
-                cache_threshold = 0.65  # Lowered to catch similar queries (exact matches score ~0.86)
+                cache_threshold = 0.75  # Exact matches score ~0.86, avoid false hits on unrelated knowledge
                 logger.debug(f"📊 Best cache match score: {cache_score:.3f} (threshold: {cache_threshold})")
 
                 if cache_score >= cache_threshold:
@@ -343,7 +343,7 @@ class MCPAgent:
                     "checked": True,
                     "hit": False,
                     "score": 0,
-                    "threshold": 0.65,
+                    "threshold": 0.75,
                     "time_ms": cache_check_time
                 }
         else:
