@@ -1558,14 +1558,17 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         logger.warning(f"⚠️  {error_msg}")
 
                 elif step["intent"] == "create_project":
-                    # Check if this is a GTM project
+                    # Check if this is a GTM project or if next step will generate tasks
                     is_gtm = any(word in step["description"].lower()
                                 for word in ["gtm", "go-to-market", "go to market"])
 
-                    # Load GTM template from procedural memory if GTM project
+                    # Also check if any subsequent step will generate tasks (needs template)
+                    will_generate_tasks = any(s.get("intent") == "generate_tasks" for s in steps[i+1:])
+
+                    # Load template from procedural memory
                     template = None
-                    if is_gtm:
-                        logger.info("Detected GTM project - loading template from procedural memory")
+                    if is_gtm or will_generate_tasks:
+                        logger.info("Loading template from procedural memory (GTM project or task generation requested)")
 
                         # Query for GTM template by name (more reliable than trigger matching)
                         template_doc = self.db.memory_procedural.find_one({
