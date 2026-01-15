@@ -1679,7 +1679,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                         tailored_research = fast_llm.generate(
                                             messages=[{
                                                 "role": "user",
-                                                "content": f"Answer these questions in 2-3 sentences total for '{task_title}':\n\n{questions_text}\n\nResearch:\n{str(research_results)[:1200]}"
+                                                "content": f"Extract relevant insights from this research for the task '{task_title}'. Answer these questions in 2-3 clear sentences. Be direct - no preamble, no meta-commentary, just the facts:\n\n{questions_text}\n\nResearch:\n{str(research_results)[:1200]}"
                                             }],
                                             max_tokens=150,  # Reduced for faster generation
                                             temperature=0.2  # Lower temperature for concise, factual answers
