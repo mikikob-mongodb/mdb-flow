@@ -562,6 +562,11 @@ Examples:
 - "What have we learned about NPC memory systems?"
 - "Show me our research on voice agents"
 
+IMPORTANT: Present ALL results returned, even if not exact matches. Semantically related topics (score >0.60) can provide useful context. For example:
+- Query about "warehouse robotics" → Present autonomous agents, computer vision, multi-agent systems as relevant building blocks
+- Query about "database optimization" → Present MongoDB, indexing, aggregation topics
+- Help the user by showing what related knowledge we DO have, then suggest enabling MCP for web research if they need more specific information.
+
 Returns cached knowledge with source attribution and timestamps. Only available when long-term memory is enabled.""",
         "input_schema": {
             "type": "object",
