@@ -377,11 +377,12 @@ def render_sidebar():
             help="Enables: Compress Results, Streamlined Prompt, Prompt Caching"
         )
 
-        # Store all three optimizations with the same value
+        # Store all optimizations with the same value
         st.session_state.optimizations = {
             "compress_results": context_engineering,
             "streamlined_prompt": context_engineering,
             "prompt_caching": context_engineering,
+            "memory_long_term": True,  # Always enable episodic memory access
         }
 
         st.divider()

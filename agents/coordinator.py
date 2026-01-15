@@ -314,7 +314,7 @@ COORDINATOR_TOOLS = [
                 },
                 "context": {
                     "type": "string",
-                    "description": "Rich context about the project"
+                    "description": "Rich context about the project. Include relevant research from recent conversation, semantic knowledge, or web searches. This helps provide background and rationale for the project."
                 }
             },
             "required": ["name"]
@@ -1617,6 +1617,14 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     tasks_created = []
                     phases_data = template.get("template", {}).get("phases", [])
 
+                    # Build task context from template + research
+                    task_context_base = f"Generated from {template.get('name')}"
+                    research_results = context.get("research_results")
+                    if research_results:
+                        # Truncate research to keep task context concise
+                        research_preview = str(research_results)[:200] if isinstance(research_results, str) else str(research_results)[:200]
+                        task_context_base += f"\n\nProject context: {research_preview}..."
+
                     for phase in phases_data:
                         phase_name = phase.get("name", "")
                         logger.info(f"  Phase: {phase_name}")
@@ -1629,7 +1637,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                 title=full_title,
                                 project_id=project_id,
                                 priority="medium",
-                                context=f"Generated from {template.get('name')}"
+                                context=task_context_base
                             )
 
                             if task_result.get("success"):
