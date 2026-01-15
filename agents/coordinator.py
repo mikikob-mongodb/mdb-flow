@@ -3075,7 +3075,7 @@ Execute the rule action: {rule_match['action']}
 
         # Detect if this is an action request that requires tool use
         user_message = messages[-1].get('content', '') if messages else ''
-        action_keywords = ['create', 'update', 'complete', 'start', 'add', 'mark', 'assign', 'change', 'delete', 'remove', 'show', 'list', 'what', 'get']
+        action_keywords = ['create', 'update', 'complete', 'start', 'add', 'mark', 'assign', 'change', 'delete', 'remove', 'show', 'list', 'what', 'get', 'tell', 'know']
         requires_tool = any(keyword in user_message.lower() for keyword in action_keywords)
 
         llm_kwargs = {}
