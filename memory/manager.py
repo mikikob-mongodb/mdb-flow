@@ -1558,12 +1558,13 @@ class MemoryManager:
             },
             {
                 "$project": {
-                    "query": 1,
-                    "result": 1,  # Full results
-                    "summary": 1,  # Concise summary (if available)
-                    "context": 1,
-                    "timestamp": 1,
-                    "metadata": 1,
+                    "key": 1,
+                    "value": 1,
+                    "tags": 1,
+                    "confidence": 1,
+                    "source": 1,
+                    "times_accessed": 1,
+                    "created_at": 1,
                     "score": {"$meta": "vectorSearchScore"},
                     "_id": 0
                 }

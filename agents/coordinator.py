@@ -2449,12 +2449,14 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     formatted_results = []
                     for item in knowledge_results:
                         formatted_results.append({
-                            "query": item.get("query", ""),
-                            "results": item.get("results", ""),
+                            "topic": item.get("key", ""),
+                            "content": item.get("value", ""),
+                            "tags": item.get("tags", []),
                             "source": item.get("source", "unknown"),
                             "cached_at": item.get("created_at", "").isoformat() if item.get("created_at") else "",
+                            "confidence": item.get("confidence", 0),
                             "score": item.get("score", 0),
-                            "access_count": item.get("access_count", 0)
+                            "times_accessed": item.get("times_accessed", 0)
                         })
 
                     result = {

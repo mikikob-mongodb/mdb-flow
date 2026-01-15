@@ -866,12 +866,13 @@ def render_chat():
                 "Tell me about YOLO object detection",
                 "What do you know about AI agent memory?",
             ],
-            "🧠 Working Memory - Session Context": [
-                "I'm focusing on Voice Agent Architecture",
-                "What should I work on next?",
-                "I'm working on Project Alpha",
-                "What's my current focus?",
-                "Clear my focus",
+            "🧠 Episodic Memory - Action History": [
+                "What have I been working on this week?",
+                "What did I complete on AgentOps?",
+                "What did I finish on Memory Engineering Blog?",
+                "Show me my work history on Project Alpha",
+                "What templates have I used?",
+                "What projects have I completed?",
             ],
         }
 
