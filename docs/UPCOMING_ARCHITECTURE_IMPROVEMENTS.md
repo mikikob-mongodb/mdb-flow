@@ -386,6 +386,203 @@ all_tools = (
 10. Plugin system for dynamic capabilities
 11. Agent registry for centralized management
 
+## Memory System Evaluation Framework
+
+### Current State: Removed from Evals Dashboard
+
+**Date Removed:** 2026-01-14
+
+We temporarily removed memory evaluation features from the evals dashboard to:
+- ✅ Eliminate performance overhead during context engineering benchmarks
+- ✅ Focus dashboard on single-purpose: context optimization analysis
+- ✅ Prevent session management calls from contaminating benchmark results
+
+### What Was Removed
+
+#### 1. From `evals/runner.py`
+```python
+# Removed session management overhead:
+- _start_new_session() method
+- UUID session ID generation per test
+- coordinator.set_session() calls (40+ tests × 5 configs = 200+ calls)
+- memory.clear_session() calls hitting MongoDB
+- disable_memory parameter and config save/restore logic
+```
+
+**Performance Impact:** Each test was making 3+ database calls even with memory disabled, adding ~50-100ms overhead per test.
+
+#### 2. From `evals/configs.py`
+```python
+# Removed memory comparison configs:
+"memory_disabled": {
+    "name": "Memory Disabled (Baseline)",
+    "short": "No Memory",
+    "memory_config": {
+        "short_term": False,
+        "long_term": False,
+        "shared": False,
+        "context_injection": False
+    }
+}
+
+"memory_enabled": {
+    "name": "Memory Enabled (Full)",
+    "short": "Memory",
+    "memory_config": {
+        "short_term": True,
+        "long_term": True,
+        "shared": True,
+        "context_injection": True
+    }
+}
+```
+
+#### 3. From `evals_app.py`
+```python
+# Removed entire Memory Competencies tab (~350 lines):
+- render_memory_competencies_tab()
+- run_memory_evaluation()
+- render_memory_results()
+- Imports from evals.memory_competency_suite
+- Imports from evals.memory_metrics
+```
+
+### What Needs to Be Added Back (Future)
+
+When ready to evaluate memory system performance, create a **separate dedicated app**:
+
+#### Proposed: `memory_evals_app.py`
+
+**Purpose:** Evaluate memory system across MemoryAgentBench competency dimensions
+
+**Key Features:**
+```python
+# Test suite structure
+MEMORY_COMPETENCY_TESTS = [
+    # AR: Accurate Retrieval (4 tests)
+    # - Single-hop, Multi-hop, Temporal, Cloze
+
+    # TTL: Test-Time Learning (6 tests)
+    # - Contradictions, Updates, Noise, Novel concepts
+
+    # LRU: Long-Range Understanding (6 tests)
+    # - Session boundaries, Topic drift, Interruptions
+
+    # CR: Conflict Resolution (4 tests)
+    # - Source priority, Temporal ordering
+]
+
+# Each test compares:
+memory_enabled vs memory_disabled
+
+# Metrics to track:
+- Accuracy per competency
+- Retrieval latency
+- Memory storage overhead
+- Context injection impact
+```
+
+#### Storage Schema
+```python
+# MongoDB collection: memory_evaluation_runs
+{
+    "run_id": "mem-eval-20260114-xyz",
+    "timestamp": "2026-01-14T...",
+    "competency_scores": {
+        "AR_SH": {"accuracy": 0.95, "target": 0.90, ...},
+        "AR_MH": {"accuracy": 0.85, "target": 0.85, ...},
+        # ... all 20 competencies
+    },
+    "overall_metrics": {
+        "overall_accuracy": 0.88,
+        "avg_improvement_over_baseline": 45.2,
+        "competencies_met": 17,
+        "total_competencies": 20
+    },
+    "test_results": [
+        {
+            "test_id": 1,
+            "competency": "AR_SH",
+            "memory_enabled": {
+                "passed": true,
+                "latency_ms": 1234,
+                "memory_retrieved": ["task-123", "project-456"]
+            },
+            "memory_disabled": {
+                "passed": false,
+                "latency_ms": 1100,
+                "error": "No context available"
+            }
+        },
+        # ... all test results
+    ]
+}
+```
+
+#### Implementation Approach
+
+**Separate App Benefits:**
+- ✅ No performance interference with context engineering evals
+- ✅ Different test suite (competency-based vs latency/token optimization)
+- ✅ Different metrics (accuracy/recall vs speed/cost)
+- ✅ Can run memory evals independently
+- ✅ Cleaner separation of concerns
+
+**File Structure:**
+```
+evals/
+├── configs.py                    # Context optimization configs only
+├── runner.py                     # Clean, no memory overhead
+├── result.py                     # Context engineering results
+├── storage.py                    # Save to eval_comparison_runs
+│
+├── memory_competency_suite.py   # MemoryAgentBench test suite
+├── memory_metrics.py            # Competency scoring logic
+├── memory_runner.py             # Memory-specific test runner
+├── memory_storage.py            # Save to memory_evaluation_runs
+│
+apps/
+├── evals_app.py                 # Context engineering dashboard (port 8502)
+└── memory_evals_app.py          # Memory competencies dashboard (port 8503)
+```
+
+### Design Lessons Learned
+
+**Don't Mix Evaluation Types:**
+- ❌ Context optimization (speed/cost) + Memory competency (accuracy) = Confused metrics
+- ✅ Separate apps, separate collections, separate metrics
+
+**Session Management:**
+- ❌ Running session management when memory is disabled = Wasted overhead
+- ✅ Only manage sessions when actually testing memory features
+
+**Test Isolation:**
+- ❌ Shared session state between tests = Contaminated results
+- ✅ Clear session before each test, unique session IDs
+
+### Future Work
+
+**When to Re-Add Memory Evals:**
+1. After memory system stabilizes (post-demo)
+2. When ready to benchmark against MemoryAgentBench targets
+3. When optimizing memory retrieval performance
+
+**Success Metrics for Memory System:**
+- AR (Accurate Retrieval): 90%+ accuracy
+- TTL (Test-Time Learning): 85%+ accuracy
+- LRU (Long-Range Understanding): 80%+ accuracy
+- CR (Conflict Resolution): 90%+ accuracy
+- Retrieval latency: <200ms average
+- Context injection overhead: <500ms
+
+**Integration Points:**
+- Use same coordinator instance
+- Share MongoDB connection
+- Reuse memory competency test suite from `/evals`
+- Export results to same format for comparison
+
+---
+
 ## Conclusion
 
 The current architecture is **working well and ready for demo**. These enhancements represent **opportunities for improvement**, not critical issues. The proposed changes will make the system more maintainable, testable, and scalable for future growth.
