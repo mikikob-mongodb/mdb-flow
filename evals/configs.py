@@ -52,40 +52,6 @@ EVAL_CONFIGS = {
             "prompt_caching": True,
         }
     },
-
-    # Memory System (M4)
-    "memory_disabled": {
-        "name": "Memory Disabled (Baseline)",
-        "short": "No Memory",
-        "description": "No memory features - baseline for competency comparison",
-        "optimizations": {
-            "compress_results": False,
-            "streamlined_prompt": False,
-            "prompt_caching": False,
-        },
-        "memory_config": {
-            "short_term": False,
-            "long_term": False,
-            "shared": False,
-            "context_injection": False
-        }
-    },
-    "memory_enabled": {
-        "name": "Memory Enabled (Full)",
-        "short": "Memory",
-        "description": "All memory features enabled - 3-tier memory system",
-        "optimizations": {
-            "compress_results": False,
-            "streamlined_prompt": False,
-            "prompt_caching": False,
-        },
-        "memory_config": {
-            "short_term": True,
-            "long_term": True,
-            "shared": True,
-            "context_injection": True
-        }
-    },
 }
 
 # Default configs to show selected

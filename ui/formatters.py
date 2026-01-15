@@ -12,9 +12,24 @@ def format_tasks_table(tasks, show_raw=False):
     if show_raw:
         return None  # Signal to show JSON instead
 
-    # Header
-    lines = ["| # | Title | Status | Priority | Project | Last Activity |"]
-    lines.append("|---|-------|--------|----------|---------|---------------|")
+    # Detect which enrichment fields are present in ANY task
+    has_assignee = any(task.get("assignee") for task in tasks)
+    has_due_date = any(task.get("due_date") for task in tasks)
+    has_blockers = any(task.get("blockers") and len(task.get("blockers", [])) > 0 for task in tasks)
+
+    # Build header dynamically
+    header_cols = ["#", "Title", "Status", "Priority", "Project"]
+    if has_assignee:
+        header_cols.append("Assignee")
+    if has_due_date:
+        header_cols.append("Due Date")
+    if has_blockers:
+        header_cols.append("Blockers")
+    header_cols.append("Last Activity")
+
+    # Create header and separator
+    lines = ["| " + " | ".join(header_cols) + " |"]
+    lines.append("|" + "|".join(["---"] * len(header_cols)) + "|")
 
     for i, task in enumerate(tasks, 1):
         title = task.get("title", "Untitled")[:40]
@@ -24,6 +39,38 @@ def format_tasks_table(tasks, show_raw=False):
         status = task.get("status", "-")
         priority = task.get("priority") or "-"
         project = task.get("project_name") or "-"
+
+        # Build row dynamically
+        row_cols = [str(i), title, status, priority, project]
+
+        if has_assignee:
+            assignee = task.get("assignee") or "-"
+            # Shorten long names
+            if len(assignee) > 20:
+                assignee = assignee[:18] + "..."
+            row_cols.append(assignee)
+
+        if has_due_date:
+            due_date = task.get("due_date")
+            if due_date:
+                # Handle both datetime objects and strings
+                if hasattr(due_date, 'strftime'):
+                    due_date_str = due_date.strftime("%b %d")
+                else:
+                    # Parse string if needed
+                    due_date_str = str(due_date)[:10]
+            else:
+                due_date_str = "-"
+            row_cols.append(due_date_str)
+
+        if has_blockers:
+            blockers = task.get("blockers", [])
+            if blockers:
+                # Show count or first blocker
+                blocker_str = f"{len(blockers)} blocker(s)"
+            else:
+                blocker_str = "-"
+            row_cols.append(blocker_str)
 
         # Get last activity timestamp
         activity_log = task.get("activity_log", [])
@@ -40,8 +87,9 @@ def format_tasks_table(tasks, show_raw=False):
                 last_activity = "-"
         else:
             last_activity = "-"
+        row_cols.append(last_activity)
 
-        lines.append(f"| {i} | {title} | {status} | {priority} | {project} | {last_activity} |")
+        lines.append("| " + " | ".join(row_cols) + " |")
 
     return "\n".join(lines)
 
@@ -57,10 +105,17 @@ def format_projects_table(projects, show_raw=False):
     # Check if these are search results (have score field)
     is_search_results = len(projects) > 0 and "score" in projects[0]
 
+    # Detect if stakeholders field is present
+    has_stakeholders = any(project.get("stakeholders") and len(project.get("stakeholders", [])) > 0 for project in projects)
+
     if is_search_results:
-        # Header for search results
-        lines = ["| # | Name | Score | Description | Todo | In Progress | Done | Total |"]
-        lines.append("|---|------|-------|-------------|------|-------------|------|-------|")
+        # Build header for search results
+        header_cols = ["#", "Name", "Score", "Description", "Todo", "In Progress", "Done", "Total"]
+        if has_stakeholders:
+            header_cols.insert(-4, "Stakeholders")  # Insert before task counts
+
+        lines = ["| " + " | ".join(header_cols) + " |"]
+        lines.append("|" + "|".join(["---"] * len(header_cols)) + "|")
 
         for i, project in enumerate(projects, 1):
             name = project.get("name", "Untitled")[:25]
@@ -83,11 +138,29 @@ def format_projects_table(projects, show_raw=False):
             tasks_done = project.get("done_count", 0)
             tasks_total = project.get("total_tasks", 0)
 
-            lines.append(f"| {i} | {name} | {score} | {description} | {tasks_todo} | {tasks_in_progress} | {tasks_done} | {tasks_total} |")
+            # Build row
+            row_cols = [str(i), name, score, description]
+
+            if has_stakeholders:
+                stakeholders = project.get("stakeholders", [])
+                if stakeholders:
+                    # Show count or first stakeholder
+                    stakeholder_str = f"{len(stakeholders)} member(s)"
+                else:
+                    stakeholder_str = "-"
+                row_cols.append(stakeholder_str)
+
+            row_cols.extend([str(tasks_todo), str(tasks_in_progress), str(tasks_done), str(tasks_total)])
+            lines.append("| " + " | ".join(row_cols) + " |")
     else:
-        # Header for regular list
-        lines = ["| # | Name | Description | Todo | In Progress | Done | Total |"]
-        lines.append("|---|------|-------------|------|-------------|------|-------|")
+        # Build header for regular list
+        header_cols = ["#", "Name", "Description"]
+        if has_stakeholders:
+            header_cols.append("Stakeholders")
+        header_cols.extend(["Todo", "In Progress", "Done", "Total"])
+
+        lines = ["| " + " | ".join(header_cols) + " |"]
+        lines.append("|" + "|".join(["---"] * len(header_cols)) + "|")
 
         for i, project in enumerate(projects, 1):
             name = project.get("name", "Untitled")[:30]
@@ -106,7 +179,25 @@ def format_projects_table(projects, show_raw=False):
             tasks_done = project.get("done_count", 0)
             tasks_total = project.get("total_tasks", 0)
 
-            lines.append(f"| {i} | {name} | {description} | {tasks_todo} | {tasks_in_progress} | {tasks_done} | {tasks_total} |")
+            # Build row
+            row_cols = [str(i), name, description]
+
+            if has_stakeholders:
+                stakeholders = project.get("stakeholders", [])
+                if stakeholders:
+                    # Show count or names if short
+                    if len(stakeholders) <= 2:
+                        stakeholder_str = ", ".join(stakeholders)
+                        if len(stakeholder_str) > 25:
+                            stakeholder_str = f"{len(stakeholders)} member(s)"
+                    else:
+                        stakeholder_str = f"{len(stakeholders)} member(s)"
+                else:
+                    stakeholder_str = "-"
+                row_cols.append(stakeholder_str)
+
+            row_cols.extend([str(tasks_todo), str(tasks_in_progress), str(tasks_done), str(tasks_total)])
+            lines.append("| " + " | ".join(row_cols) + " |")
 
     return "\n".join(lines)
 
@@ -119,9 +210,22 @@ def format_search_results_table(results, show_raw=False):
     if show_raw:
         return None  # Signal to show JSON instead
 
-    # Header
-    lines = ["| # | Title | Score | Status | Project | Priority |"]
-    lines.append("|---|-------|-------|--------|---------|----------|")
+    # Detect which enrichment fields are present
+    has_assignee = any(item.get("assignee") for item in results)
+    has_due_date = any(item.get("due_date") for item in results)
+    has_blockers = any(item.get("blockers") and len(item.get("blockers", [])) > 0 for item in results)
+
+    # Build header dynamically
+    header_cols = ["#", "Title", "Score", "Status", "Project", "Priority"]
+    if has_assignee:
+        header_cols.append("Assignee")
+    if has_due_date:
+        header_cols.append("Due Date")
+    if has_blockers:
+        header_cols.append("Blockers")
+
+    lines = ["| " + " | ".join(header_cols) + " |"]
+    lines.append("|" + "|".join(["---"] * len(header_cols)) + "|")
 
     for i, item in enumerate(results, 1):
         title = item.get("title", "Untitled")[:50]
@@ -137,7 +241,35 @@ def format_search_results_table(results, show_raw=False):
         project = item.get("project_name") or "-"
         priority = item.get("priority") or "-"
 
-        lines.append(f"| {i} | {title} | {score} | {status} | {project} | {priority} |")
+        # Build row
+        row_cols = [str(i), title, score, status, project, priority]
+
+        if has_assignee:
+            assignee = item.get("assignee") or "-"
+            if len(assignee) > 20:
+                assignee = assignee[:18] + "..."
+            row_cols.append(assignee)
+
+        if has_due_date:
+            due_date = item.get("due_date")
+            if due_date:
+                if hasattr(due_date, 'strftime'):
+                    due_date_str = due_date.strftime("%b %d")
+                else:
+                    due_date_str = str(due_date)[:10]
+            else:
+                due_date_str = "-"
+            row_cols.append(due_date_str)
+
+        if has_blockers:
+            blockers = item.get("blockers", [])
+            if blockers:
+                blocker_str = f"{len(blockers)} blocker(s)"
+            else:
+                blocker_str = "-"
+            row_cols.append(blocker_str)
+
+        lines.append("| " + " | ".join(row_cols) + " |")
 
     return "\n".join(lines)
 
@@ -150,9 +282,17 @@ def format_project_search_results_table(results, show_raw=False):
     if show_raw:
         return None  # Signal to show JSON instead
 
-    # Header for project search results
-    lines = ["| # | Name | Description | Status | Score |"]
-    lines.append("|---|------|-------------|--------|-------|")
+    # Detect if stakeholders field is present
+    has_stakeholders = any(project.get("stakeholders") and len(project.get("stakeholders", [])) > 0 for project in results)
+
+    # Build header dynamically
+    header_cols = ["#", "Name", "Description", "Status"]
+    if has_stakeholders:
+        header_cols.append("Stakeholders")
+    header_cols.append("Score")
+
+    lines = ["| " + " | ".join(header_cols) + " |"]
+    lines.append("|" + "|".join(["---"] * len(header_cols)) + "|")
 
     for i, project in enumerate(results, 1):
         name = project.get("name", "Untitled")[:40]
@@ -172,7 +312,25 @@ def format_project_search_results_table(results, show_raw=False):
         if isinstance(score, float):
             score = f"{score:.2f}"
 
-        lines.append(f"| {i} | {name} | {description} | {status} | {score} |")
+        # Build row
+        row_cols = [str(i), name, description, status]
+
+        if has_stakeholders:
+            stakeholders = project.get("stakeholders", [])
+            if stakeholders:
+                # Show count or names if short
+                if len(stakeholders) <= 2:
+                    stakeholder_str = ", ".join(stakeholders)
+                    if len(stakeholder_str) > 20:
+                        stakeholder_str = f"{len(stakeholders)} member(s)"
+                else:
+                    stakeholder_str = f"{len(stakeholders)} member(s)"
+            else:
+                stakeholder_str = "-"
+            row_cols.append(stakeholder_str)
+
+        row_cols.append(score)
+        lines.append("| " + " | ".join(row_cols) + " |")
 
     return "\n".join(lines)
 

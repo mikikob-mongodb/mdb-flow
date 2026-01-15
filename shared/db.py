@@ -1,14 +1,14 @@
 """MongoDB database connection and utilities."""
 
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.collection import Collection
 
 from shared.config import settings
-from shared.models import Task, Project, Settings, ActivityLogEntry
+from shared.models import Task, Project, Settings, ActivityLogEntry, ProjectUpdate
 
 
 class MongoDB:
@@ -129,6 +129,9 @@ def create_task(task: Task, action_note: str = "Task created") -> ObjectId:
     collection = get_collection(TASKS_COLLECTION)
     result = collection.insert_one(task_doc)
 
+    # Auto-generate episodic summary for new task (activity_count = 1)
+    _maybe_generate_task_episodic_summary(result.inserted_id)
+
     return result.inserted_id
 
 
@@ -191,12 +194,16 @@ def update_task(
         }
     )
 
+    if result.modified_count > 0:
+        # Auto-generate episodic summary if conditions met
+        _maybe_generate_task_episodic_summary(task_id)
+
     return result.modified_count > 0
 
 
 def add_task_note(task_id: ObjectId, note: str) -> bool:
     """
-    Add a note to a task.
+    Add a note to a task with automatic activity logging.
 
     Args:
         task_id: ObjectId of the task
@@ -206,13 +213,30 @@ def add_task_note(task_id: ObjectId, note: str) -> bool:
         True if successful, False otherwise
     """
     collection = get_collection(TASKS_COLLECTION)
+    now = datetime.utcnow()
+
+    # Create activity log entry
+    activity_entry = ActivityLogEntry(
+        timestamp=now,
+        action="note_added",
+        note=note
+    ).model_dump()
+
     result = collection.update_one(
         {"_id": task_id},
         {
-            "$push": {"notes": note},
-            "$set": {"updated_at": datetime.utcnow()}
+            "$push": {
+                "notes": note,
+                "activity_log": activity_entry
+            },
+            "$set": {"updated_at": now}
         }
     )
+
+    if result.modified_count > 0:
+        # Auto-generate episodic summary if conditions met
+        _maybe_generate_task_episodic_summary(task_id)
+
     return result.modified_count > 0
 
 
@@ -315,7 +339,7 @@ def update_project(
 
 def add_project_note(project_id: ObjectId, note: str) -> bool:
     """
-    Add a note to a project.
+    Add a note to a project with automatic activity logging.
 
     Args:
         project_id: ObjectId of the project
@@ -327,6 +351,13 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
     collection = get_collection(PROJECTS_COLLECTION)
     now = datetime.utcnow()
 
+    # Get current project for episodic summary trigger
+    current_project = collection.find_one({"_id": project_id})
+    if not current_project:
+        return False
+
+    old_activity_count = len(current_project.get("activity_log", []))
+
     # Create activity log entry
     activity_entry = ActivityLogEntry(
         timestamp=now,
@@ -334,12 +365,18 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
         note=note
     ).model_dump()
 
+    # Create project update entry for UI display
+    project_update = ProjectUpdate(
+        date=now,
+        content=note
+    ).model_dump()
+
     result = collection.update_one(
         {"_id": project_id},
         {
             "$push": {
-                "notes": note,
-                "activity_log": activity_entry
+                "activity_log": activity_entry,
+                "updates": project_update
             },
             "$set": {
                 "updated_at": now,
@@ -347,6 +384,16 @@ def add_project_note(project_id: ObjectId, note: str) -> bool:
             }
         }
     )
+
+    if result.modified_count > 0:
+        # Auto-generate episodic summary if conditions met
+        new_activity_count = old_activity_count + 1
+        _maybe_generate_project_episodic_summary(
+            project_id,
+            old_activity_count=old_activity_count,
+            new_activity_count=new_activity_count
+        )
+
     return result.modified_count > 0
 
 
@@ -418,6 +465,39 @@ def get_project(project_id: ObjectId) -> Optional[Project]:
     return None
 
 
+def get_project_by_name(project_name: str) -> Optional[Project]:
+    """
+    Get a project by name (case-insensitive match).
+
+    Tries exact match first, then partial match if no exact match found.
+    Example: "Alpha" will match "Project Alpha"
+
+    Args:
+        project_name: Name of the project (full or partial)
+
+    Returns:
+        Project model instance or None if not found
+    """
+    collection = get_collection(PROJECTS_COLLECTION)
+
+    # Try exact match first
+    project_doc = collection.find_one({
+        "name": {"$regex": f"^{project_name}$", "$options": "i"},
+        "is_test": {"$ne": True}
+    })
+
+    # If no exact match, try partial match (case-insensitive word boundary)
+    if not project_doc:
+        project_doc = collection.find_one({
+            "name": {"$regex": f"\\b{project_name}\\b", "$options": "i"},
+            "is_test": {"$ne": True}
+        })
+
+    if project_doc:
+        return Project(**project_doc)
+    return None
+
+
 # Settings helper functions
 
 def get_settings(user_id: str = "default") -> Optional[Settings]:
@@ -483,3 +563,108 @@ def set_current_context(
         updates["current_project_id"] = project_id
 
     return update_settings(user_id, **updates)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# EPISODIC MEMORY AUTO-GENERATION
+# ═══════════════════════════════════════════════════════════════════
+
+def _maybe_generate_task_episodic_summary(task_id: ObjectId) -> None:
+    """
+    Auto-generate episodic memory summary for a task if conditions are met.
+
+    Generates every 3-5 activity log entries (specifically at counts 1, 5, 9, 13, etc.).
+
+    Args:
+        task_id: ObjectId of the task
+    """
+    try:
+        # Import here to avoid circular imports
+        from shared.episodic import should_generate_task_summary, generate_task_episodic_summary
+        from agents.coordinator import memory_manager
+
+        # Get updated task
+        task = get_task(task_id)
+        if not task:
+            return
+
+        # Check if we should generate a summary
+        activity_count = len(task.activity_log)
+        if should_generate_task_summary(activity_count):
+            # Generate summary
+            summary = generate_task_episodic_summary(task)
+
+            # Store in memory_episodic collection
+            memory_manager.store_episodic_summary(
+                user_id="default",  # TODO: Get from context
+                entity_type="task",
+                entity_id=task_id,
+                summary=summary,
+                activity_count=activity_count,
+                entity_title=task.title,
+                entity_status=task.status
+            )
+
+    except Exception as e:
+        # Silently fail - episodic summary generation is optional
+        # Don't break the task update if this fails
+        pass
+
+
+def _maybe_generate_project_episodic_summary(
+    project_id: ObjectId,
+    old_description: Optional[str] = None,
+    new_description: Optional[str] = None,
+    old_activity_count: Optional[int] = None,
+    new_activity_count: Optional[int] = None
+) -> None:
+    """
+    Auto-generate episodic memory summary for a project if conditions are met.
+
+    Generates when description changes or activity count crosses thresholds.
+
+    Args:
+        project_id: ObjectId of the project
+        old_description: Previous description (if known)
+        new_description: New description (if known)
+        old_activity_count: Previous activity count (if known)
+        new_activity_count: New activity count (if known)
+    """
+    try:
+        # Import here to avoid circular imports
+        from shared.episodic import should_generate_project_summary, generate_project_episodic_summary
+        from agents.coordinator import memory_manager
+
+        # Check if we should generate a summary (if we have before/after state)
+        if old_description is not None or old_activity_count is not None:
+            if not should_generate_project_summary(old_description, new_description, old_activity_count, new_activity_count):
+                return
+
+        # Get updated project
+        project = get_project(project_id)
+        if not project:
+            return
+
+        # Get tasks for this project
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        task_docs = tasks_collection.find({"project_id": project_id})
+        tasks = [Task(**doc) for doc in task_docs]
+
+        # Generate summary
+        summary = generate_project_episodic_summary(project, tasks)
+
+        # Store in memory_episodic collection
+        activity_count = len(project.activity_log)
+        memory_manager.store_episodic_summary(
+            user_id="default",  # TODO: Get from context
+            entity_type="project",
+            entity_id=project_id,
+            summary=summary,
+            activity_count=activity_count,
+            entity_title=project.name,
+            entity_status=project.status
+        )
+
+    except Exception as e:
+        # Silently fail - episodic summary generation is optional
+        pass

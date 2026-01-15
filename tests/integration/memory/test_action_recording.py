@@ -47,7 +47,7 @@ def test_action_recording():
         user_message="Mark the debugging task as done",
         session_id=session_id,
         turn_number=1,
-        optimizations={"long_term_memory": True},
+        optimizations={"memory_long_term": True},
         return_debug=True
     )
 
@@ -64,7 +64,7 @@ def test_action_recording():
         user_message="Create a task for testing memory in AgentOps",
         session_id=session_id,
         turn_number=2,
-        optimizations={"long_term_memory": True},
+        optimizations={"memory_long_term": True},
         return_debug=True
     )
 
@@ -80,7 +80,7 @@ def test_action_recording():
         user_message="What did I do today?",
         session_id=session_id,
         turn_number=3,
-        optimizations={"long_term_memory": True},
+        optimizations={"memory_long_term": True},
         return_debug=True
     )
 
@@ -96,7 +96,7 @@ def test_action_recording():
         user_message="Summarize my activity today",
         session_id=session_id,
         turn_number=4,
-        optimizations={"long_term_memory": True},
+        optimizations={"memory_long_term": True},
         return_debug=True
     )
 

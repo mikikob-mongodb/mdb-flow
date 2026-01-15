@@ -78,7 +78,7 @@ Flow Companion can connect to [Model Context Protocol](https://modelcontextproto
 3. The agent will now attempt to handle novel requests (research, web search, data extraction) via MCP
 
 **Connected Servers:**
-- **Tavily** (Remote SSE) - Web search and research via `tavily-search`, `tavily-extract`, `tavily-map`, `tavily-crawl`
+- **Tavily** (Stdio/SSE) - Web search and research via `tavily-search`, `tavily-extract`, `tavily-map`, `tavily-crawl` (uses local NPX with SSE fallback)
 - **MongoDB MCP** (Local Docker, Optional) - Dynamic database queries and aggregations (planned for future milestone)
 
 **Knowledge Cache:**
@@ -94,6 +94,32 @@ Flow Companion can connect to [Model Context Protocol](https://modelcontextproto
 - View discoveries in UI sidebar under "🔬 Tool Discoveries"
 
 **See:** `docs/features/MCP_AGENT.md` for complete architecture documentation, `tests/README_MCP_TESTS.md` for testing guide, and `tests/integration/test_mcp_agent.py` for integration tests.
+
+### Memory Query Tools (Milestone 7)
+
+The agent can now proactively leverage its memory systems via 3 new built-in tools:
+
+**`search_knowledge`**:
+- Searches semantic memory cache before making external API calls
+- Enables cache-before-search pattern to reduce redundant requests
+- Example: "What do we know about gaming use cases?" checks cached research first
+
+**`list_templates`**:
+- Lists available procedural memory templates with phase breakdowns
+- Shows GTM Roadmap, PRD Template, Blog Post templates
+- Example: "What templates do I have?"
+
+**`analyze_tool_discoveries`**:
+- Analyzes MCP tool usage patterns over time (default: 7 days)
+- Generates optimization suggestions:
+  - New built-in tools (if pattern reused 3+ times)
+  - Atlas optimizations (common query patterns)
+  - Template candidates (repeated workflows)
+  - Feature gaps (failed discovery patterns)
+- Example: "What patterns do you see in my tool usage?"
+- Powered by `memory/discovery_analysis.py` module
+
+**Total: 26 built-in tools** across 5 categories (Worklog, Retrieval, Context, Memory, Routing)
 
 ## Tech Stack
 
@@ -169,7 +195,25 @@ mdb-flow/
 
 ### 🚀 Quick Start (Recommended for New Developers)
 
-**One-command setup** that handles everything for you:
+**Option 1: Using Makefile** (simplest):
+
+```bash
+# 1. Clone repository
+git clone <repository-url>
+cd mdb-flow
+
+# 2. Create .env file with your API keys
+cp .env.example .env
+# Edit .env and add your API keys (see below)
+
+# 3. One command does everything!
+make setup
+
+# Or for complete first-run with app startup:
+make first-run
+```
+
+**Option 2: Using Python scripts directly**:
 
 ```bash
 # 1. Clone and install dependencies
@@ -184,16 +228,18 @@ cp .env.example .env
 # Edit .env and add your API keys (see below)
 
 # 3. Run the all-in-one setup script
-python scripts/setup.py
+python scripts/setup/setup.py
 ```
 
-The setup script will:
+**What the setup does:**
 - ✅ Check Python version and dependencies
 - ✅ Validate environment variables
 - ✅ Initialize MongoDB (8 collections + 68 indexes)
 - ✅ Seed demo data (projects, tasks, memories)
 - ✅ Verify everything works (database, APIs)
 - ✅ Display clear next steps
+
+**💡 Tip:** Run `make help` to see all available commands!
 
 ---
 
@@ -262,20 +308,20 @@ DEBUG=false
 Run the all-in-one setup script:
 
 ```bash
-python scripts/setup.py
+python scripts/setup/setup.py
 ```
 
 **Or run individual scripts:**
 
 ```bash
 # Initialize database (collections + indexes)
-python scripts/init_db.py
+python scripts/setup/init_db.py
 
 # Seed demo data
-python scripts/reset_demo.py
+python scripts/demo/reset_demo.py
 
 # Verify setup
-python scripts/verify_setup.py
+python scripts/setup/verify_setup.py
 ```
 
 #### 6. Create Vector Search Indexes (Manual - Required)
@@ -283,7 +329,7 @@ python scripts/verify_setup.py
 Vector search indexes must be created in the Atlas UI. Get the exact JSON definitions:
 
 ```bash
-python scripts/init_db.py --vector-instructions
+python scripts/setup/init_db.py --vector-instructions
 ```
 
 Then in MongoDB Atlas:
@@ -328,8 +374,64 @@ The setup script seeds realistic demo data including:
 
 To reset demo data later:
 ```bash
-python scripts/reset_demo.py --force
+# Using Makefile
+make reset-demo
+
+# Or using Python directly
+python scripts/demo/reset_demo.py --force
 ```
+
+---
+
+### 🛠️ Common Workflows (Makefile)
+
+The Makefile provides convenient shortcuts for common tasks:
+
+**Setup & Installation:**
+```bash
+make install      # Install dependencies only
+make setup        # Complete first-time setup
+make dev-setup    # Setup without demo data (for development)
+```
+
+**Demo Preparation:**
+```bash
+make reset-demo   # Reset demo data (before presentations)
+make demo-prep    # Reset + verify (comprehensive)
+make demo-verify  # Check demo data is ready
+```
+
+**Verification & Testing:**
+```bash
+make verify       # Full verification (environment + DB + APIs)
+make verify-quick # Quick check (skip API tests)
+make test         # Run full test suite
+make test-unit    # Unit tests only
+```
+
+**Running Applications:**
+```bash
+make run          # Start main Streamlit app
+make start-app    # Same as run
+make run-evals    # Start evals comparison app
+```
+
+**Cleanup:**
+```bash
+make clean        # Remove __pycache__ and artifacts
+make clean-all    # Remove venv too (fresh start)
+```
+
+**Quick Workflows:**
+```bash
+make first-run    # install + setup + verify + start app
+make quick-start  # install + db-init + seed + start app
+make fresh-start  # clean-all + install + setup
+```
+
+Run `make help` to see all available commands!
+
+---
 
 ### 6. Run the Applications
 

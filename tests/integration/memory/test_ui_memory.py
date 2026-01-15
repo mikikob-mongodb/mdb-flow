@@ -60,8 +60,8 @@ def test_ui_memory_integration():
         session_id=session_id,
         turn_number=1,
         optimizations={
-            "short_term_memory": True,
-            "long_term_memory": True,
+            "memory_short_term": True,
+            "memory_long_term": True,
             "context_injection": True
         },
         return_debug=True
@@ -160,8 +160,8 @@ def test_ui_memory_integration():
         session_id=session_id,
         turn_number=6,
         optimizations={
-            "short_term_memory": True,
-            "long_term_memory": True,
+            "memory_short_term": True,
+            "memory_long_term": True,
             "context_injection": True
         },
         return_debug=True
@@ -207,8 +207,8 @@ def test_ui_memory_integration():
         session_id=session_id,
         turn_number=8,
         optimizations={
-            "short_term_memory": True,
-            "long_term_memory": True,
+            "memory_short_term": True,
+            "memory_long_term": True,
             "context_injection": True
         },
         return_debug=True

@@ -46,113 +46,105 @@ class MemoryManager:
         from pymongo.errors import OperationFailure
 
         # ═══════════════════════════════════════════════════════════════
-        # SHORT-TERM MEMORY (TTL: 2 hours)
+        # WORKING MEMORY (In-memory session state - not persisted)
         # ═══════════════════════════════════════════════════════════════
-        self.short_term = self.db.short_term_memory
-
-        # Indexes (silently ignore if already exist with different options)
-        try:
-            self.short_term.create_index("expires_at", expireAfterSeconds=0)
-        except OperationFailure:
-            pass  # Index exists with different options
-        try:
-            self.short_term.create_index([("session_id", ASCENDING), ("memory_type", ASCENDING)])
-        except OperationFailure:
-            pass
-        try:
-            self.short_term.create_index([("session_id", ASCENDING), ("agent_id", ASCENDING)])
-        except OperationFailure:
-            pass
+        # Session context, handoffs, and disambiguation now handled in-memory
+        # No database collection needed
+        self._session_contexts = {}  # session_id -> context dict
+        self._agent_working = {}  # (session_id, agent_id) -> working memory dict
+        self._handoffs = {}  # handoff_id -> handoff dict
+        self._disambiguations = {}  # session_id -> disambiguation dict
 
         # ═══════════════════════════════════════════════════════════════
-        # LONG-TERM MEMORY (persistent)
+        # EPISODIC MEMORY (persistent - actions and events)
         # ═══════════════════════════════════════════════════════════════
-        self.long_term = self.db.long_term_memory
+        self.episodic = self.db.memory_episodic
 
-        # Indexes
+        # Indexes for actions/events
         try:
-            self.long_term.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
+            self.episodic.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
         except OperationFailure:
             pass
         try:
-            self.long_term.create_index([("user_id", ASCENDING), ("action_type", ASCENDING)])
+            self.episodic.create_index([("user_id", ASCENDING), ("action_type", ASCENDING)])
         except OperationFailure:
             pass
         try:
-            self.long_term.create_index([("user_id", ASCENDING), ("source_agent", ASCENDING)])
+            self.episodic.create_index([("user_id", ASCENDING), ("source_agent", ASCENDING)])
         except OperationFailure:
             pass
         try:
-            self.long_term.create_index([("user_id", ASCENDING), ("entity.project_name", ASCENDING)])
+            self.episodic.create_index([
+                ("entity_type", ASCENDING),
+                ("entity_id", ASCENDING),
+                ("generated_at", DESCENDING)
+            ])
         except OperationFailure:
             pass
 
-        # Index for semantic memory (preferences)
+        # ═══════════════════════════════════════════════════════════════
+        # SEMANTIC MEMORY (persistent - knowledge cache and preferences)
+        # ═══════════════════════════════════════════════════════════════
+        self.semantic = self.db.memory_semantic
+
+        # Indexes for knowledge and preferences
         try:
-            self.long_term.create_index([
+            self.semantic.create_index([
                 ("user_id", ASCENDING),
-                ("memory_type", ASCENDING),
                 ("semantic_type", ASCENDING),
                 ("key", ASCENDING)
             ])
         except OperationFailure:
             pass
-
-        # Index for procedural memory (rules)
         try:
-            self.long_term.create_index([
+            self.semantic.create_index([("user_id", ASCENDING), ("query", ASCENDING)])
+        except OperationFailure:
+            pass
+        try:
+            self.semantic.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+        except OperationFailure:
+            pass
+
+        # ═══════════════════════════════════════════════════════════════
+        # PROCEDURAL MEMORY (persistent - workflow patterns and rules)
+        # ═══════════════════════════════════════════════════════════════
+        self.procedural = self.db.memory_procedural
+
+        # Indexes
+        try:
+            self.procedural.create_index([
                 ("user_id", ASCENDING),
-                ("memory_type", ASCENDING),
+                ("rule_type", ASCENDING),
                 ("trigger_pattern", ASCENDING)
             ])
         except OperationFailure:
             pass
-
-        # ═══════════════════════════════════════════════════════════════
-        # SHARED MEMORY (TTL: 5 minutes)
-        # ═══════════════════════════════════════════════════════════════
-        self.shared = self.db.shared_memory
-
-        # Indexes
         try:
-            self.shared.create_index("expires_at", expireAfterSeconds=0)
-        except OperationFailure:
-            pass
-        try:
-            self.shared.create_index("handoff_id", unique=True)
-        except OperationFailure:
-            pass
-        try:
-            self.shared.create_index([
-                ("session_id", ASCENDING),
-                ("target_agent", ASCENDING),
-                ("status", ASCENDING)
+            self.procedural.create_index([
+                ("user_id", ASCENDING),
+                ("times_used", DESCENDING),
+                ("success_rate", DESCENDING)
             ])
         except OperationFailure:
             pass
         try:
-            self.shared.create_index("chain_id")
+            # Vector index for semantic workflow search
+            self.procedural.create_index([("embedding", ASCENDING)])
         except OperationFailure:
             pass
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHORT-TERM: SESSION CONTEXT
+    # WORKING MEMORY: SESSION CONTEXT (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def read_session_context(self, session_id: str) -> Optional[Dict]:
-        """Read session-level context."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "memory_type": "session_context"
-        })
-        return doc.get("context") if doc else None
+        """Read session-level context from in-memory storage."""
+        session_data = self._session_contexts.get(session_id, {})
+        return session_data.get("context")
 
     def update_session_context(self, session_id: str, updates: Dict,
                                user_id: str = None) -> None:
-        """Merge updates into session context."""
-        now = datetime.utcnow()
-        expires = now + timedelta(hours=2)
-
+        """Merge updates into session context (in-memory)."""
         # Get existing context
         existing = self.read_session_context(session_id) or {}
 
@@ -165,149 +157,110 @@ class MemoryManager:
             else:
                 existing[key] = value
 
-        self.short_term.update_one(
-            {"session_id": session_id, "memory_type": "session_context"},
-            {
-                "$set": {
-                    "context": existing,
-                    "updated_at": now,
-                    "expires_at": expires
-                },
-                "$setOnInsert": {
-                    "created_at": now,
-                    "user_id": user_id,
-                    "agent_id": None
-                }
-            },
-            upsert=True
-        )
+        # Store in memory
+        if session_id not in self._session_contexts:
+            self._session_contexts[session_id] = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "created_at": datetime.utcnow()
+            }
+
+        self._session_contexts[session_id]["context"] = existing
+        self._session_contexts[session_id]["updated_at"] = datetime.utcnow()
 
     def clear_session_context(self, session_id: str) -> None:
-        """Clear session context."""
-        self.short_term.delete_one({
-            "session_id": session_id,
-            "memory_type": "session_context"
-        })
+        """Clear session context from in-memory storage."""
+        if session_id in self._session_contexts:
+            del self._session_contexts[session_id]
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHORT-TERM: AGENT WORKING MEMORY
+    # WORKING MEMORY: AGENT WORKING MEMORY (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def read_agent_working(self, session_id: str, agent_id: str) -> Optional[Dict]:
-        """Read agent's working memory."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "agent_id": agent_id,
-            "memory_type": "agent_working"
-        })
-        return doc.get("working") if doc else None
+        """Read agent's working memory from in-memory storage."""
+        key = (session_id, agent_id)
+        agent_data = self._agent_working.get(key, {})
+        return agent_data.get("working")
 
     def update_agent_working(self, session_id: str, agent_id: str,
                             updates: Dict) -> None:
-        """Update agent's working memory."""
-        now = datetime.utcnow()
-        expires = now + timedelta(hours=2)
+        """Update agent's working memory in in-memory storage."""
+        key = (session_id, agent_id)
 
-        self.short_term.update_one(
-            {
+        # Get existing working memory
+        existing = self.read_agent_working(session_id, agent_id) or {}
+
+        # Apply updates
+        for k, v in updates.items():
+            existing[k] = v
+
+        # Store back
+        if key not in self._agent_working:
+            self._agent_working[key] = {
                 "session_id": session_id,
                 "agent_id": agent_id,
-                "memory_type": "agent_working"
-            },
-            {
-                "$set": {
-                    **{f"working.{k}": v for k, v in updates.items()},
-                    "updated_at": now,
-                    "expires_at": expires
-                },
-                "$setOnInsert": {
-                    "created_at": now,
-                    "memory_type": "agent_working"
-                }
-            },
-            upsert=True
-        )
+                "created_at": datetime.utcnow()
+            }
+
+        self._agent_working[key]["working"] = existing
+        self._agent_working[key]["updated_at"] = datetime.utcnow()
 
     def clear_agent_working(self, session_id: str, agent_id: str) -> None:
-        """Clear agent's working memory."""
-        self.short_term.delete_one({
-            "session_id": session_id,
-            "agent_id": agent_id,
-            "memory_type": "agent_working"
-        })
+        """Clear agent's working memory from in-memory storage."""
+        key = (session_id, agent_id)
+        if key in self._agent_working:
+            del self._agent_working[key]
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHORT-TERM: DISAMBIGUATION
+    # WORKING MEMORY: DISAMBIGUATION (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def store_disambiguation(self, session_id: str, query: str,
                             results: List[Dict], source_agent: str) -> None:
-        """Store search results for disambiguation."""
+        """Store search results for disambiguation in in-memory storage."""
         now = datetime.utcnow()
-        expires = now + timedelta(hours=2)
 
         # Add index to each result
         indexed_results = [
             {"index": i, **r} for i, r in enumerate(results[:5])
         ]
 
-        self.short_term.update_one(
-            {"session_id": session_id, "memory_type": "disambiguation"},
-            {
-                "$set": {
-                    "disambiguation": {
-                        "query": query,
-                        "results": indexed_results,
-                        "awaiting_selection": True,
-                        "source_agent": source_agent,
-                        "created_at": now
-                    },
-                    "updated_at": now,
-                    "expires_at": expires
-                },
-                "$setOnInsert": {
-                    "created_at": now,
-                    "agent_id": None
-                }
-            },
-            upsert=True
-        )
+        self._disambiguations[session_id] = {
+            "session_id": session_id,
+            "query": query,
+            "results": indexed_results,
+            "awaiting_selection": True,
+            "source_agent": source_agent,
+            "created_at": now,
+            "updated_at": now
+        }
 
     def resolve_disambiguation(self, session_id: str, index: int) -> Optional[Dict]:
-        """Resolve disambiguation by index."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "memory_type": "disambiguation"
-        })
+        """Resolve disambiguation by index from in-memory storage."""
+        disambiguation = self._disambiguations.get(session_id)
 
-        if not doc:
+        if not disambiguation:
             return None
 
-        results = doc.get("disambiguation", {}).get("results", [])
+        results = disambiguation.get("results", [])
         if index < 0 or index >= len(results):
             return None
 
         selected = results[index]
 
         # Mark as resolved
-        self.short_term.update_one(
-            {"_id": doc["_id"]},
-            {"$set": {
-                "disambiguation.awaiting_selection": False,
-                "disambiguation.selected_index": index
-            }}
-        )
+        disambiguation["awaiting_selection"] = False
+        disambiguation["selected_index"] = index
 
         return selected
 
     def get_pending_disambiguation(self, session_id: str) -> Optional[Dict]:
-        """Get pending disambiguation if any."""
-        doc = self.short_term.find_one({
-            "session_id": session_id,
-            "memory_type": "disambiguation",
-            "disambiguation.awaiting_selection": True
-        })
-        return doc.get("disambiguation") if doc else None
+        """Get pending disambiguation if any from in-memory storage."""
+        disambiguation = self._disambiguations.get(session_id)
+        if disambiguation and disambiguation.get("awaiting_selection"):
+            return disambiguation
+        return None
 
     # ═══════════════════════════════════════════════════════════════════
     # LONG-TERM: RECORDING ACTIONS
@@ -319,7 +272,7 @@ class MemoryManager:
                       triggered_by: str = "user",
                       handoff_id: str = None,
                       generate_embedding: bool = True) -> str:
-        """Record an action to long-term memory."""
+        """Record an action to episodic memory."""
 
         # Build embedding text
         embedding_text = self._build_embedding_text(
@@ -350,7 +303,7 @@ class MemoryManager:
             "created_at": datetime.utcnow()
         }
 
-        result = self.long_term.insert_one(doc)
+        result = self.episodic.insert_one(doc)
         return str(result.inserted_id)
 
     def _build_embedding_text(self, action_type: str, entity_type: str,
@@ -444,7 +397,7 @@ class MemoryManager:
             query["entity.project_name"] = project_name
 
         # Execute query
-        cursor = self.long_term.find(query).sort("timestamp", DESCENDING).limit(limit)
+        cursor = self.episodic.find(query).sort("timestamp", DESCENDING).limit(limit)
 
         results = []
         for doc in cursor:
@@ -556,7 +509,7 @@ class MemoryManager:
 
         # Execute search
         try:
-            results = list(self.long_term.aggregate(pipeline))
+            results = list(self.episodic.aggregate(pipeline))
 
             # Convert ObjectIds to strings
             for doc in results:
@@ -732,7 +685,7 @@ class MemoryManager:
         return "\n".join(parts)
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHARED: WRITING HANDOFFS
+    # WORKING MEMORY: WRITING HANDOFFS (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def write_handoff(self, session_id: str, user_id: str,
@@ -740,7 +693,7 @@ class MemoryManager:
                       handoff_type: str, payload: Dict,
                       chain_id: str = None, parent_handoff_id: str = None,
                       priority: str = "normal") -> str:
-        """Write a handoff for another agent."""
+        """Write a handoff for another agent to in-memory storage."""
 
         handoff_id = str(uuid.uuid4())
         chain_id = chain_id or str(uuid.uuid4())
@@ -749,7 +702,7 @@ class MemoryManager:
         # Calculate sequence in chain
         sequence = 1
         if parent_handoff_id:
-            parent = self.shared.find_one({"handoff_id": parent_handoff_id})
+            parent = self._handoffs.get(parent_handoff_id)
             if parent:
                 sequence = parent.get("sequence", 0) + 1
 
@@ -768,76 +721,85 @@ class MemoryManager:
             "parent_handoff_id": parent_handoff_id,
             "sequence": sequence,
             "created_at": now,
-            "consumed_at": None,
-            "expires_at": now + timedelta(minutes=5)
+            "consumed_at": None
         }
 
-        self.shared.insert_one(doc)
+        self._handoffs[handoff_id] = doc
         return handoff_id
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHARED: READING HANDOFFS
+    # WORKING MEMORY: READING HANDOFFS (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def read_handoff(self, session_id: str, target_agent: str,
                      handoff_type: str = None, consume: bool = True) -> Optional[Dict]:
-        """Read a handoff (optionally consuming it)."""
+        """Read a handoff from in-memory storage (optionally consuming it)."""
 
-        query = {
-            "session_id": session_id,
-            "target_agent": target_agent,
-            "status": "pending"
-        }
+        # Filter matching handoffs
+        matching = [
+            h for h in self._handoffs.values()
+            if h["session_id"] == session_id
+            and h["target_agent"] == target_agent
+            and h["status"] == "pending"
+            and (handoff_type is None or h["handoff_type"] == handoff_type)
+        ]
 
-        if handoff_type:
-            query["handoff_type"] = handoff_type
+        if not matching:
+            return None
 
-        sort = [("priority", DESCENDING), ("created_at", ASCENDING)]
+        # Sort by priority (descending) then created_at (ascending)
+        priority_order = {"high": 3, "normal": 2, "low": 1}
+        matching.sort(
+            key=lambda h: (-priority_order.get(h["priority"], 2), h["created_at"])
+        )
+
+        doc = matching[0]
 
         if consume:
-            doc = self.shared.find_one_and_update(
-                query,
-                {"$set": {
-                    "status": "consumed",
-                    "consumed_at": datetime.utcnow()
-                }},
-                sort=sort
-            )
-        else:
-            doc = self.shared.find_one(query, sort=sort)
+            doc["status"] = "consumed"
+            doc["consumed_at"] = datetime.utcnow()
 
         return doc
 
     def read_all_pending(self, session_id: str, target_agent: str) -> List[Dict]:
-        """Read all pending handoffs for an agent (without consuming)."""
+        """Read all pending handoffs for an agent from in-memory storage (without consuming)."""
 
-        cursor = self.shared.find({
-            "session_id": session_id,
-            "target_agent": target_agent,
-            "status": "pending"
-        }).sort([("priority", DESCENDING), ("created_at", ASCENDING)])
+        matching = [
+            h for h in self._handoffs.values()
+            if h["session_id"] == session_id
+            and h["target_agent"] == target_agent
+            and h["status"] == "pending"
+        ]
 
-        return list(cursor)
+        # Sort by priority (descending) then created_at (ascending)
+        priority_order = {"high": 3, "normal": 2, "low": 1}
+        matching.sort(
+            key=lambda h: (-priority_order.get(h["priority"], 2), h["created_at"])
+        )
+
+        return matching
 
     def check_pending(self, session_id: str, target_agent: str) -> bool:
-        """Check if there are pending handoffs."""
-        return self.shared.count_documents({
-            "session_id": session_id,
-            "target_agent": target_agent,
-            "status": "pending"
-        }) > 0
+        """Check if there are pending handoffs in in-memory storage."""
+        return any(
+            h["session_id"] == session_id
+            and h["target_agent"] == target_agent
+            and h["status"] == "pending"
+            for h in self._handoffs.values()
+        )
 
     # ═══════════════════════════════════════════════════════════════════
-    # SHARED: CHAIN OPERATIONS
+    # WORKING MEMORY: CHAIN OPERATIONS (In-Memory)
     # ═══════════════════════════════════════════════════════════════════
 
     def get_chain(self, chain_id: str) -> List[Dict]:
-        """Get all handoffs in a chain."""
-        cursor = self.shared.find({"chain_id": chain_id}).sort("sequence", ASCENDING)
-        return list(cursor)
+        """Get all handoffs in a chain from in-memory storage."""
+        matching = [h for h in self._handoffs.values() if h["chain_id"] == chain_id]
+        matching.sort(key=lambda h: h["sequence"])
+        return matching
 
     def get_chain_status(self, chain_id: str) -> Dict:
-        """Get status summary for a chain."""
+        """Get status summary for a chain from in-memory storage."""
         handoffs = self.get_chain(chain_id)
 
         return {
@@ -854,11 +816,10 @@ class MemoryManager:
         }
 
     def mark_error(self, handoff_id: str, error: str) -> None:
-        """Mark a handoff as errored."""
-        self.shared.update_one(
-            {"handoff_id": handoff_id},
-            {"$set": {"status": "error", "error": error}}
-        )
+        """Mark a handoff as errored in in-memory storage."""
+        if handoff_id in self._handoffs:
+            self._handoffs[handoff_id]["status"] = "error"
+            self._handoffs[handoff_id]["error"] = error
 
     # ═══════════════════════════════════════════════════════════════════
     # LONG-TERM: SEMANTIC MEMORY (Preferences)
@@ -879,7 +840,7 @@ class MemoryManager:
         Returns:
             Document ID
         """
-        existing = self.long_term.find_one({
+        existing = self.semantic.find_one({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "preference",
@@ -894,7 +855,7 @@ class MemoryManager:
             if source == "explicit":
                 new_confidence = max(new_confidence, 0.9)
 
-            self.long_term.update_one(
+            self.semantic.update_one(
                 {"_id": existing["_id"]},
                 {"$set": {
                     "value": value,
@@ -919,7 +880,7 @@ class MemoryManager:
             "created_at": now,
             "updated_at": now
         }
-        result = self.long_term.insert_one(doc)
+        result = self.semantic.insert_one(doc)
         return str(result.inserted_id)
 
     def get_preferences(self, user_id: str, min_confidence: float = 0.0) -> list:
@@ -942,7 +903,7 @@ class MemoryManager:
         if min_confidence > 0:
             query["confidence"] = {"$gte": min_confidence}
 
-        results = list(self.long_term.find(query).sort("confidence", -1))
+        results = list(self.semantic.find(query).sort("confidence", -1))
 
         # Convert ObjectId to string
         for r in results:
@@ -952,7 +913,7 @@ class MemoryManager:
 
     def get_preference(self, user_id: str, key: str) -> Optional[dict]:
         """Get a specific preference by key."""
-        doc = self.long_term.find_one({
+        doc = self.semantic.find_one({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "preference",
@@ -966,7 +927,7 @@ class MemoryManager:
 
     def delete_preference(self, user_id: str, key: str) -> bool:
         """Delete a preference."""
-        result = self.long_term.delete_one({
+        result = self.semantic.delete_one({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "preference",
@@ -998,9 +959,8 @@ class MemoryManager:
         # Normalize trigger
         trigger_normalized = trigger.lower().strip()
 
-        existing = self.long_term.find_one({
+        existing = self.procedural.find_one({
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger_normalized
         })
 
@@ -1010,7 +970,7 @@ class MemoryManager:
             # Update existing rule
             new_confidence = max(existing.get("confidence", 0), confidence)
 
-            self.long_term.update_one(
+            self.procedural.update_one(
                 {"_id": existing["_id"]},
                 {"$set": {
                     "action_type": action,
@@ -1025,7 +985,6 @@ class MemoryManager:
         # Create new rule
         doc = {
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger_normalized,
             "action_type": action,
             "parameters": parameters or {},
@@ -1035,7 +994,7 @@ class MemoryManager:
             "created_at": now,
             "updated_at": now
         }
-        result = self.long_term.insert_one(doc)
+        result = self.procedural.insert_one(doc)
         return str(result.inserted_id)
 
     def get_rules(self, user_id: str, min_confidence: float = 0.0) -> list:
@@ -1049,20 +1008,192 @@ class MemoryManager:
         Returns:
             List of rule documents, sorted by times_used (most used first)
         """
-        query = {
-            "user_id": user_id,
-            "memory_type": "procedural"
-        }
+        query = {"user_id": user_id}
 
         if min_confidence > 0:
             query["confidence"] = {"$gte": min_confidence}
 
-        results = list(self.long_term.find(query).sort("times_used", -1))
+        results = list(self.procedural.find(query).sort("times_used", -1))
 
         for r in results:
             r["_id"] = str(r["_id"])
 
         return results
+
+    def get_workflows(self, user_id: str, min_success_rate: float = 0.0) -> list:
+        """
+        Get all workflow patterns (Procedural Memory) for a user.
+
+        Workflows are multi-step operation patterns that guide the agent
+        through complex sequences like "create task then start it".
+
+        Args:
+            user_id: User identifier
+            min_success_rate: Minimum success rate threshold (0.0-1.0)
+
+        Returns:
+            List of workflow documents, sorted by times_used and success_rate
+        """
+        query = {
+            "user_id": user_id,
+            "rule_type": "workflow"
+        }
+
+        if min_success_rate > 0:
+            query["success_rate"] = {"$gte": min_success_rate}
+
+        results = list(self.procedural.find(query).sort([
+            ("times_used", -1),  # Most used first
+            ("success_rate", -1)  # Then by success rate
+        ]))
+
+        for r in results:
+            r["_id"] = str(r["_id"])
+
+        return results
+
+    def get_workflow_for_pattern(self, user_id: str, user_message: str) -> Optional[dict]:
+        """
+        Get workflow matching a trigger pattern in the user's message.
+
+        Args:
+            user_id: User identifier
+            user_message: User's input text
+
+        Returns:
+            Matching workflow or None
+        """
+        import re
+
+        # Get all workflows for this user
+        workflows = self.procedural.find({
+            "user_id": user_id,
+            "rule_type": "workflow"
+        })
+
+        # Check each workflow's trigger pattern
+        for workflow in workflows:
+            trigger_pattern = workflow.get("trigger_pattern", "")
+            if trigger_pattern:
+                try:
+                    if re.search(trigger_pattern, user_message, re.IGNORECASE):
+                        # Update last_used timestamp
+                        from datetime import datetime
+                        self.procedural.update_one(
+                            {"_id": workflow["_id"]},
+                            {
+                                "$set": {"last_used": datetime.utcnow()},
+                                "$inc": {"times_used": 1}
+                            }
+                        )
+                        workflow["_id"] = str(workflow["_id"])
+                        return workflow
+                except re.error:
+                    # Invalid regex pattern, skip
+                    continue
+
+        return None
+
+    def search_workflows_semantic(
+        self,
+        user_id: str,
+        user_message: str,
+        min_score: float = 0.7,
+        limit: int = 3
+    ) -> Optional[dict]:
+        """
+        Search for workflow using combined regex + vector similarity.
+
+        First tries exact regex pattern matching. If no match found,
+        falls back to semantic vector search.
+
+        Args:
+            user_id: User identifier
+            user_message: User's input text
+            min_score: Minimum similarity score for vector search (0.0-1.0)
+            limit: Maximum number of vector search results to consider
+
+        Returns:
+            Best matching workflow or None
+        """
+        import re
+        from datetime import datetime
+
+        # STEP 1: Try regex pattern matching (fast, precise)
+        workflows = list(self.procedural.find({
+            "user_id": user_id,
+            "rule_type": "workflow"
+        }))
+
+        for workflow in workflows:
+            trigger_pattern = workflow.get("trigger_pattern", "")
+            if trigger_pattern:
+                try:
+                    if re.search(trigger_pattern, user_message, re.IGNORECASE):
+                        # Update usage stats
+                        self.procedural.update_one(
+                            {"_id": workflow["_id"]},
+                            {
+                                "$set": {"last_used": datetime.utcnow()},
+                                "$inc": {"times_used": 1}
+                            }
+                        )
+                        workflow["_id"] = str(workflow["_id"])
+                        workflow["match_type"] = "regex"
+                        workflow["match_score"] = 1.0
+                        return workflow
+                except re.error:
+                    continue
+
+        # STEP 2: Fall back to vector similarity search
+        if not self.embed:
+            return None
+
+        # Generate embedding for user message
+        query_embedding = self.embed(user_message)
+
+        # Vector search pipeline
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": limit * 10,
+                    "limit": limit,
+                    "filter": {
+                        "user_id": user_id,
+                        "rule_type": "workflow"
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        results = list(self.procedural.aggregate(pipeline))
+
+        if results and results[0].get("score", 0) >= min_score:
+            best_match = results[0]
+
+            # Update usage stats
+            self.procedural.update_one(
+                {"_id": best_match["_id"]},
+                {
+                    "$set": {"last_used": datetime.utcnow()},
+                    "$inc": {"times_used": 1}
+                }
+            )
+
+            best_match["_id"] = str(best_match["_id"])
+            best_match["match_type"] = "semantic"
+            best_match["match_score"] = best_match.get("score", 0)
+            return best_match
+
+        return None
 
     def get_rule_for_trigger(self, user_id: str, trigger: str) -> Optional[dict]:
         """
@@ -1077,9 +1208,8 @@ class MemoryManager:
         """
         trigger_normalized = trigger.lower().strip()
 
-        doc = self.long_term.find_one({
+        doc = self.procedural.find_one({
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger_normalized
         })
 
@@ -1087,7 +1217,7 @@ class MemoryManager:
             doc["_id"] = str(doc["_id"])
 
             # Increment usage
-            self.long_term.update_one(
+            self.procedural.update_one(
                 {"_id": ObjectId(doc["_id"])},
                 {"$inc": {"times_used": 1}, "$set": {"updated_at": datetime.utcnow()}}
             )
@@ -1096,9 +1226,8 @@ class MemoryManager:
 
     def delete_rule(self, user_id: str, trigger: str) -> bool:
         """Delete a rule by trigger pattern."""
-        result = self.long_term.delete_one({
+        result = self.procedural.delete_one({
             "user_id": user_id,
-            "memory_type": "procedural",
             "trigger_pattern": trigger.lower().strip()
         })
         return result.deleted_count > 0
@@ -1127,10 +1256,7 @@ class MemoryManager:
         Returns:
             Matching rule document or None
         """
-        query = {
-            "user_id": user_id,
-            "memory_type": "procedural"
-        }
+        query = {"user_id": user_id}
 
         if rule_type:
             query["rule_type"] = rule_type
@@ -1139,11 +1265,11 @@ class MemoryManager:
         if name:
             query["name"] = name
 
-        doc = self.long_term.find_one(query)
+        doc = self.procedural.find_one(query)
 
         if doc:
             # Update usage stats
-            self.long_term.update_one(
+            self.procedural.update_one(
                 {"_id": doc["_id"]},
                 {
                     "$inc": {"times_used": 1},
@@ -1177,12 +1303,12 @@ class MemoryManager:
         Returns:
             List of matching rule documents with similarity scores
         """
-        if not self.embedding_fn:
+        if not self.embed:
             # Fallback to text search if no embedding function
             return []
 
         # Generate embedding for query
-        query_embedding = self.embedding_fn(query)
+        query_embedding = self.embed(query)
 
         # Vector search pipeline
         pipeline = [
@@ -1194,8 +1320,7 @@ class MemoryManager:
                     "numCandidates": limit * 4,  # Search more candidates for better results
                     "limit": limit,
                     "filter": {
-                        "user_id": user_id,
-                        "memory_type": "procedural"
+                        "user_id": user_id
                     }
                 }
             },
@@ -1206,7 +1331,7 @@ class MemoryManager:
             }
         ]
 
-        results = list(self.long_term.aggregate(pipeline))
+        results = list(self.procedural.aggregate(pipeline))
 
         # Convert ObjectIds to strings
         for r in results:
@@ -1245,20 +1370,22 @@ class MemoryManager:
         query: str,
         results: any,
         source: str = "tavily",
+        summary: str = None,
         freshness_days: int = 7
     ) -> str:
         """
         Cache search/research results as knowledge.
 
-        Stored in long_term_memory with:
+        Stored in memory_semantic with:
         - memory_type: "semantic"
         - semantic_type: "knowledge"
 
         Args:
             user_id: User identifier
             query: Search query text
-            results: Search results to cache
+            results: Search results to cache (full text)
             source: Source of knowledge (e.g., "tavily", "mcp")
+            summary: Optional pre-computed summary (for display)
             freshness_days: Days until cache expires (default 7)
 
         Returns:
@@ -1281,7 +1408,8 @@ class MemoryManager:
             "memory_type": "semantic",
             "semantic_type": "knowledge",
             "query": query,
-            "results": results,
+            "result": results,  # Full results for reference
+            "summary": summary,  # Concise summary for display
             "source": source,
             "embedding": embedding,
             "fetched_at": now,
@@ -1290,7 +1418,7 @@ class MemoryManager:
             "created_at": now
         }
 
-        result = self.long_term.insert_one(doc)
+        result = self.semantic.insert_one(doc)
         return str(result.inserted_id)
 
     def get_cached_knowledge(
@@ -1362,7 +1490,7 @@ class MemoryManager:
         ]
 
         try:
-            results = list(self.long_term.aggregate(pipeline))
+            results = list(self.semantic.aggregate(pipeline))
         except Exception as e:
             from shared.logger import get_logger
             logger = get_logger("memory")
@@ -1375,7 +1503,7 @@ class MemoryManager:
         doc = results[0]
 
         # Increment access count
-        self.long_term.update_one(
+        self.semantic.update_one(
             {"_id": doc["_id"]},
             {
                 "$inc": {"times_accessed": 1},
@@ -1411,13 +1539,15 @@ class MemoryManager:
         except Exception:
             return []
 
+        # Use vector search for semantic similarity matching
+        # Vector search alone provides excellent cache hit rates (0.86+ scores for exact matches)
         pipeline = [
             {
                 "$vectorSearch": {
                     "index": "vector_index",
                     "path": "embedding",
                     "queryVector": query_embedding,
-                    "numCandidates": 50,
+                    "numCandidates": 100,
                     "limit": limit,
                     "filter": {
                         "user_id": user_id,
@@ -1427,14 +1557,22 @@ class MemoryManager:
                 }
             },
             {
-                "$addFields": {
-                    "score": {"$meta": "vectorSearchScore"}
+                "$project": {
+                    "key": 1,
+                    "value": 1,
+                    "tags": 1,
+                    "confidence": 1,
+                    "source": 1,
+                    "times_accessed": 1,
+                    "created_at": 1,
+                    "score": {"$meta": "vectorSearchScore"},
+                    "_id": 0
                 }
             }
         ]
 
         try:
-            return list(self.long_term.aggregate(pipeline))
+            return list(self.semantic.aggregate(pipeline))
         except Exception as e:
             from shared.logger import get_logger
             logger = get_logger("memory")
@@ -1451,7 +1589,7 @@ class MemoryManager:
         Returns:
             Count of deleted documents
         """
-        result = self.long_term.delete_many({
+        result = self.semantic.delete_many({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "knowledge"
@@ -1470,13 +1608,13 @@ class MemoryManager:
         """
         now = datetime.now(timezone.utc)
 
-        total = self.long_term.count_documents({
+        total = self.semantic.count_documents({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "knowledge"
         })
 
-        fresh = self.long_term.count_documents({
+        fresh = self.semantic.count_documents({
             "user_id": user_id,
             "memory_type": "semantic",
             "semantic_type": "knowledge",
@@ -1490,33 +1628,157 @@ class MemoryManager:
         }
 
     # ═══════════════════════════════════════════════════════════════════
+    # EPISODIC MEMORY: AI-GENERATED ACTIVITY SUMMARIES
+    # ═══════════════════════════════════════════════════════════════════
+
+    def store_episodic_summary(
+        self,
+        user_id: str,
+        entity_type: str,
+        entity_id: Any,
+        summary: str,
+        activity_count: int,
+        entity_title: str = None,
+        entity_status: str = None
+    ) -> str:
+        """
+        Store an AI-generated episodic memory summary.
+
+        Args:
+            user_id: User identifier
+            entity_type: "task" or "project"
+            entity_id: ObjectId of task or project
+            summary: AI-generated natural language summary
+            activity_count: Number of activity log entries at time of generation
+            entity_title: Task title or project name (optional)
+            entity_status: Current status (optional)
+
+        Returns:
+            Inserted document ID as string
+        """
+        from bson import ObjectId
+
+        # Convert entity_id to ObjectId if needed
+        if not isinstance(entity_id, ObjectId):
+            entity_id = ObjectId(entity_id)
+
+        doc = {
+            "user_id": user_id,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "summary": summary,
+            "activity_count": activity_count,
+            "entity_title": entity_title,
+            "entity_status": entity_status,
+            "created_at": datetime.utcnow(),
+            "generated_at": datetime.utcnow()
+        }
+
+        result = self.episodic.insert_one(doc)
+        return str(result.inserted_id)
+
+    def get_latest_episodic_summary(
+        self,
+        entity_type: str,
+        entity_id: Any
+    ) -> Optional[Dict]:
+        """
+        Get the most recent episodic memory summary for a task or project.
+
+        Args:
+            entity_type: "task" or "project"
+            entity_id: ObjectId of task or project
+
+        Returns:
+            Latest summary document or None
+        """
+        from bson import ObjectId
+
+        # Convert entity_id to ObjectId if needed
+        if not isinstance(entity_id, ObjectId):
+            entity_id = ObjectId(entity_id)
+
+        doc = self.episodic.find_one(
+            {
+                "entity_type": entity_type,
+                "entity_id": entity_id
+            },
+            sort=[("generated_at", DESCENDING)]
+        )
+
+        if doc:
+            doc["_id"] = str(doc["_id"])
+            doc["entity_id"] = str(doc["entity_id"])
+
+        return doc
+
+    def get_all_episodic_summaries(
+        self,
+        entity_type: str,
+        entity_id: Any,
+        limit: int = 10
+    ) -> List[Dict]:
+        """
+        Get all episodic memory summaries for a task or project (most recent first).
+
+        Args:
+            entity_type: "task" or "project"
+            entity_id: ObjectId of task or project
+            limit: Maximum number of summaries to return
+
+        Returns:
+            List of summary documents
+        """
+        from bson import ObjectId
+
+        # Convert entity_id to ObjectId if needed
+        if not isinstance(entity_id, ObjectId):
+            entity_id = ObjectId(entity_id)
+
+        cursor = self.episodic.find(
+            {
+                "entity_type": entity_type,
+                "entity_id": entity_id
+            }
+        ).sort("generated_at", DESCENDING).limit(limit)
+
+        results = []
+        for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            doc["entity_id"] = str(doc["entity_id"])
+            results.append(doc)
+
+        return results
+
+    # ═══════════════════════════════════════════════════════════════════
     # UTILITIES
     # ═══════════════════════════════════════════════════════════════════
 
     def get_memory_stats(self, session_id: str, user_id: str) -> Dict:
         """Get memory statistics including all memory types."""
 
-        # Short-term and shared counts
-        short_term_count = self.short_term.count_documents({"session_id": session_id})
-        shared_pending = self.shared.count_documents({
-            "session_id": session_id,
-            "status": "pending"
-        })
+        # Working memory counts (in-memory)
+        session_count = 1 if session_id in self._session_contexts else 0
+        agent_working_count = sum(1 for k in self._agent_working.keys() if k[0] == session_id)
+        disambiguation_count = 1 if session_id in self._disambiguations else 0
+        handoff_pending = sum(
+            1 for h in self._handoffs.values()
+            if h["session_id"] == session_id and h["status"] == "pending"
+        )
+        working_memory_count = session_count + agent_working_count + disambiguation_count
 
         # Long-term breakdown by memory_type
-        episodic_count = self.long_term.count_documents({
-            "user_id": user_id,
-            "memory_type": {"$nin": ["semantic", "procedural"]}  # Actions (episodic)
+        episodic_count = self.episodic.count_documents({
+            "user_id": user_id
         })
 
-        semantic_count = self.long_term.count_documents({
-            "user_id": user_id,
-            "memory_type": "semantic"
+        semantic_count = self.semantic.count_documents({
+            "user_id": user_id
         })
 
-        procedural_count = self.long_term.count_documents({
-            "user_id": user_id,
-            "memory_type": "procedural"
+        # Procedural workflows and rules (from dedicated collection)
+        procedural_count = self.procedural.count_documents({
+            "user_id": user_id
         })
 
         # Knowledge cache stats
@@ -1526,15 +1788,15 @@ class MemoryManager:
         action_counts = self._get_action_counts(user_id)
 
         return {
-            "short_term_count": short_term_count,
+            "working_memory_count": working_memory_count,
             "long_term_count": episodic_count + semantic_count + procedural_count,
-            "shared_pending": shared_pending,
+            "handoff_pending": handoff_pending,
             "by_type": {
-                "working_memory": short_term_count,
+                "working_memory": working_memory_count,
                 "episodic_memory": episodic_count,
                 "semantic_memory": semantic_count,
                 "procedural_memory": procedural_count,
-                "shared_memory": shared_pending
+                "handoffs_pending": handoff_pending
             },
             "knowledge_cache": knowledge_stats,
             "action_counts": action_counts
@@ -1544,19 +1806,47 @@ class MemoryManager:
         """Get counts by action type (episodic memory only)."""
         pipeline = [
             {"$match": {
-                "user_id": user_id,
-                "memory_type": {"$nin": ["semantic", "procedural"]}  # Only episodic
+                "user_id": user_id
             }},
             {"$group": {"_id": "$action_type", "count": {"$sum": 1}}}
         ]
-        results = list(self.long_term.aggregate(pipeline))
+        results = list(self.episodic.aggregate(pipeline))
         return {r["_id"]: r["count"] for r in results if r["_id"]}
 
     def clear_session(self, session_id: str) -> Dict[str, int]:
-        """Clear all memory for a session (for testing/demo reset)."""
-        short = self.short_term.delete_many({"session_id": session_id})
-        shared = self.shared.delete_many({"session_id": session_id})
+        """Clear all memory for a session from in-memory storage (for testing/demo reset)."""
+        # Clear session contexts
+        session_deleted = 0
+        if session_id in self._session_contexts:
+            del self._session_contexts[session_id]
+            session_deleted = 1
+
+        # Clear agent working memory
+        agent_deleted = 0
+        keys_to_delete = [k for k in self._agent_working.keys() if k[0] == session_id]
+        for key in keys_to_delete:
+            del self._agent_working[key]
+            agent_deleted += 1
+
+        # Clear disambiguation
+        disambiguation_deleted = 0
+        if session_id in self._disambiguations:
+            del self._disambiguations[session_id]
+            disambiguation_deleted = 1
+
+        # Clear handoffs
+        handoff_deleted = 0
+        handoff_ids_to_delete = [
+            hid for hid, h in self._handoffs.items()
+            if h["session_id"] == session_id
+        ]
+        for hid in handoff_ids_to_delete:
+            del self._handoffs[hid]
+            handoff_deleted += 1
+
         return {
-            "short_term_deleted": short.deleted_count,
-            "shared_deleted": shared.deleted_count
+            "session_contexts_deleted": session_deleted,
+            "agent_working_deleted": agent_deleted,
+            "disambiguation_deleted": disambiguation_deleted,
+            "handoffs_deleted": handoff_deleted
         }

@@ -135,6 +135,76 @@ class RetrievalAgent:
                     },
                     "required": ["project_id"]
                 }
+            },
+            {
+                "name": "search_by_assignee",
+                "description": "Find tasks assigned to a specific person or team",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "assignee": {
+                            "type": "string",
+                            "description": "Name of the person or team"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["todo", "in_progress", "done"],
+                            "description": "Optional: Filter by task status"
+                        }
+                    },
+                    "required": ["assignee"]
+                }
+            },
+            {
+                "name": "search_blocked_tasks",
+                "description": "Find all tasks that have blockers (are blocked)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "Optional: Filter by project ID"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "search_by_due_date",
+                "description": "Find tasks by due date (overdue, due soon, due this week, etc.)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "filter": {
+                            "type": "string",
+                            "enum": ["overdue", "due_today", "due_this_week", "due_next_week", "all"],
+                            "description": "Due date filter to apply"
+                        },
+                        "assignee": {
+                            "type": "string",
+                            "description": "Optional: Filter by assignee"
+                        }
+                    },
+                    "required": ["filter"]
+                }
+            },
+            {
+                "name": "search_by_stakeholder",
+                "description": "Find projects where a specific person or team is a stakeholder",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "stakeholder": {
+                            "type": "string",
+                            "description": "Name of the stakeholder (person or team)"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "planned", "completed", "archived"],
+                            "description": "Optional: Filter by project status"
+                        }
+                    },
+                    "required": ["stakeholder"]
+                }
             }
         ]
 
@@ -160,6 +230,14 @@ class RetrievalAgent:
                 return self._search_incomplete(**tool_input)
             elif tool_name == "search_progress":
                 return self._search_progress(**tool_input)
+            elif tool_name == "search_by_assignee":
+                return self._search_by_assignee(**tool_input)
+            elif tool_name == "search_blocked_tasks":
+                return self._search_blocked_tasks(**tool_input)
+            elif tool_name == "search_by_due_date":
+                return self._search_by_due_date(**tool_input)
+            elif tool_name == "search_by_stakeholder":
+                return self._search_by_stakeholder(**tool_input)
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
@@ -621,6 +699,177 @@ class RetrievalAgent:
 
         return result
 
+    def _search_by_assignee(
+        self,
+        assignee: str,
+        status: Optional[Literal["todo", "in_progress", "done"]] = None
+    ) -> Dict[str, Any]:
+        """
+        Find tasks assigned to a specific person or team.
+
+        Args:
+            assignee: Name of the person or team
+            status: Optional status filter
+
+        Returns:
+            List of tasks assigned to the person/team
+        """
+        tasks_collection = get_collection(TASKS_COLLECTION)
+
+        # Build query
+        query = {"assignee": assignee}
+        if status:
+            query["status"] = status
+
+        # Find matching tasks
+        tasks = list(tasks_collection.find(query).sort("due_date", 1).limit(50))
+
+        # Convert ObjectId to string
+        for task in tasks:
+            task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return {
+            "success": True,
+            "assignee": assignee,
+            "status_filter": status,
+            "count": len(tasks),
+            "tasks": tasks
+        }
+
+    def _search_blocked_tasks(
+        self,
+        project_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Find all tasks that have blockers.
+
+        Args:
+            project_id: Optional project ID filter
+
+        Returns:
+            List of blocked tasks
+        """
+        tasks_collection = get_collection(TASKS_COLLECTION)
+
+        # Build query
+        query = {"blockers": {"$exists": True, "$ne": []}}
+        if project_id:
+            query["project_id"] = ObjectId(project_id)
+
+        # Find matching tasks
+        tasks = list(tasks_collection.find(query).sort("priority", -1).limit(50))
+
+        # Convert ObjectId to string
+        for task in tasks:
+            task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return {
+            "success": True,
+            "project_id_filter": project_id,
+            "count": len(tasks),
+            "tasks": tasks
+        }
+
+    def _search_by_due_date(
+        self,
+        filter: Literal["overdue", "due_today", "due_this_week", "due_next_week", "all"],
+        assignee: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Find tasks by due date.
+
+        Args:
+            filter: Due date filter to apply
+            assignee: Optional assignee filter
+
+        Returns:
+            List of tasks matching the due date filter
+        """
+        from datetime import datetime, timedelta
+
+        tasks_collection = get_collection(TASKS_COLLECTION)
+        now = datetime.utcnow()
+
+        # Build query
+        query = {"due_date": {"$exists": True, "$ne": None}}
+
+        if filter == "overdue":
+            query["due_date"] = {"$lt": now}
+            query["status"] = {"$ne": "done"}
+        elif filter == "due_today":
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            query["due_date"] = {"$gte": start_of_day, "$lte": end_of_day}
+        elif filter == "due_this_week":
+            end_of_week = now + timedelta(days=(7 - now.weekday()))
+            query["due_date"] = {"$gte": now, "$lte": end_of_week}
+        elif filter == "due_next_week":
+            start_of_next_week = now + timedelta(days=(7 - now.weekday() + 1))
+            end_of_next_week = start_of_next_week + timedelta(days=7)
+            query["due_date"] = {"$gte": start_of_next_week, "$lte": end_of_next_week}
+        # "all" - no date filter, just has due_date
+
+        if assignee:
+            query["assignee"] = assignee
+
+        # Find matching tasks
+        tasks = list(tasks_collection.find(query).sort("due_date", 1).limit(50))
+
+        # Convert ObjectId to string
+        for task in tasks:
+            task["_id"] = str(task["_id"])
+            if task.get("project_id"):
+                task["project_id"] = str(task["project_id"])
+
+        return {
+            "success": True,
+            "filter": filter,
+            "assignee_filter": assignee,
+            "count": len(tasks),
+            "tasks": tasks
+        }
+
+    def _search_by_stakeholder(
+        self,
+        stakeholder: str,
+        status: Optional[Literal["active", "planned", "completed", "archived"]] = None
+    ) -> Dict[str, Any]:
+        """
+        Find projects where a specific person or team is a stakeholder.
+
+        Args:
+            stakeholder: Name of the stakeholder
+            status: Optional status filter
+
+        Returns:
+            List of projects with the stakeholder
+        """
+        projects_collection = get_collection(PROJECTS_COLLECTION)
+
+        # Build query
+        query = {"stakeholders": stakeholder}
+        if status:
+            query["status"] = status
+
+        # Find matching projects
+        projects = list(projects_collection.find(query).sort("last_activity", -1).limit(50))
+
+        # Convert ObjectId to string
+        for project in projects:
+            project["_id"] = str(project["_id"])
+
+        return {
+            "success": True,
+            "stakeholder": stakeholder,
+            "status_filter": status,
+            "count": len(projects),
+            "projects": projects
+        }
+
     def fuzzy_match_task(
         self,
         reference: str,
@@ -889,25 +1138,31 @@ class RetrievalAgent:
                 "alternatives": scored_candidates[:3]
             }
 
-    def hybrid_search_tasks(self, query: str, limit: int = 5) -> list:
+    def hybrid_search_tasks(self, query: str, limit: int = 5,
+                           status: str = None, priority: str = None,
+                           project_id: str = None, assignee: str = None) -> list:
         """
-        Hybrid search combining vector + full-text for matching informal voice references.
+        Hybrid search combining vector + full-text with optional filters.
 
         Examples:
             "the debugging doc" → "Create debugging methodologies doc"
-            "checkpointer task" → "Implement MongoDB checkpointer for LangGraph"
-            "voice agent app" → "Build voice agent reference app"
+            "memory", priority="high", status="in_progress" → High-priority in-progress memory tasks
+            "tasks", assignee="Mike Chen", status="in_progress" → Mike Chen's in-progress tasks
 
         Args:
-            query: Informal task reference from voice input
+            query: Semantic search query
             limit: Maximum number of results to return
+            status: Optional filter by status (todo, in_progress, done)
+            priority: Optional filter by priority (low, medium, high)
+            project_id: Optional filter by project_id
+            assignee: Optional filter by assignee (partial match, case-insensitive). "Mike" matches "Mike Chen"
 
         Returns:
-            List of task dicts with _id, title, context, status, project_id, score
+            List of task dicts with _id, title, context, status, priority, assignee, project_id, project_name, score
         """
         import time
 
-        logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}")
+        logger.info(f"hybrid_search_tasks: query='{query}', limit={limit}, status={status}, priority={priority}, project_id={project_id}, assignee={assignee}")
 
         # Track timings for debug panel
         timings = {}
@@ -919,6 +1174,9 @@ class RetrievalAgent:
         logger.debug(f"Query embedding generated: {len(query_embedding)} dimensions ({timings['embedding_generation']}ms)")
 
         # Build hybrid search pipeline
+        # Use higher multiplier (10x) to get more results before post-filtering
+        search_limit = limit * 10
+
         pipeline = [
             {
                 "$rankFusion": {
@@ -930,8 +1188,8 @@ class RetrievalAgent:
                                         "index": "vector_index",
                                         "path": "embedding",
                                         "queryVector": query_embedding,
-                                        "numCandidates": 50,
-                                        "limit": limit * 2
+                                        "numCandidates": max(100, search_limit),
+                                        "limit": search_limit
                                     }
                                 }
                             ],
@@ -946,7 +1204,7 @@ class RetrievalAgent:
                                         }
                                     }
                                 },
-                                {"$limit": limit * 2}
+                                {"$limit": search_limit}
                             ]
                         }
                     },
@@ -958,10 +1216,24 @@ class RetrievalAgent:
                     }
                 }
             },
-            # Filter out test data
+            # Filter out test data and apply optional filters AFTER ranking
             {
                 "$match": {
                     "is_test": {"$ne": True}
+                }
+            },
+            # Lookup project name from project_id
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project_doc"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project_doc.name", 0]}
                 }
             },
             {
@@ -970,12 +1242,32 @@ class RetrievalAgent:
                     "title": 1,
                     "context": 1,
                     "status": 1,
+                    "priority": 1,
+                    "assignee": 1,
                     "project_id": 1,
+                    "project_name": 1,
                     "score": {"$meta": "score"}
                 }
             },
             {"$limit": limit}
         ]
+
+        # Build filter conditions for post-filtering (after ranking)
+        filter_conditions = {"is_test": {"$ne": True}}
+        if status:
+            filter_conditions["status"] = status
+        if priority:
+            filter_conditions["priority"] = priority
+        if project_id:
+            from bson import ObjectId
+            filter_conditions["project_id"] = ObjectId(project_id)
+        if assignee:
+            # Use case-insensitive partial match for assignee
+            # "Mike" matches "Mike Chen", "mike" matches "Mike Chen", etc.
+            filter_conditions["assignee"] = {"$regex": assignee, "$options": "i"}
+
+        # Update the match stage with all filters
+        pipeline[1]["$match"] = filter_conditions
 
         # Execute search
         try:
@@ -1012,7 +1304,7 @@ class RetrievalAgent:
             limit: Maximum number of results to return
 
         Returns:
-            List of project dicts with _id, name, description, context, status, score
+            List of project dicts with _id, name, description, context, status, stakeholders, score
         """
         import time
 
@@ -1039,7 +1331,7 @@ class RetrievalAgent:
                                         "index": "vector_index",
                                         "path": "embedding",
                                         "queryVector": query_embedding,
-                                        "numCandidates": 50,
+                                        "numCandidates": max(50, limit * 2),
                                         "limit": limit * 2
                                     }
                                 }
@@ -1080,6 +1372,7 @@ class RetrievalAgent:
                     "description": 1,
                     "context": 1,
                     "status": 1,
+                    "stakeholders": 1,
                     "score": {"$meta": "score"}
                 }
             },
@@ -1144,6 +1437,20 @@ class RetrievalAgent:
                     "limit": limit
                 }
             },
+            # Lookup project name from project_id
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project_doc"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project_doc.name", 0]}
+                }
+            },
             {
                 "$project": {
                     "_id": 1,
@@ -1151,6 +1458,7 @@ class RetrievalAgent:
                     "context": 1,
                     "status": 1,
                     "project_id": 1,
+                    "project_name": 1,
                     "priority": 1,
                     "score": {"$meta": "vectorSearchScore"}
                 }
@@ -1205,6 +1513,20 @@ class RetrievalAgent:
                     }
                 }
             },
+            # Lookup project name from project_id
+            {
+                "$lookup": {
+                    "from": "projects",
+                    "localField": "project_id",
+                    "foreignField": "_id",
+                    "as": "project_doc"
+                }
+            },
+            {
+                "$addFields": {
+                    "project_name": {"$arrayElemAt": ["$project_doc.name", 0]}
+                }
+            },
             {
                 "$project": {
                     "_id": 1,
@@ -1212,6 +1534,7 @@ class RetrievalAgent:
                     "context": 1,
                     "status": 1,
                     "project_id": 1,
+                    "project_name": 1,
                     "priority": 1,
                     "score": {"$meta": "searchScore"}
                 }

@@ -88,7 +88,7 @@ The MCP Agent handles requests that static tools can't by:
             ↓
 ┌─────────────────────────────────────────────────────────┐
 │           MCP Servers (External)                        │
-│  - Tavily (SSE Remote)                                  │
+│  - Tavily (Stdio Local, fallback to SSE Remote)         │
 │  - MongoDB MCP (Stdio Local - Optional)                 │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -238,10 +238,9 @@ discovery_id = discovery_store.log_discovery(
 
 ## Connected Servers
 
-### Tavily (Remote SSE)
+### Tavily (Stdio Primary, SSE Fallback)
 
-**URL:** `https://mcp.tavily.com/mcp/?tavilyApiKey=XXX`
-**Transport:** SSE (Server-Sent Events)
+**Transport:** Stdio (local NPX process) with SSE fallback
 **Tools:**
 - `tavily-search` - Web search with AI-optimized results
 - `tavily-extract` - Extract content from URLs
@@ -253,9 +252,21 @@ discovery_id = discovery_store.log_discovery(
 TAVILY_API_KEY=your-key-here
 ```
 
-**Connection Code:**
+**Connection Strategy:**
+1. **Primary (Stdio):** Spawns `npx -y tavily-mcp@latest` as local process
+   - More reliable, avoids SSE timeout issues
+   - Requires Node.js/NPX installed
+2. **Fallback (SSE):** Connects to `https://mcp.tavily.com/mcp/?tavilyApiKey=XXX`
+   - Used if stdio connection fails
+   - Subject to known SSE comment parsing issues
+
+**Connection Code (Stdio):**
 ```python
-streams = await sse_client(url=server_url)
+streams = await stdio_client(
+    command="npx",
+    args=["-y", "tavily-mcp@latest"],
+    env={"TAVILY_API_KEY": settings.tavily_api_key}
+)
 session = ClientSession(*streams)
 await session.initialize()
 tools = await session.list_tools()

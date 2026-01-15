@@ -59,7 +59,7 @@ def init_session_state():
         st.session_state.session_id = str(uuid.uuid4())
 
     if "user_id" not in st.session_state:
-        st.session_state.user_id = "demo_user"
+        st.session_state.user_id = "demo-user"
 
     if "current_context" not in st.session_state:
         st.session_state.current_context = {}
@@ -195,9 +195,9 @@ def render_context_engineering_toggles():
         "streamlined_prompt": streamline_prompt,
         "prompt_caching": cache_prompts,
         "memory_enabled": enable_memory,
-        "short_term_memory": short_term,
-        "long_term_memory": long_term,
-        "shared_memory": shared,
+        "memory_short_term": short_term,
+        "memory_long_term": long_term,
+        "memory_shared": shared,
         "context_injection": context_inject
     }
 
@@ -369,7 +369,7 @@ def render_context_engineering_toggles():
                 col1.metric("Semantic", by_type.get("semantic_memory", 0))
                 col2.metric("Procedural", by_type.get("procedural_memory", 0))
 
-                st.metric("Shared", by_type.get("shared_memory", 0))
+                st.metric("Handoffs Pending", by_type.get("handoffs_pending", 0))
 
             except Exception as e:
                 st.error(f"Error: {e}")
@@ -407,7 +407,7 @@ def render_context_engineering_toggles():
         active.append("⚡")
     if cache_prompts:
         active.append("💾")
-    if memory_enabled:
+    if enable_memory:
         active.append("🧠")
     st.sidebar.caption(f"Active: {' '.join(active) if active else 'None'}")
 

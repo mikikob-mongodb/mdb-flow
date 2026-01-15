@@ -2,6 +2,8 @@
 
 import json
 import uuid
+import asyncio
+import threading
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from bson import ObjectId
@@ -15,6 +17,7 @@ from agents.mcp_agent import MCPAgent
 from utils.context_engineering import compress_tool_result
 from config.prompts import get_system_prompt, get_prompt_stats
 from memory import MemoryManager
+from memory.workflow_executor import WorkflowExecutor
 
 logger = get_logger("coordinator")
 
@@ -59,18 +62,36 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "search_tasks",
-        "description": "Search for tasks using hybrid search (vector + text). Use for informal references like 'the debugging doc', 'checkpointer task', or 'voice agent app'. Returns top matching tasks.",
+        "description": "Search for tasks using hybrid search (vector + text). Use for semantic searches combined with filters. Example: 'high-priority memory tasks that are in-progress' → query='memory', priority='high', status='in_progress'. For assignee-specific queries like 'Mike's tasks', use assignee='Mike Chen'.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The informal task reference or search query"
+                    "description": "The semantic search query (e.g., 'memory', 'debugging', 'video')"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["todo", "in_progress", "done"],
+                    "description": "Optional: Filter results by status"
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "Optional: Filter results by priority"
+                },
+                "assignee": {
+                    "type": "string",
+                    "description": "Optional: Filter results by assignee (partial match, case-insensitive). 'Mike' matches 'Mike Chen', 'sarah' matches 'Sarah Thompson'"
+                },
+                "project_name": {
+                    "type": "string",
+                    "description": "Optional: Filter results by project name"
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of results (default 5)",
-                    "default": 5
+                    "description": "Maximum number of results (default 10)",
+                    "default": 10
                 }
             },
             "required": ["query"]
@@ -176,7 +197,7 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "create_task",
-        "description": "Create a new task in a project. Requires project name - no orphan tasks allowed. Use when user says 'create a task', 'add a task', 'make a new task', etc.",
+        "description": "Create a new task in a project. IMPORTANT: Use assignee, due_date, and blockers parameters when mentioned - do NOT put them in context. Returns task_id in result which can be used with start_task, complete_task, or add_note_to_task for multi-step operations (e.g., create then start).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -195,7 +216,20 @@ COORDINATOR_TOOLS = [
                 },
                 "context": {
                     "type": "string",
-                    "description": "Optional context/description for the task"
+                    "description": "Optional context/description for the task. Do NOT use this for assignee, due_date, or blockers."
+                },
+                "assignee": {
+                    "type": "string",
+                    "description": "Person or team responsible. REQUIRED when user says 'assign to X'. Use full name (e.g., 'Sarah Thompson'). Do NOT put in context."
+                },
+                "due_date": {
+                    "type": "string",
+                    "description": "Due date when user says 'due X'. Pass natural language as-is (e.g., 'in 5 days', 'tomorrow'). Do NOT put in context."
+                },
+                "blockers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of blockers preventing progress. Do NOT put in context."
                 }
             },
             "required": ["title", "project_name"]
@@ -203,7 +237,7 @@ COORDINATOR_TOOLS = [
     },
     {
         "name": "update_task",
-        "description": "Update an existing task's title, priority, context, status, or move it to a different project.",
+        "description": "Update an existing task's fields including assignee, due_date, and blockers. Do NOT put these in context.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -222,7 +256,7 @@ COORDINATOR_TOOLS = [
                 },
                 "context": {
                     "type": "string",
-                    "description": "New or additional context"
+                    "description": "New or additional context. Do NOT use for assignee, due_date, or blockers."
                 },
                 "status": {
                     "type": "string",
@@ -232,6 +266,19 @@ COORDINATOR_TOOLS = [
                 "project_name": {
                     "type": "string",
                     "description": "Move task to this project (will look up by name)"
+                },
+                "assignee": {
+                    "type": "string",
+                    "description": "New assignee. Use when changing who is responsible. Do NOT put in context."
+                },
+                "due_date": {
+                    "type": "string",
+                    "description": "New due date in natural language (e.g., 'in 5 days', 'tomorrow'). Do NOT put in context."
+                },
+                "blockers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Updated list of blockers (replaces existing). Do NOT put in context."
                 }
             },
             "required": ["task_id"]
@@ -267,7 +314,7 @@ COORDINATOR_TOOLS = [
                 },
                 "context": {
                     "type": "string",
-                    "description": "Rich context about the project"
+                    "description": "Rich context about the project. Include relevant research from recent conversation, semantic knowledge, or web searches. This helps provide background and rationale for the project."
                 }
             },
             "required": ["name"]
@@ -423,6 +470,20 @@ COORDINATOR_TOOLS = [
         }
     },
     {
+        "name": "get_project_by_name",
+        "description": "Get a project by exact name match (case-insensitive). Faster and more precise than search_projects when you know the exact project name. Example: 'Alpha' matches 'Project Alpha'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_name": {
+                    "type": "string",
+                    "description": "Exact name of the project (case-insensitive)"
+                }
+            },
+            "required": ["project_name"]
+        }
+    },
+    {
         "name": "get_action_history",
         "description": """Get history of past actions from long-term memory. Supports both filter-based and semantic search.
 
@@ -491,6 +552,68 @@ The selection number is 1-based (1 = first result, 2 = second result, etc.)""",
             },
             "required": ["selection"]
         }
+    },
+    {
+        "name": "search_knowledge",
+        "description": """Search cached knowledge from previous research, web searches, and learning. Use this to check 'what we know about X' BEFORE doing new research or calling external tools.
+
+Examples:
+- "What do we know about gaming use cases?"
+- "What have we learned about NPC memory systems?"
+- "Show me our research on voice agents"
+
+Returns cached knowledge with source attribution and timestamps. Only available when long-term memory is enabled.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for in cached knowledge"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return",
+                    "default": 5
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "analyze_tool_discoveries",
+        "description": """Analyze patterns in tool discoveries to suggest new features, Atlas optimizations, and templates. Shows what should be built next based on user behavior and MCP tool usage patterns.
+
+Examples:
+- "What patterns do you see in recent tool discoveries?"
+- "What should we build next based on my usage?"
+- "Analyze my tool discovery history"
+
+Returns:
+- Suggested new tools (repeated requests that could become built-in)
+- Atlas optimization opportunities (indexes, collections)
+- Template candidates (repeated workflows)
+- Feature gaps (failed or missing functionality)
+
+Only available when long-term memory is enabled.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "Number of days to analyze (default 7)",
+                    "default": 7
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "list_templates",
+        "description": "List all available project templates with their phases and task counts. Use when user asks 'what templates do I have', 'show me templates', 'list templates', or 'what project templates are available'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
     }
 ]
 
@@ -528,6 +651,11 @@ class CoordinatorAgent:
         self.mcp_agent: Optional[MCPAgent] = None
         self.mcp_mode_enabled = settings.mcp_mode_enabled  # Can be toggled via UI
 
+        # Persistent event loop for async MCP operations
+        self._async_loop = None
+        self._async_thread = None
+        self._loop_ready = threading.Event()
+
     def set_session(self, session_id: str, user_id: str = None):
         """Set session context for memory isolation.
 
@@ -539,10 +667,38 @@ class CoordinatorAgent:
         if user_id:
             self.user_id = user_id
 
+    def _ensure_event_loop(self):
+        """Ensure there's a running event loop for async MCP operations."""
+        if self._async_loop is None or not self._async_loop.is_running():
+            def run_loop():
+                """Run event loop in background thread."""
+                self._async_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self._async_loop)
+                self._loop_ready.set()
+                self._async_loop.run_forever()
+
+            self._async_thread = threading.Thread(target=run_loop, daemon=True)
+            self._async_thread.start()
+            self._loop_ready.wait()  # Wait for loop to be ready
+            logger.debug("Started persistent event loop for async operations")
+
+    def _run_async(self, coro):
+        """Run an async coroutine on the persistent event loop.
+
+        Args:
+            coro: Coroutine to run
+
+        Returns:
+            Result of the coroutine
+        """
+        self._ensure_event_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, self._async_loop)
+        return future.result()
+
     async def enable_mcp_mode(self):
         """Initialize and enable MCP mode"""
-        if self.mcp_agent is None:
-            if not self.db:
+        if self.mcp_agent is None or not self.mcp_agent._initialized:
+            if self.db is None:
                 return {
                     "success": False,
                     "error": "Database connection not available for MCP Agent"
@@ -554,7 +710,12 @@ class CoordinatorAgent:
                 memory_manager=self.memory,
                 embedding_fn=embed_query
             )
-            await self.mcp_agent.initialize()
+            try:
+                await self.mcp_agent.initialize()
+            except Exception as e:
+                # Reset agent on failed initialization
+                self.mcp_agent = None
+                raise
 
         self.mcp_mode_enabled = True
         status = self.mcp_agent.get_status()
@@ -629,6 +790,31 @@ class CoordinatorAgent:
                 }
                 action_desc = action_descriptions.get(rule['action_type'], rule['action_type'])
                 parts.append(f"  • When user says \"{rule['trigger_pattern']}\" → {action_desc}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # WORKFLOWS (Procedural Memory - Multi-step patterns)
+        # ═══════════════════════════════════════════════════════════════
+
+        workflows = self.memory.get_workflows(self.user_id)
+        if workflows:
+            parts.append("")  # Blank line separator
+            parts.append("Available Workflows (Procedural Memory):")
+            for workflow in workflows[:3]:  # Limit to top 3 most relevant
+                parts.append(f"  • {workflow['name']}: {workflow['description']}")
+                steps = workflow.get('workflow', {}).get('steps', [])
+                if steps:
+                    parts.append(f"    Steps:")
+                    for step in steps[:3]:  # Show first 3 steps
+                        action = step.get('action', 'unknown')
+                        desc = step.get('description', '')
+                        if desc:
+                            parts.append(f"      {step['step']}. {action} - {desc}")
+                        else:
+                            parts.append(f"      {step['step']}. {action}")
+                examples = workflow.get('examples', [])
+                if examples:
+                    parts.append(f"    Examples: \"{examples[0]}\"")
+                parts.append("")  # Blank line after each workflow
 
         # ═══════════════════════════════════════════════════════════════
         # DISAMBIGUATION (Short-term pending selections)
@@ -786,33 +972,75 @@ Use this memory context to:
         # ═══════════════════════════════════════════════════════════════
 
         msg_lower = user_message.lower()
+        import re
 
-        # Focus project preference
+        # Focus/context setting patterns (expanded for natural language)
         focus_patterns = [
+            ("i'm focusing on", "explicit"),
+            ("i am focusing on", "explicit"),
             ("focusing on", "explicit"),
             ("focus on", "explicit"),
+            ("i'm working on", "explicit"),
+            ("i am working on", "explicit"),
             ("working on", "inferred"),
             ("let's work on", "explicit"),
             ("i want to work on", "explicit"),
-            ("switch to", "explicit")
+            ("switch to", "explicit"),
+            ("i'm building", "explicit"),
+            ("i am building", "explicit"),
+            ("building", "inferred"),
+            ("set focus to", "explicit"),
+            ("set context to", "explicit"),
+            ("my focus is", "explicit"),
+            ("my context is", "explicit")
         ]
 
         for pattern, source in focus_patterns:
             if pattern in msg_lower:
-                # Extract project name (simple extraction)
-                words_after = msg_lower.split(pattern)[1].strip().split()[:3]
-                project_name = " ".join(words_after).strip(".,!?")
+                # Extract focus/context (better extraction with regex)
+                rest_of_message = msg_lower.split(pattern, 1)[1].strip()
 
-                # Save to long-term semantic memory
-                if self.memory and self.user_id and project_name:
-                    self.memory.record_preference(
-                        user_id=self.user_id,
-                        key="focus_project",
-                        value=project_name,
-                        source=source,
-                        confidence=0.9 if source == "explicit" else 0.7
-                    )
-                    self.memory_ops["preference_recorded"] = True
+                # Try to extract quoted text first (e.g., "gaming demo")
+                quote_match = re.search(r'["\']([^"\']+)["\']', rest_of_message)
+                if quote_match:
+                    focus_text = quote_match.group(1)
+                else:
+                    # Extract until punctuation or common stop words
+                    words = rest_of_message.split()
+                    stop_words = {'for', 'with', 'using', 'and', 'or', 'but', 'because'}
+                    focus_words = []
+                    for word in words[:5]:  # Limit to 5 words
+                        cleaned = word.strip(".,!?;:")
+                        if cleaned in stop_words:
+                            break
+                        focus_words.append(cleaned)
+                    focus_text = " ".join(focus_words)
+
+                if focus_text and len(focus_text) > 1:
+                    # Update WORKING MEMORY (session context) immediately
+                    updates["focus"] = focus_text
+                    updates["context"] = focus_text
+
+                    # Also try to detect if it's a project name
+                    # (contains words like "project", "demo", "app", etc.)
+                    if any(word in focus_text for word in ["project", "demo", "app", "system"]):
+                        updates["current_project"] = focus_text
+
+                    # Save to long-term semantic memory
+                    if self.memory and self.user_id:
+                        self.memory.record_preference(
+                            user_id=self.user_id,
+                            key="focus_context",
+                            value=focus_text,
+                            source=source,
+                            confidence=0.9 if source == "explicit" else 0.7
+                        )
+                        self.memory_ops["preference_recorded"] = True
+
+                        logger.info(
+                            f"📌 Context set via natural language: '{focus_text}' "
+                            f"(pattern: '{pattern}')"
+                        )
                 break
 
         # Priority preference
@@ -1009,17 +1237,19 @@ Use this memory context to:
         if intent in static_intents:
             return True
 
-        # Intents that need MCP
+        # Intents that need MCP (external tool discovery - Tier 4)
+        # NOTE: "unknown" is NOT in this list - unknown intents should be handled
+        # by the LLM with built-in tools (Tier 3), not require MCP mode (Tier 4)
         mcp_intents = [
             "research", "web_search", "find_information",
             "complex_query", "aggregation", "data_extraction",
-            "unknown"
+            "advanced_mongodb_query"  # Complex aggregation pipelines, analytics via MongoDB MCP
         ]
 
         if intent in mcp_intents:
             return False
 
-        # Default to static for safety
+        # Default to static tools (including LLM with built-in tools for "unknown")
         return True
 
     def _classify_intent(self, user_message: str) -> str:
@@ -1058,8 +1288,43 @@ Use this memory context to:
         if any(word in msg_lower for word in ["search the web", "look up", "research", "find information about", "what's the latest"]):
             return "web_search"
 
-        # Default to unknown (will try MCP if enabled)
+        # Advanced MongoDB query generation (aggregation pipelines, complex analytics)
+        if any(word in msg_lower for word in ["aggregation pipeline", "generate query", "build query", "create query", "mongodb query", "analyze completion rates", "time-series analysis"]):
+            return "advanced_mongodb_query"
+
+        # Default to unknown (will use Tier 3 built-in LLM agents)
         return "unknown"
+
+    def _build_tool_registry(self) -> Dict[str, Any]:
+        """
+        Build a tool registry mapping action names to callable functions.
+
+        Returns:
+            Dict mapping action name to callable function
+        """
+        from bson import ObjectId
+
+        return {
+            # Task operations
+            "create_task": lambda **kwargs: self.worklog_agent._create_task(**kwargs),
+            "update_task": lambda **kwargs: self.worklog_agent._update_task(**kwargs),
+            "start_task": lambda task_id: self.worklog_agent._update_task(task_id, status="in_progress"),
+            "complete_task": lambda task_id: self.worklog_agent._complete_task(task_id),
+            "stop_task": lambda task_id: self.worklog_agent._update_task(task_id, status="todo"),
+            "get_task": lambda task_id: self.worklog_agent._get_task(task_id),
+            "add_note_to_task": lambda task_id, note: self.worklog_agent._add_note("task", task_id, note),
+
+            # Project operations
+            "create_project": lambda **kwargs: self.worklog_agent._create_project(**kwargs),
+            "update_project": lambda **kwargs: self.worklog_agent._update_project(**kwargs),
+            "get_project": lambda project_id: self.worklog_agent._get_project(project_id),
+
+            # Search operations - use retrieval agent for search
+            "search_tasks": lambda query, limit=10, **kwargs: self.retrieval_agent.hybrid_search_tasks(query, limit, **kwargs),
+            "search_projects": lambda query, limit=5: self.retrieval_agent.hybrid_search_projects(query, limit),
+            "get_tasks": lambda **kwargs: self.worklog_agent._list_tasks(**kwargs),
+            "get_projects": lambda **kwargs: self.worklog_agent._list_projects(**kwargs),
+        }
 
     def _classify_multi_step_intent(self, user_message: str) -> dict:
         """
@@ -1352,6 +1617,14 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     tasks_created = []
                     phases_data = template.get("template", {}).get("phases", [])
 
+                    # Build task context from template + research
+                    task_context_base = f"Generated from {template.get('name')}"
+                    research_results = context.get("research_results")
+                    if research_results:
+                        # Truncate research to keep task context concise
+                        research_preview = str(research_results)[:200] if isinstance(research_results, str) else str(research_results)[:200]
+                        task_context_base += f"\n\nProject context: {research_preview}..."
+
                     for phase in phases_data:
                         phase_name = phase.get("name", "")
                         logger.info(f"  Phase: {phase_name}")
@@ -1364,7 +1637,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                 title=full_title,
                                 project_id=project_id,
                                 priority="medium",
-                                context=f"Generated from {template.get('name')}"
+                                context=task_context_base
                             )
 
                             if task_result.get("success"):
@@ -1591,17 +1864,25 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         source_messages = {
             "knowledge_cache": "📚 Found this in my knowledge cache:",
             "discovery_reuse": "🔄 I've solved this before:",
-            "new_discovery": "🆕 I figured out how to do this:"
+            "new_discovery": "🆕 Here's what I found:"
         }
 
         prefix = source_messages.get(mcp_result.get("source"), "")
 
         # Format result content
+        # For cache hits, prefer summary if available
         result_content = mcp_result.get("result", "")
-        if isinstance(result_content, list):
-            formatted_result = "\n\n".join(str(item) for item in result_content)
+
+        # Check if this is from cache and has a summary
+        if mcp_result.get("source") == "knowledge_cache" and mcp_result.get("summary"):
+            formatted_result = mcp_result.get("summary")
+            logger.debug(f"Using cached summary ({len(formatted_result)} chars)")
         else:
-            formatted_result = str(result_content)
+            # Use full result content
+            if isinstance(result_content, list):
+                formatted_result = "\n\n".join(str(item) for item in result_content)
+            else:
+                formatted_result = str(result_content)
 
         response_text = f"{prefix}\n\n{formatted_result}" if prefix else formatted_result
 
@@ -1626,7 +1907,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         tools = [t for t in COORDINATOR_TOOLS if t["name"] != "get_action_history"]
 
         # Only include history tool if long-term memory is enabled
-        if self.optimizations.get("long_term_memory") and self.memory:
+        if self.optimizations.get("memory_long_term") and self.memory:
             # Find the history tool definition
             history_tool = next((t for t in COORDINATOR_TOOLS if t["name"] == "get_action_history"), None)
             if history_tool:
@@ -1680,11 +1961,33 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 )
 
             elif tool_name == "search_tasks":
-                # Hybrid search for tasks
+                # Hybrid search for tasks with optional filters
                 query = tool_input["query"]
-                limit = tool_input.get("limit", 5)
+                limit = tool_input.get("limit", 10)
+                status = tool_input.get("status")
+                priority = tool_input.get("priority")
+                assignee = tool_input.get("assignee")
+                project_name = tool_input.get("project_name")
 
-                tasks = self.retrieval_agent.hybrid_search_tasks(query, limit)
+                # Convert project_name to project_id if provided
+                project_id = None
+                if project_name:
+                    from shared.db import get_collection, PROJECTS_COLLECTION
+                    projects_collection = get_collection(PROJECTS_COLLECTION)
+                    project_doc = projects_collection.find_one(
+                        {"name": {"$regex": f"^{project_name}$", "$options": "i"}}
+                    )
+                    if project_doc:
+                        project_id = str(project_doc["_id"])
+
+                tasks = self.retrieval_agent.hybrid_search_tasks(
+                    query,
+                    limit,
+                    status=status,
+                    priority=priority,
+                    project_id=project_id,
+                    assignee=assignee
+                )
 
                 # Convert ObjectId to string for JSON serialization
                 for task in tasks:
@@ -1795,6 +2098,9 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 project_name = tool_input["project_name"]
                 priority = tool_input.get("priority", "medium")
                 context = tool_input.get("context", "")
+                assignee = tool_input.get("assignee")
+                due_date = tool_input.get("due_date")
+                blockers = tool_input.get("blockers")
 
                 # Look up project by name
                 projects = self.retrieval_agent.hybrid_search_projects(project_name, limit=1)
@@ -1812,7 +2118,10 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         title=title,
                         project_id=str(project_id),
                         priority=priority,
-                        context=context
+                        context=context,
+                        assignee=assignee,
+                        due_date=due_date,
+                        blockers=blockers
                     )
 
             elif tool_name == "update_task":
@@ -1823,6 +2132,9 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 context = tool_input.get("context")
                 status = tool_input.get("status")
                 project_name = tool_input.get("project_name")
+                assignee = tool_input.get("assignee")
+                due_date = tool_input.get("due_date")
+                blockers = tool_input.get("blockers")
 
                 # Look up project if moving to different project
                 project_id = None
@@ -1845,7 +2157,10 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         priority=priority,
                         context=context,
                         status=status,
-                        project_id=project_id
+                        project_id=project_id,
+                        assignee=assignee,
+                        due_date=due_date,
+                        blockers=blockers
                     )
 
             elif tool_name == "stop_task":
@@ -1918,6 +2233,23 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                 # Get single project by ID
                 project_id = tool_input["project_id"]
                 result = self.worklog_agent._get_project(project_id)
+
+            elif tool_name == "get_project_by_name":
+                # Get project by exact name match
+                from shared.db import get_project_by_name
+                project_name = tool_input["project_name"]
+                project = get_project_by_name(project_name)
+
+                if project:
+                    result = {
+                        "success": True,
+                        "project": project.model_dump(by_alias=True)
+                    }
+                else:
+                    result = {
+                        "success": False,
+                        "error": f"Project '{project_name}' not found. Use get_projects or search_projects to see available projects."
+                    }
 
             elif tool_name == "get_action_history":
                 # Query long-term memory for action history using new API
@@ -2056,6 +2388,113 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                 "success": False,
                                 "error": f"Invalid selection {selection}. Valid options: 1-{len(pending.get('results', []))}"
                             }
+
+            elif tool_name == "list_templates":
+                # List all available project templates
+                if not self.memory or not self.user_id:
+                    result = {
+                        "success": False,
+                        "error": "Memory not available or user not set"
+                    }
+                else:
+                    # Get all templates from procedural memory
+                    templates = list(self.db.memory_procedural.find({
+                        "user_id": self.user_id,
+                        "rule_type": "template"
+                    }))
+
+                    # Format templates for display
+                    formatted_templates = []
+                    for tmpl in templates:
+                        phases = tmpl.get("phases", [])
+                        total_tasks = sum(len(phase.get("tasks", [])) for phase in phases)
+
+                        formatted_templates.append({
+                            "name": tmpl.get("name", "Unnamed Template"),
+                            "description": tmpl.get("description", ""),
+                            "phases": len(phases),
+                            "total_tasks": total_tasks,
+                            "phase_names": [p.get("name", "") for p in phases],
+                            "trigger": tmpl.get("trigger", ""),
+                            "times_used": tmpl.get("times_used", 0)
+                        })
+
+                    result = {
+                        "success": True,
+                        "templates": formatted_templates,
+                        "count": len(formatted_templates)
+                    }
+
+                    logger.info(f"📋 Listed {len(formatted_templates)} templates for user {self.user_id}")
+
+            elif tool_name == "search_knowledge":
+                # Search cached knowledge from semantic memory
+                if not self.memory or not self.user_id:
+                    result = {
+                        "success": False,
+                        "error": "Long-term memory not enabled"
+                    }
+                else:
+                    query = tool_input.get("query", "")
+                    limit = tool_input.get("limit", 5)
+
+                    # Search semantic memory for cached knowledge
+                    knowledge_results = self.memory.search_knowledge(
+                        user_id=self.user_id,
+                        query=query,
+                        limit=limit
+                    )
+
+                    # Format results for display
+                    formatted_results = []
+                    for item in knowledge_results:
+                        formatted_results.append({
+                            "topic": item.get("key", ""),
+                            "content": item.get("value", ""),
+                            "tags": item.get("tags", []),
+                            "source": item.get("source", "unknown"),
+                            "cached_at": item.get("created_at", "").isoformat() if item.get("created_at") else "",
+                            "confidence": item.get("confidence", 0),
+                            "score": item.get("score", 0),
+                            "times_accessed": item.get("times_accessed", 0)
+                        })
+
+                    result = {
+                        "success": True,
+                        "knowledge": formatted_results,
+                        "count": len(formatted_results),
+                        "message": f"Found {len(formatted_results)} cached knowledge entries" if formatted_results else "No cached knowledge found for this query"
+                    }
+
+                    logger.info(f"🔍 Searched knowledge cache: '{query}' → {len(formatted_results)} results")
+
+            elif tool_name == "analyze_tool_discoveries":
+                # Analyze tool discovery patterns
+                if not self.memory or not self.user_id:
+                    result = {
+                        "success": False,
+                        "error": "Long-term memory not enabled"
+                    }
+                else:
+                    days = tool_input.get("days", 7)
+
+                    # Import analysis function
+                    from memory.discovery_analysis import analyze_discoveries
+
+                    # Run analysis
+                    analysis = analyze_discoveries(
+                        db=self.db,
+                        user_id=self.user_id,
+                        days=days
+                    )
+
+                    result = {
+                        "success": True,
+                        "analysis": analysis,
+                        "period_days": days
+                    }
+
+                    logger.info(f"📊 Analyzed tool discoveries for {days} days")
 
             else:
                 result = {"success": False, "error": f"Unknown tool: {tool_name}"}
@@ -2290,7 +2729,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         self.current_chain_id = str(uuid.uuid4())
 
         # Set session on agents if session_id provided and shared memory enabled
-        if session_id and self.optimizations.get("shared_memory"):
+        if session_id and self.optimizations.get("memory_shared"):
             retrieval_agent.set_session(session_id)
             worklog_agent.set_session(session_id)
 
@@ -2329,6 +2768,74 @@ Execute the rule action: {rule_match['action']}
                 logger.info(f"🔔 Rule triggered: '{rule_match['trigger']}' → {rule_match['action']}")
 
         # ═══════════════════════════════════════════════════════════════
+        # WORKFLOW MATCHING: Check for multi-step procedural patterns
+        # ═══════════════════════════════════════════════════════════════
+
+        workflow_match = None
+        if self.memory_config.get("long_term") and self.memory:
+            # Try semantic workflow search (regex + vector similarity)
+            workflow_match = self.memory.search_workflows_semantic(
+                user_id=self.user_id,
+                user_message=user_message,
+                min_score=0.7  # Minimum similarity score for semantic matches
+            )
+
+            if workflow_match:
+                match_type = workflow_match.get("match_type", "unknown")
+                match_score = workflow_match.get("match_score", 0)
+                workflow_name = workflow_match.get("name", "Unknown Workflow")
+                logger.info(f"🔄 Workflow matched ({match_type}, score={match_score:.2f}): '{workflow_name}'")
+
+                # Execute workflow programmatically using WorkflowExecutor
+                tool_registry = self._build_tool_registry()
+                executor = WorkflowExecutor(tool_registry=tool_registry)
+
+                try:
+                    workflow_result = executor.execute_workflow(
+                        workflow=workflow_match,
+                        user_message=user_message,
+                        context={}
+                    )
+
+                    self.memory_ops["workflow_executed"] = workflow_name
+                    self.memory_ops["workflow_success"] = workflow_result.get("success", False)
+
+                    # Format response based on workflow result
+                    if workflow_result.get("success"):
+                        steps_completed = workflow_result.get("steps_completed", 0)
+                        total_steps = workflow_result.get("total_steps", 0)
+                        response_text = f"✅ **{workflow_name}** completed successfully ({steps_completed}/{total_steps} steps)"
+
+                        # Add details from workflow results
+                        results = workflow_result.get("results", [])
+                        if results:
+                            response_text += "\n\n**Steps executed:**"
+                            for result in results:
+                                action = result.get("action", "unknown")
+                                response_text += f"\n• {action}"
+
+                        return {
+                            "response": response_text,
+                            "confidence": "high",
+                            "workflow_executed": True,
+                            "workflow_result": workflow_result
+                        }
+                    else:
+                        error_msg = workflow_result.get("error", "Unknown error")
+                        response_text = f"⚠️ **{workflow_name}** failed: {error_msg}"
+                        return {
+                            "response": response_text,
+                            "confidence": "high",
+                            "workflow_executed": True,
+                            "workflow_result": workflow_result
+                        }
+
+                except Exception as e:
+                    logger.exception(f"Workflow execution failed: {e}")
+                    # Fall through to normal LLM processing
+                    workflow_match = None
+
+        # ═══════════════════════════════════════════════════════════════
         # MULTI-STEP ROUTING: Check if request contains multiple steps
         # ═══════════════════════════════════════════════════════════════
 
@@ -2354,20 +2861,48 @@ Execute the rule action: {rule_match['action']}
                 return formatted["response"]
 
         # ═══════════════════════════════════════════════════════════════
-        # MCP ROUTING: Check if request should be handled by MCP Agent
+        # TIER 4: MCP ROUTING - External Tool Discovery (Requires Toggle)
+        # ═══════════════════════════════════════════════════════════════
+        # This section handles requests that require EXTERNAL tools via MCP:
+        # - Web search and research (via Tavily)
+        # - Advanced MongoDB query generation (via MongoDB MCP server)
+        # - Other external tool discovery
+        #
+        # Requests that don't match Tier 1 (patterns), Tier 2 (slash commands),
+        # or Tier 4 (MCP external tools) will fall through to Tier 3 (LLM with
+        # built-in agents) below.
         # ═══════════════════════════════════════════════════════════════
 
         intent = self._classify_intent(user_message)
         logger.info(f"📊 Classified intent: {intent}")
 
-        # Check if static tools can handle this
-        if not self._can_static_tools_handle(intent, user_message):
-            logger.info(f"📊 Static tools cannot handle intent '{intent}', checking MCP...")
+        # Initialize current turn for tracking (needed for both MCP and normal paths)
+        self.current_turn = {
+            "turn": turn_number,
+            "user_input": user_message[:100] + "..." if len(user_message) > 100 else user_message,
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "tool_calls": [],
+            "llm_calls": [],
+            "total_duration_ms": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cache_hit": False,
+            "tools_called": []
+        }
 
-            # MCP mode check
+        # Check if this request needs EXTERNAL MCP tools (Tier 4)
+        if not self._can_static_tools_handle(intent, user_message):
+            logger.info(f"📊 Intent '{intent}' requires external MCP tools, checking if MCP mode enabled...")
+
+            # MCP mode check - only required for EXTERNAL tool discovery (Tier 4)
             if not self.mcp_mode_enabled:
-                logger.warning("📊 MCP mode disabled, suggesting to user")
-                response_text = "I don't have a built-in tool for this request. Enable Experimental MCP Mode to let me try to figure it out."
+                logger.warning(f"📊 MCP mode disabled, cannot use external tools for intent: {intent}")
+
+                # Customize message based on intent
+                if intent == "advanced_mongodb_query":
+                    response_text = "I don't have access to the MongoDB MCP server for advanced query generation. Enable Experimental MCP Mode to use MongoDB's query generation capabilities for complex aggregations and analytics."
+                else:
+                    response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
 
                 if return_debug:
                     return {
@@ -2385,10 +2920,9 @@ Execute the rule action: {rule_match['action']}
             logger.info(f"🔬 Routing to MCP Agent (intent: {intent})")
 
             try:
-                import asyncio
                 # Ensure MCP agent is initialized
                 if self.mcp_agent is None:
-                    init_result = asyncio.run(self.enable_mcp_mode())
+                    init_result = self._run_async(self.enable_mcp_mode())
                     if not init_result.get("success"):
                         error_response = f"Failed to initialize MCP mode: {init_result.get('error')}"
                         if return_debug:
@@ -2403,8 +2937,8 @@ Execute the rule action: {rule_match['action']}
                     if session_context:
                         context = session_context
 
-                # Call MCP agent
-                mcp_result = asyncio.run(self.mcp_agent.handle_request(
+                # Call MCP agent using persistent event loop
+                mcp_result = self._run_async(self.mcp_agent.handle_request(
                     user_request=user_message,
                     intent=intent,
                     context=context,
@@ -2415,6 +2949,55 @@ Execute the rule action: {rule_match['action']}
                 formatted = self._format_mcp_response(mcp_result)
 
                 logger.info(f"🔬 MCP Agent result: success={mcp_result.get('success')}, source={mcp_result.get('source')}")
+
+                # Track MCP tool call in current_turn for debug panel
+                if self.current_turn:
+                    source = mcp_result.get("source", "unknown")
+
+                    # Track cache check operation if it occurred
+                    cache_check_info = mcp_result.get("cache_check_info")
+                    if cache_check_info and cache_check_info.get("checked"):
+                        cache_hit = cache_check_info.get("hit", False)
+                        cache_score = cache_check_info.get("score", 0)
+                        cache_threshold = cache_check_info.get("threshold", 0.65)
+                        cache_time = cache_check_info.get("time_ms", 0)
+
+                        # Add cache check as a separate tool call
+                        self.current_turn["tool_calls"].append({
+                            "name": "search_knowledge",
+                            "input": {"query": user_message[:80], "threshold": cache_threshold},
+                            "output": f"{'HIT' if cache_hit else 'MISS'} (score: {cache_score:.2f})",
+                            "duration_ms": cache_time,
+                            "success": cache_hit,
+                            "source": "cache_check"
+                        })
+
+                    # Use special display for different sources
+                    if source == "knowledge_cache":
+                        mcp_tool_name = "cache/knowledge"
+                        cache_score = mcp_result.get("cache_score", 0)
+                        input_display = {"query": user_message[:80], "score": f"{cache_score:.2f}"}
+                    elif source == "discovery_reuse":
+                        mcp_server = mcp_result.get('mcp_server', 'unknown')
+                        tool_used = mcp_result.get('tool_used', 'unknown')
+                        mcp_tool_name = f"{mcp_server}/{tool_used}"
+                        input_display = mcp_result.get("arguments", {})
+                    else:
+                        mcp_server = mcp_result.get('mcp_server', 'unknown')
+                        tool_used = mcp_result.get('tool_used', 'unknown')
+                        mcp_tool_name = f"{mcp_server}/{tool_used}"
+                        input_display = mcp_result.get("arguments", {})
+
+                    self.current_turn["tool_calls"].append({
+                        "name": mcp_tool_name,
+                        "input": input_display,
+                        "output": str(mcp_result.get("result", ""))[:200] + "..." if len(str(mcp_result.get("result", ""))) > 200 else str(mcp_result.get("result", "")),
+                        "duration_ms": mcp_result.get("execution_time_ms", 0),
+                        "success": mcp_result.get("success", False),
+                        "source": source
+                    })
+                    self.current_turn["tools_called"].append(mcp_tool_name)
+                    self.current_turn["total_duration_ms"] = mcp_result.get("execution_time_ms", 0)
 
                 if return_debug:
                     return {
@@ -2443,6 +3026,17 @@ Execute the rule action: {rule_match['action']}
                 else:
                     return error_response
 
+        # ═══════════════════════════════════════════════════════════════
+        # TIER 3: LLM AGENT WITH BUILT-IN TOOLS (Always Available)
+        # ═══════════════════════════════════════════════════════════════
+        # This section handles ALL requests using Claude with built-in tools:
+        # - worklog_agent (tasks, projects, notes)
+        # - retrieval_agent (search, memory)
+        # - memory system (context, rules, preferences)
+        #
+        # This tier is ALWAYS available and does NOT require MCP toggle.
+        # ═══════════════════════════════════════════════════════════════
+
         # Get prompt caching setting
         cache_prompts = self.optimizations.get("prompt_caching", True)
 
@@ -2453,20 +3047,6 @@ Execute the rule action: {rule_match['action']}
         logger.info(f"History length: {len(conversation_history) if conversation_history else 0}")
         logger.info(f"📊 Prompt: {prompt_stats['type']} ({prompt_stats['word_count']} words, ~{int(prompt_stats['estimated_tokens'])} tokens)")
         logger.info(f"📊 Caching: {'enabled' if cache_prompts else 'disabled'}")
-
-        # Create new turn for debug tracking
-        self.current_turn = {
-            "turn": turn_number,
-            "user_input": user_message[:100] + "..." if len(user_message) > 100 else user_message,
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-            "tool_calls": [],
-            "llm_calls": [],  # Track LLM thinking time
-            "total_duration_ms": 0,
-            "tokens_in": 0,
-            "tokens_out": 0,
-            "cache_hit": False,
-            "tools_called": []
-        }
 
         # Reset old debug info (kept for backwards compatibility)
         self.last_debug_info = []
@@ -2493,6 +3073,16 @@ Execute the rule action: {rule_match['action']}
         logger.info(f"📊 System prompt length: {len(system_prompt)} chars")
         logger.info("=" * 80)
 
+        # Detect if this is an action request that requires tool use
+        user_message = messages[-1].get('content', '') if messages else ''
+        action_keywords = ['create', 'update', 'complete', 'start', 'add', 'mark', 'assign', 'change', 'delete', 'remove', 'show', 'list', 'what', 'get', 'tell', 'know']
+        requires_tool = any(keyword in user_message.lower() for keyword in action_keywords)
+
+        llm_kwargs = {}
+        if requires_tool:
+            llm_kwargs['tool_choice'] = {"type": "any"}  # Force tool use
+            logger.info("🔧 Forcing tool use for action/query request")
+
         llm_start = time.time()
         response = self.llm.generate_with_tools(
             messages=messages,
@@ -2500,7 +3090,8 @@ Execute the rule action: {rule_match['action']}
             system=system_prompt,
             max_tokens=4096,
             temperature=0.3,
-            cache_prompts=cache_prompts
+            cache_prompts=cache_prompts,
+            **llm_kwargs
         )
         llm_duration = int((time.time() - llm_start) * 1000)
 
@@ -2712,6 +3303,56 @@ Execute the rule action: {rule_match['action']}
             }
         else:
             return final_text.strip()
+
+    def process_stream(self, user_message: str, conversation_history: Optional[List[Dict[str, Any]]] = None, input_type: str = "text", turn_number: int = 1, optimizations: Optional[Dict[str, bool]] = None, session_id: Optional[str] = None):
+        """
+        Process a user message and stream the response word-by-word.
+
+        This provides a streaming UX by:
+        1. Executing all tool calls normally (synchronous)
+        2. Streaming the final text response word-by-word
+
+        Args:
+            Same as process()
+
+        Yields:
+            Tuples of (text_chunk, debug_info) where debug_info is only populated on the last chunk
+        """
+        import time as time_module
+
+        # Get the full response first (with all tool execution)
+        result = self.process(
+            user_message=user_message,
+            conversation_history=conversation_history,
+            input_type=input_type,
+            turn_number=turn_number,
+            optimizations=optimizations,
+            return_debug=True,
+            session_id=session_id
+        )
+
+        # Extract response and debug info
+        if isinstance(result, dict):
+            response_text = result.get("response", "")
+            debug_info = result.get("debug", {})
+        else:
+            response_text = result
+            debug_info = {}
+
+        # Stream the response word-by-word
+        words = response_text.split(' ')
+        for i, word in enumerate(words):
+            # Add space after word (except for last word)
+            chunk = word + (' ' if i < len(words) - 1 else '')
+
+            # Yield chunk with debug info only on last chunk
+            if i == len(words) - 1:
+                yield (chunk, debug_info)
+            else:
+                yield (chunk, None)
+
+            # Small delay for visual effect (optional)
+            time_module.sleep(0.01)
 
 
 # Global coordinator instance with memory manager

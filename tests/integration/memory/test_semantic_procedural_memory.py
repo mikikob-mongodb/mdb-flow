@@ -1,7 +1,7 @@
 """
 Test semantic memory (preferences) and procedural memory (rules).
 
-Tests persistent storage of preferences and rules in long_term_memory
+Tests persistent storage of preferences and rules in memory_long_term
 instead of session_context (short-term with 2hr TTL).
 """
 
@@ -220,7 +220,7 @@ def test_semantic_procedural_memory():
     print("TEST 6: Verify persistence (no TTL expiration)")
     print("=" * 60)
 
-    # Check documents in long_term_memory
+    # Check documents in memory_long_term
     semantic_docs = list(memory.long_term.find({
         "user_id": user_id,
         "memory_type": "semantic"
@@ -255,8 +255,8 @@ def test_semantic_procedural_memory():
     print("=" * 60)
 
     print("\nKey Features Verified:")
-    print("  ✓ Preferences stored persistently in long_term_memory")
-    print("  ✓ Rules stored persistently in long_term_memory")
+    print("  ✓ Preferences stored persistently in memory_long_term")
+    print("  ✓ Rules stored persistently in memory_long_term")
     print("  ✓ Confidence tracking and updates")
     print("  ✓ Times_used increments automatically")
     print("  ✓ Trigger normalization (case-insensitive)")

@@ -22,6 +22,7 @@ class ComparisonRunner:
         self.conversation_history = []
 
     def clear_history(self):
+        """Clear conversation history."""
         self.conversation_history = []
 
     def run_comparison(
@@ -157,8 +158,8 @@ class ComparisonRunner:
 
         try:
             response_data = self.coordinator.process(
-                test.query,
-                self.conversation_history,
+                user_message=test.query,
+                conversation_history=self.conversation_history,
                 optimizations=optimizations,
                 return_debug=True
             )

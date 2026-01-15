@@ -193,8 +193,8 @@ def test_semantic_procedural_memory():
     print("=" * 60)
 
     print("\nKey Features Verified:")
-    print("  ✓ Preferences stored persistently in long_term_memory")
-    print("  ✓ Rules stored persistently in long_term_memory")
+    print("  ✓ Preferences stored persistently in memory_long_term")
+    print("  ✓ Rules stored persistently in memory_long_term")
     print("  ✓ Confidence tracking and updates")
     print("  ✓ Times_used increments automatically")
     print("  ✓ Trigger normalization (case-insensitive)")

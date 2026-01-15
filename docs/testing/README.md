@@ -2,7 +2,7 @@
 
 **Version:** 3.0 (Milestone 6)
 **Demo Date:** January 15, 2026
-**Last Updated:** January 9, 2026
+**Last Updated:** January 13, 2026
 
 ---
 
@@ -14,7 +14,36 @@ This directory contains comprehensive testing guides for Flow Companion, coverin
 - **47 total tests** (35 unit, 11 integration, 1 skipped)
 - **~90% code coverage** (MCP Agent + Tool Discoveries)
 - **5-tier memory architecture** (Working, Episodic, Semantic, Procedural, Shared)
+- **4-tier query routing** (Pattern Detection, Slash Commands, LLM Agents, MCP Tools)
 - **Milestone 6 features**: MCP Agent, multi-step workflows, knowledge caching
+
+---
+
+## 4-Tier Query Routing Architecture
+
+Flow Companion uses a 4-tier routing system to handle queries efficiently:
+
+| Tier | Name | Speed | Cost | Toggle | Examples |
+|------|------|-------|------|--------|----------|
+| **1** | Explicit Slash Commands | 0ms | $0 | Always On | `/tasks status:todo`, `/projects AgentOps` |
+| **2** | Natural Language Pattern Detection | 0ms | $0 | Always On | "What's urgent?" → `/tasks priority:high status:todo,in_progress` |
+| **3** | LLM Agent with Built-in Tools | ~8s | ~$0.01 | Always On | "What should I work on next?" (uses worklog/retrieval agents) |
+| **4** | MCP External Tools | ~10s | ~$0.02 | MCP Toggle | "Research gaming market" (uses Tavily web search) |
+
+**Key Points:**
+- **Tier 1** is most explicit (slash commands) - user has full control
+- **Tier 2** adds natural language convenience (patterns auto-convert to slash commands)
+- **Tier 1 & 2** are both instant, free, and don't require LLM calls
+- **Tier 3** is ALWAYS available without MCP toggle (uses built-in agents: worklog, retrieval, memory)
+- **Tier 4** requires MCP Mode toggle (uses external MCP servers: Tavily, MongoDB MCP)
+- System automatically routes queries to the appropriate tier
+
+**Recent Updates:**
+- Tier ordering updated for logical presentation (explicit → natural language → LLM → MCP)
+- Natural language patterns (Tier 2) now support status filtering (e.g., "What's urgent?" excludes completed tasks)
+- MongoDB MCP Server added to Tier 4 for advanced query generation
+
+See: [docs/features/QUERY_ROUTING.md](../features/QUERY_ROUTING.md) for complete routing documentation.
 
 ---
 
@@ -23,8 +52,8 @@ This directory contains comprehensive testing guides for Flow Companion, coverin
 | Guide | Description | Time | Priority | Updated |
 |-------|-------------|------|----------|---------|
 | [00-setup.md](00-setup.md) | Environment setup, .env config, seed data | 5-10 min | Required | v3.0 |
-| [01-slash-commands.md](01-slash-commands.md) | Direct DB commands (fast path) | 15 min | P0 | v2.0 |
-| [02-text-queries.md](02-text-queries.md) | LLM-routed read queries | 15 min | P0 | v2.0 |
+| [01-slash-commands.md](01-slash-commands.md) | Tier 1 & 2: Slash commands + natural language patterns | 15 min | P0 | v3.1 |
+| [02-text-queries.md](02-text-queries.md) | Tier 3: LLM agents with built-in tools | 15 min | P0 | v3.1 |
 | [03-text-actions.md](03-text-actions.md) | LLM-routed write actions | 15 min | P0 | v2.0 |
 | [04-voice-input.md](04-voice-input.md) | Voice-to-text integration | 10 min | P1 | v2.0 |
 | [05-context-engineering.md](05-context-engineering.md) | Optimization toggles | 20 min | P1 | v2.0 |
@@ -216,19 +245,23 @@ See: [tests/README_MCP_TESTS.md](../../tests/README_MCP_TESTS.md) for complete t
 ```
 docs/testing/
 ├── README.md                    ← You are here (index + quick reference)
-├── DEMO_CHECKLIST.md           ← Pre-demo + day-of checklists
-├── TEST_COVERAGE.md            ← Coverage stats, what's tested
 │
 ├── 00-setup.md                 ← Environment setup
 ├── 01-slash-commands.md        ← Direct DB commands
 ├── 02-text-queries.md          ← LLM queries
 ├── 03-text-actions.md          ← LLM actions
-├── 04-voice-input.md           ← Voice integration
+├── 04-voice-input.md           ← Voice integration (includes 25 test scripts)
 ├── 05-context-engineering.md   ← Optimizations
 ├── 06-memory-engineering.md    ← 5 memory types (CORE)
 ├── 07-multi-turn.md            ← Multi-step workflows
 ├── 08-error-handling.md        ← Error scenarios
 └── 09-demo-dry-run.md          ← Full demo rehearsal
+
+Related files (moved):
+├── ../DEMO_CHECKLIST.md        ← Pre-demo + day-of checklists
+├── ../../tests/MCP_TEST_SUMMARY.md     ← Detailed MCP test coverage
+├── ../../tests/COVERAGE.md             ← Overall test coverage
+└── ../../scripts/demo/README.md        ← Demo data documentation
 ```
 
 ---
@@ -245,9 +278,13 @@ docs/testing/
 - [docs/features/MCP_AGENT.md](../features/MCP_AGENT.md) - MCP Agent documentation
 - [docs/features/MULTI_STEP_INTENTS.md](../features/MULTI_STEP_INTENTS.md) - Multi-step workflows
 
-### Testing
-- [tests/README_MCP_TESTS.md](../../tests/README_MCP_TESTS.md) - MCP test quick reference
-- [docs/testing/MCP_AGENT_TEST_SUMMARY.md](MCP_AGENT_TEST_SUMMARY.md) - Detailed test coverage
+### Testing & Coverage
+- [tests/MCP_TEST_SUMMARY.md](../../tests/MCP_TEST_SUMMARY.md) - Detailed MCP test coverage
+- [tests/COVERAGE.md](../../tests/COVERAGE.md) - Overall test coverage summary
+
+### Demo & Scripts
+- [scripts/demo/README.md](../../scripts/demo/README.md) - Demo data documentation
+- [docs/DEMO_CHECKLIST.md](../DEMO_CHECKLIST.md) - Pre-demo and day-of checklists
 
 ---
 
