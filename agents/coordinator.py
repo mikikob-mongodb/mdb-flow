@@ -1684,7 +1684,14 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                             max_tokens=150,  # Reduced for faster generation
                                             temperature=0.2  # Lower temperature for concise, factual answers
                                         )
-                                        task_context = f"Generated from {template.get('name')} - {phase_name} phase\n\nTask-specific research insights:\n{tailored_research}"
+                                        # Clean up any remaining meta-commentary from Haiku
+                                        clean_research = tailored_research.strip()
+                                        # Remove common preambles if they snuck through
+                                        for preamble in ["Based on the research, ", "Here are the insights: ", "Here's a concise response: "]:
+                                            if clean_research.startswith(preamble):
+                                                clean_research = clean_research[len(preamble):]
+
+                                        task_context = f"{clean_research}"
                                         logger.debug(f"    Generated tailored research for: {task_title}")
                                     except Exception as e:
                                         logger.warning(f"    Failed to tailor research for {task_title}: {e}")
