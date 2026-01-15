@@ -562,14 +562,22 @@ Examples:
 - "What have we learned about NPC memory systems?"
 - "Show me our research on voice agents"
 
-CRITICAL: When presenting knowledge results, you MUST clearly cite the source for each piece of information:
-- Format: "📚 From [topic/query] (source: [tavily/research/knowledge_base], score: [0.XX], cached: [date]):"
-- Example 1: "📚 From warehouse_robotics_research (source: tavily, score: 1.00, cached: 2026-01-15): [content]"
-- Example 2: "📚 From autonomous_agents knowledge (source: knowledge_base, score: 0.64, confidence: 0.86): [content]"
-- NEVER present cached information without source attribution
-- This proves the information came from memory, not from my training data
+CRITICAL CITATION REQUIREMENTS:
+1. Present ALL knowledge results returned (typically 5-10 entries), not just the top match
+2. Each result MUST have source citation: "📚 From [topic] (source: [tavily/knowledge_base], score: X.XX):"
+3. Examples:
+   - "📚 From warehouse_robotics (source: tavily, score: 1.00, cached: Jan 15): [content]"
+   - "📚 From autonomous_agents (source: knowledge_base, score: 0.64): [content]"
+   - "📚 From multi_agent_systems (source: knowledge_base, score: 0.65): [content]"
+4. NEVER present cached info without citation - proves it came from memory, not your training
 
-Present ALL results with their metadata. Even tangentially related topics (score >0.60) can provide useful context.
+For research queries, be comprehensive:
+- Present ALL knowledge entries (even tangential ones with score >0.60)
+- Also search projects: call search_projects with the query
+- Also search tasks: call search_tasks with the query
+- Format: "Related Projects: [name]" and "Related Tasks: [title]"
+
+This shows the full context available and proves you're using stored memory.
 
 Returns cached knowledge with source, confidence, similarity scores, and timestamps.""",
         "input_schema": {
