@@ -120,6 +120,17 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
     if has_complex_filters:
         return None  # Let LLM handle complex filtered queries
 
+    # Skip web search queries - these should route to MCP for external search tools
+    # Examples: "Search the web for X", "Search online for Y", "Web search Z"
+    web_search_indicators = [
+        r'\bsearch\s+(the\s+)?(web|internet|online)\b',
+        r'\b(web|internet|online)\s+search\b',
+        r'\b(google|bing|research)\s+(for|about)?\b',
+    ]
+    is_web_search = any(re.search(pattern, query_lower) for pattern in web_search_indicators)
+    if is_web_search:
+        return None  # Let coordinator route to MCP for web search
+
     # NOTE: Action patterns like "I finished X", "Start X", "Complete X" are NOT converted here.
     # They should go to the Worklog Agent (Tier 4) which does search → confirm → execute workflow.
     # Tier 2 detection only handles queries, not actions that modify data.
@@ -264,15 +275,22 @@ def detect_natural_language_query(user_input: str) -> Optional[str]:
             search_term = re.sub(r'\s+(tasks?|work)$', '', search_term)
             return f"/search {search_term}"
 
-    # Search queries WITHOUT "tasks" keyword - "Look for X"
+    # Search queries WITHOUT "tasks" keyword - "Look for X" / "Find X"
     # Must come after more specific patterns
-    if re.search(r'\b(look for|find|search for)\s+\w', query_lower):
-        search_match = re.search(r'\b(?:look for|find|search for)\s+(.+)$', query_lower)
+    # Only matches if searching for task-related content (not web search)
+    if re.search(r'\b(look for|find)\s+\w', query_lower):
+        search_match = re.search(r'\b(?:look for|find)\s+(.+)$', query_lower)
         if search_match:
             search_term = search_match.group(1).strip()
             # Don't match if it's trying to find a project
             if not re.search(r'\bprojects?\b', search_term):
                 return f"/search {search_term}"
+
+    # NOTE: "search for X" is intentionally NOT included above
+    # Ambiguous queries like "search for AI agents" should go to coordinator
+    # which routes to MCP for web search. For MongoDB search, use:
+    #   - "find X" or "look for X" (matches above)
+    #   - "search tasks for X" (matches pattern at line 269)
 
     # "What tasks are X?" queries - search for that attribute
     what_tasks_match = re.search(r'what tasks are\s+(.+?)\??$', query_lower)

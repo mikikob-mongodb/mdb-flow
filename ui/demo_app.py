@@ -408,14 +408,14 @@ def render_sidebar():
             if mcp_enabled and not st.session_state.get("mcp_initialized"):
                 with st.spinner("🔬 Connecting to Tavily..."):
                     try:
-                        # Add timeout to prevent indefinite hanging
+                        # Use persistent event loop instead of asyncio.run() to preserve MCP resources
                         async def init_with_timeout():
                             return await asyncio.wait_for(
                                 coordinator.enable_mcp_mode(),
                                 timeout=30.0  # 30 second timeout
                             )
 
-                        status = asyncio.run(init_with_timeout())
+                        status = coordinator._run_async(init_with_timeout())
                         st.session_state.mcp_initialized = True
                         st.session_state.mcp_status = status
                         if status.get("success"):

@@ -139,7 +139,9 @@ def initialize_database(force: bool = False) -> bool:
             create_settings_indexes,
             create_memory_indexes,
             create_tool_discoveries_indexes,
-            create_eval_indexes
+            create_eval_indexes,
+            create_vector_indexes,
+            create_text_search_indexes
         )
 
         # Connect to MongoDB
@@ -152,7 +154,7 @@ def initialize_database(force: bool = False) -> bool:
         collections_count = sum(1 for status in collection_results.values() if status in ["exists", "created"])
         logger.info(f"✅ Collections created ({collections_count})")
 
-        # Create indexes (suppress verbose output)
+        # Create regular MongoDB indexes
         create_tasks_indexes(db, verify_only=False)
         create_projects_indexes(db, verify_only=False)
         create_settings_indexes(db, verify_only=False)
@@ -160,13 +162,37 @@ def initialize_database(force: bool = False) -> bool:
         create_tool_discoveries_indexes(db, verify_only=False)
         create_eval_indexes(db, verify_only=False)
 
-        # Count total indexes
+        # Count total regular indexes
         total_indexes = 0
         for collection in COLLECTIONS.keys():
             indexes = list(db[collection].list_indexes())
             total_indexes += len(indexes)
 
-        logger.info(f"✅ Indexes created ({total_indexes})")
+        logger.info(f"✅ Regular indexes created ({total_indexes})")
+
+        # Create Atlas Search indexes (vector + text)
+        logger.info("🔍 Creating Atlas Search indexes...")
+
+        vector_results = create_vector_indexes(db, verify_only=False)
+        vector_created = sum(1 for status in vector_results.values() if status == "created")
+        vector_exists = sum(1 for status in vector_results.values() if status == "exists")
+
+        text_results = create_text_search_indexes(db, verify_only=False)
+        text_created = sum(1 for status in text_results.values() if status == "created")
+        text_exists = sum(1 for status in text_results.values() if status == "exists")
+
+        if vector_created > 0 or text_created > 0:
+            logger.info(f"✅ Atlas Search indexes: {vector_created + text_created} created, {vector_exists + text_exists} already existed")
+        else:
+            logger.info(f"✅ Atlas Search indexes: {vector_exists + text_exists} verified")
+
+        # Check if any failed
+        vector_failed = sum(1 for status in vector_results.values() if status in ["failed", "api_unavailable", "error"])
+        text_failed = sum(1 for status in text_results.values() if status in ["failed", "api_unavailable", "error"])
+
+        if vector_failed > 0 or text_failed > 0:
+            logger.warning(f"⚠️  {vector_failed + text_failed} Atlas Search indexes require manual creation in Atlas UI")
+            logger.warning("   (Hybrid search will be disabled until these are created)")
 
         return True
 

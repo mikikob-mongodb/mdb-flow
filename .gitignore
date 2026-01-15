@@ -208,4 +208,13 @@ __marimo__/
 
 # Log files
 logs/
+*.log
+streamlit.log
 scripts/maintenance/index_backup.json
+
+# Session summaries and archives (local development notes)
+docs/archive/
+docs/sessions/
+
+# Test files
+test_*.py

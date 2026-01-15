@@ -113,29 +113,44 @@ class MCPAgent:
         logger.debug("Creating stdio client connection...")
 
         # Create server parameters for NPX process
+        # Copy parent environment and add Tavily API key
+        import os
+        env = os.environ.copy()
+        env["TAVILY_API_KEY"] = settings.tavily_api_key
+
         server_params = StdioServerParameters(
             command="npx",
             args=["-y", "tavily-mcp@latest"],
-            env={"TAVILY_API_KEY": settings.tavily_api_key}
+            env=env
         )
 
         try:
             # Connect via stdio transport
             streams_context = stdio_client(server=server_params)
-            streams = await self.exit_stack.enter_async_context(streams_context)
+            read_stream, write_stream = await self.exit_stack.enter_async_context(streams_context)
 
-            # Create and initialize session
+            # Create session as async context manager (MUST be used this way per MCP SDK docs)
             logger.debug("Creating MCP client session...")
-            session = ClientSession(*streams)
-            self.mcp_clients["tavily"] = await self.exit_stack.enter_async_context(session)
+            session = ClientSession(read_stream, write_stream)
+            # Enter session context to properly manage lifecycle
+            session = await self.exit_stack.enter_async_context(session)
+            self.mcp_clients["tavily"] = session
 
-            # Initialize the connection
-            logger.debug("Initializing MCP session...")
-            await self.mcp_clients["tavily"].initialize()
+            # Initialize the connection with timeout
+            logger.debug("Initializing MCP session (sending initialize request)...")
+            try:
+                result = await asyncio.wait_for(session.initialize(), timeout=10.0)
+                logger.debug(f"MCP initialize result: {result}")
+            except asyncio.TimeoutError:
+                logger.error("Timeout waiting for initialize response from Tavily MCP server")
+                raise
 
-            # Discover available tools
+            # Discover available tools with timeout
             logger.debug("Discovering tools...")
-            response = await self.mcp_clients["tavily"].list_tools()
+            response = await asyncio.wait_for(
+                session.list_tools(),
+                timeout=10.0
+            )
             self.available_tools["tavily"] = [{
                 "name": tool.name,
                 "description": tool.description,
@@ -148,8 +163,11 @@ class MCPAgent:
             )
             logger.info(f"Tavily tools: {tool_names}")
 
+        except asyncio.TimeoutError:
+            logger.error("❌ Timeout during Tavily stdio initialization (>10s)")
+            raise Exception("Tavily MCP session initialization timed out")
         except Exception as e:
-            logger.error(f"❌ Error connecting to Tavily via stdio: {e}")
+            logger.error(f"❌ Error connecting to Tavily via stdio: {e}", exc_info=True)
             raise
 
     async def _connect_tavily_sse(self):
@@ -257,43 +275,82 @@ class MCPAgent:
             }
 
         # 0. Check semantic memory cache FIRST (before making external calls)
+        cache_check_info = None
         if user_id and self.memory:
+            cache_check_start = time.time()
+            logger.debug(f"🔍 Checking semantic cache for user '{user_id}' query: '{user_request[:80]}...'")
             cached_knowledge = self.memory.search_knowledge(
                 user_id=user_id,
                 query=user_request,
                 limit=3
             )
+            cache_check_time = int((time.time() - cache_check_start) * 1000)
 
             # If we have a high-confidence cache hit, return it
             if cached_knowledge and len(cached_knowledge) > 0:
                 best_match = cached_knowledge[0]
                 cache_score = best_match.get("score", 0)
+                cache_threshold = 0.65  # Lowered to catch similar queries (exact matches score ~0.86)
+                logger.debug(f"📊 Best cache match score: {cache_score:.3f} (threshold: {cache_threshold})")
 
-                if cache_score >= 0.8:
+                if cache_score >= cache_threshold:
                     logger.info(
                         f"📚 Cache HIT for '{user_request[:50]}...' "
                         f"(score: {cache_score:.2f})"
                     )
                     execution_time = int((time.time() - start) * 1000)
 
-                    # Format cached results
-                    cached_results = [best_match.get("result", "")]
+                    # Use summary if available, otherwise full results
+                    summary = best_match.get("summary")
+                    result_content = best_match.get("result", "")
+
+                    if summary:
+                        # Return summary (already pre-computed during caching)
+                        cached_results = [summary]
+                        logger.debug(f"Returning cached summary ({len(summary)} chars)")
+                    else:
+                        # No summary available, return full results
+                        cached_results = [result_content]
+                        logger.debug(f"No summary available, returning full results ({len(result_content)} chars)")
 
                     return {
                         "success": True,
                         "result": cached_results,
-                        "source": "semantic_cache",
+                        "summary": summary,  # Include summary in response for coordinator
+                        "source": "knowledge_cache",  # Maps to coordinator's "📚 Found this in my knowledge cache:"
                         "cached": True,
                         "cache_score": cache_score,
+                        "cache_check_time_ms": cache_check_time,
                         "original_source": best_match.get("source", "unknown"),
                         "cached_at": best_match.get("created_at"),
                         "execution_time_ms": execution_time
                     }
                 else:
                     logger.debug(
-                        f"Cache score too low ({cache_score:.2f}), "
+                        f"Cache score too low ({cache_score:.2f} < {cache_threshold}), "
                         f"will make fresh search"
                     )
+                    cache_check_info = {
+                        "checked": True,
+                        "hit": False,
+                        "score": cache_score,
+                        "threshold": cache_threshold,
+                        "time_ms": cache_check_time
+                    }
+            else:
+                logger.debug(f"No cache results found for query: '{user_request[:80]}...'")
+                cache_check_info = {
+                    "checked": True,
+                    "hit": False,
+                    "score": 0,
+                    "threshold": 0.65,
+                    "time_ms": cache_check_time
+                }
+        else:
+            if not user_id:
+                logger.debug("Skipping cache check: no user_id provided")
+            if not self.memory:
+                logger.debug("Skipping cache check: no memory manager available")
 
         # 1. Check for similar previous discovery
         previous = self.discovery_store.find_similar_discovery(
@@ -305,7 +362,7 @@ class MCPAgent:
         if previous and previous.get("success"):
             logger.info(f"Reusing previous discovery for: '{user_request[:50]}...'")
             result = await self._execute_solution(previous["solution"])
-            return {
+            result_dict = {
                 "success": result.get("success", False),
                 "result": result.get("content"),
                 "error": result.get("error"),
@@ -316,6 +373,9 @@ class MCPAgent:
                 "times_used": previous["times_used"],
                 "execution_time_ms": int((time.time() - start) * 1000)
             }
+            if cache_check_info:
+                result_dict["cache_check_info"] = cache_check_info
+            return result_dict
 
         # 2. Figure out new solution using LLM
         logger.info(f"Figuring out solution for: '{user_request[:50]}...'")
@@ -359,22 +419,29 @@ class MCPAgent:
                 else:
                     result_text = str(content)
 
-                # Cache the knowledge
+                # Summarize results before caching (if long)
+                summary = None
+                if len(result_text) > 800:
+                    summary = await self._summarize_search_results(result_text, user_request)
+
+                # Cache the knowledge with both full results and summary
                 self.memory.cache_knowledge(
                     user_id=user_id,
                     query=user_request,
                     results=result_text,
+                    summary=summary,
                     source=f"mcp_{solution['mcp_server']}"
                 )
                 logger.info(
                     f"🆕 Cached new knowledge from {solution['mcp_server']} "
-                    f"for query: '{user_request[:50]}...'"
+                    f"for query: '{user_request[:50]}...' "
+                    f"({'summarized ' if summary else ''})"
                 )
             except Exception as e:
                 # Don't fail the request if caching fails
                 logger.error(f"Failed to cache knowledge: {e}")
 
-        return {
+        result_dict = {
             "success": success,
             "result": result.get("content"),
             "error": result.get("error"),
@@ -385,6 +452,56 @@ class MCPAgent:
             "tool_used": solution["tool_used"],
             "execution_time_ms": execution_time
         }
+
+        # Include cache check info if cache was checked
+        if cache_check_info:
+            result_dict["cache_check_info"] = cache_check_info
+
+        return result_dict
+
+    async def _summarize_search_results(self, search_results: str, query: str) -> str:
+        """
+        Summarize search results to extract key insights.
+
+        Args:
+            search_results: Full search results text (potentially very long)
+            query: The original user query
+
+        Returns:
+            Concise summary of key findings
+        """
+        try:
+            summary_prompt = f"""Summarize these search results in response to the query: "{query}"
+
+Extract and present:
+1. **Key Findings** (2-4 bullet points of the most important insights)
+2. **Main Sources** (2-3 most relevant sources with titles/URLs)
+3. **Quick Answer** (1-2 sentence direct answer to the query if possible)
+
+Keep it concise and actionable. Focus on what's most relevant to the user's question.
+
+Search Results:
+{search_results[:6000]}
+"""
+
+            response = await self.llm.agenerate(
+                messages=[{"role": "user", "content": summary_prompt}],
+                max_tokens=800,
+                temperature=0.3
+            )
+
+            summary = response.get("content", "")
+
+            # Add note about full results being cached
+            summary += "\n\n*💾 Full search results cached for reference*"
+
+            logger.info(f"📝 Summarized {len(search_results)} chars → {len(summary)} chars")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Failed to summarize search results: {e}")
+            # Fallback to truncated results if summarization fails
+            return search_results[:1500] + "\n\n...(truncated)"
 
     async def _figure_out_solution(
         self,
@@ -536,10 +653,10 @@ If this request cannot be handled by any available tool:
                 "error": f"Tool call timed out after {timeout_seconds}s"
             }
         except Exception as e:
-            logger.error(f"MCP tool call failed: {server_name}/{tool_name} - {e}")
+            logger.error(f"MCP tool call failed: {server_name}/{tool_name} - {e}", exc_info=True)
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e) if str(e) else f"{type(e).__name__}: {repr(e)}"
             }
 
     def _format_tools_for_llm(self) -> str:

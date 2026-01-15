@@ -55,13 +55,14 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Run all-in-one setup (creates .env, initializes DB, verifies)
+# 2. Run all-in-one setup (creates .env, initializes DB, creates indexes, verifies)
 python scripts/setup/setup.py
 
-# 3. Create vector search indexes in Atlas UI (see output for instructions)
-
-# 4. Start the app
+# 3. Start the app
 streamlit run ui/streamlit_app.py
+
+# Note: Atlas Search indexes (vector + text) are created automatically
+# If any fail, check setup.py output for manual creation instructions
 ```
 
 **If preparing for a demo:**
@@ -81,8 +82,8 @@ python scripts/demo/reset_demo.py --verify-only
 ### 🎯 First-Time Setup (`scripts/setup/`)
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
-| **setup.py** | All-in-one initialization | First time setup, new developers |
-| **init_db.py** | Create collections + indexes | Database initialization, schema updates |
+| **setup.py** | All-in-one initialization (DB + Atlas Search indexes) | First time setup, new developers |
+| **init_db.py** | Create collections + indexes (regular + Atlas Search) | Database initialization, schema updates |
 | **verify_setup.py** | Health check all components | After setup, before demos, troubleshooting |
 | **utils.py** | Shared utilities module | Import in other scripts for common functionality |
 
@@ -150,9 +151,11 @@ python scripts/setup/setup.py --force
 **What it does:**
 1. ✅ Checks Python 3.9+ and dependencies
 2. ✅ Creates/validates .env file (interactive)
-3. ✅ Calls `init_db.py` to create collections and indexes
-4. ✅ Calls `verify_setup.py` for health checks
-5. ✅ Optionally calls `seed_demo_data.py` for demo data
+3. ✅ Creates MongoDB collections (6 total)
+4. ✅ Creates regular MongoDB indexes (~35 total)
+5. ✅ Creates Atlas Search indexes (5 vector + 3 text)
+6. ✅ Calls `verify_setup.py` for health checks
+7. ✅ Optionally calls `seed_demo_data.py` for demo data
 
 **Exit codes:** 0 = success, 1 = failure
 
@@ -183,25 +186,31 @@ python scripts/setup/init_db.py --drop-first
 - memory_episodic, memory_semantic, memory_procedural
 - tool_discoveries
 
-**Indexes:**
+**Regular MongoDB Indexes:**
 - Standard indexes (user_id, status, timestamps)
 - Compound indexes (user_id + status, etc.)
-- Text search indexes (weighted full-text search)
 - Memory-specific indexes:
   - Episodic: user_id+timestamp, action_type, entity_type (6 indexes)
   - Semantic: semantic_lookup, knowledge_query (5 indexes)
   - Procedural: user_id+rule_type, procedural_lookup (3 indexes)
 
-**Vector Search Indexes (Manual in Atlas UI):**
+**Atlas Search Indexes (Created Automatically):**
+
+*Vector Indexes (for semantic search):*
 1. tasks.vector_index
 2. projects.vector_index
-3. memory_episodic.memory_embeddings
-4. memory_semantic.memory_embeddings
-5. tool_discoveries.discovery_vector_index
+3. memory_episodic.vector_index
+4. memory_semantic.vector_index
+5. tool_discoveries.vector_index
 
 All 1024 dimensions (Voyage AI voyage-3), cosine similarity.
 
-Run `--vector-instructions` for full JSON definitions.
+*Text Indexes (for hybrid search):*
+1. tasks_text_index (title, context, notes)
+2. projects_text_index (name, description)
+3. semantic_text_index (query, result)
+
+**Note:** Atlas Search indexes are created programmatically. If creation fails (API unavailable/permissions), the script will show manual creation instructions.
 
 ---
 

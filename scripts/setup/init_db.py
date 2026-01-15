@@ -272,6 +272,100 @@ def get_existing_indexes(db) -> Dict[str, Set[str]]:
 
     return existing
 
+def create_text_search_indexes(db, verify_only: bool = False) -> Dict[str, str]:
+    """
+    Create Atlas Search text indexes for keyword/hybrid search.
+
+    Text indexes enable $search operator for keyword matching and hybrid search.
+
+    Returns:
+        Dict mapping index names to status (created, exists, failed, skipped)
+    """
+    results = {}
+
+    # Text index definitions for hybrid search
+    text_indexes = {
+        "tasks_text_index": {
+            "collection": "tasks",
+            "definition": {
+                "mappings": {
+                    "dynamic": False,
+                    "fields": {
+                        "title": {"type": "string"},
+                        "context": {"type": "string"},
+                        "notes": {"type": "string"}
+                    }
+                }
+            }
+        },
+        "projects_text_index": {
+            "collection": "projects",
+            "definition": {
+                "mappings": {
+                    "dynamic": False,
+                    "fields": {
+                        "name": {"type": "string"},
+                        "description": {"type": "string"}
+                    }
+                }
+            }
+        },
+        "semantic_text_index": {
+            "collection": "memory_semantic",
+            "definition": {
+                "mappings": {
+                    "dynamic": False,
+                    "fields": {
+                        "query": {"type": "string"},
+                        "result": {"type": "string"}
+                    }
+                }
+            }
+        }
+    }
+
+    if verify_only:
+        for index_name in text_indexes.keys():
+            results[index_name] = "verify_mode"
+        return results
+
+    for index_name, index_config in text_indexes.items():
+        collection_name = index_config["collection"]
+        try:
+            collection = db[collection_name]
+
+            # Check if search index already exists
+            try:
+                existing_search_indexes = list(collection.list_search_indexes())
+                if any(idx.get("name") == index_name for idx in existing_search_indexes):
+                    results[index_name] = "exists"
+                    continue
+            except Exception:
+                pass
+
+            # Attempt to create text search index
+            try:
+                if hasattr(collection, 'create_search_index'):
+                    collection.create_search_index({
+                        "definition": index_config["definition"],
+                        "name": index_name
+                    })
+                    results[index_name] = "created"
+                else:
+                    results[index_name] = "api_unavailable"
+            except Exception as create_error:
+                if "already exists" in str(create_error).lower():
+                    results[index_name] = "exists"
+                else:
+                    logger.debug(f"    Failed to create {index_name}: {create_error}")
+                    results[index_name] = "failed"
+
+        except Exception as e:
+            logger.debug(f"    Error processing {index_name}: {e}")
+            results[index_name] = "error"
+
+    return results
+
 def create_vector_indexes(db, verify_only: bool = False) -> Dict[str, str]:
     """
     Create Atlas Search vector indexes for semantic search.
@@ -319,6 +413,7 @@ def create_vector_indexes(db, verify_only: bool = False) -> Dict[str, str]:
 
             # Attempt to create vector search index
             # Note: This requires MongoDB Atlas and pymongo >= 4.5
+            # Vector index with filter fields for common query patterns
             vector_index_definition = {
                 "fields": [
                     {
@@ -326,19 +421,51 @@ def create_vector_indexes(db, verify_only: bool = False) -> Dict[str, str]:
                         "type": "vector",
                         "numDimensions": 1024,  # Voyage AI embeddings
                         "similarity": "cosine"
+                    },
+                    {
+                        "path": "user_id",
+                        "type": "filter"
+                    },
+                    {
+                        "path": "memory_type",
+                        "type": "filter"
+                    },
+                    {
+                        "path": "semantic_type",
+                        "type": "filter"
+                    },
+                    {
+                        "path": "status",
+                        "type": "filter"
                     }
                 ]
             }
 
             try:
-                # Use create_search_index if available (pymongo >= 4.5)
-                if hasattr(collection, 'create_search_index'):
-                    collection.create_search_index(
-                        {"definition": vector_index_definition, "name": index_name}
+                # Use SearchIndexModel for vector indexes (pymongo >= 4.5)
+                # This is the correct approach for vectorSearch type indexes
+                try:
+                    from pymongo.operations import SearchIndexModel
+
+                    model = SearchIndexModel(
+                        definition=vector_index_definition,
+                        name=index_name,
+                        type="vectorSearch"
                     )
+
+                    collection.create_search_indexes([model])
                     results[collection_name] = "created"
-                else:
-                    results[collection_name] = "api_unavailable"
+
+                except ImportError:
+                    # Fallback for older pymongo versions
+                    if hasattr(collection, 'create_search_index'):
+                        collection.create_search_index(
+                            {"definition": vector_index_definition, "name": index_name}
+                        )
+                        results[collection_name] = "created"
+                    else:
+                        results[collection_name] = "api_unavailable"
+
             except Exception as create_error:
                 # Check if it's a "already exists" error
                 if "already exists" in str(create_error).lower():
@@ -593,6 +720,25 @@ def main():
 
     if not args.verify and need_manual_creation:
         print_vector_index_warning()
+
+    # Text search indexes (Atlas Search) for hybrid search
+    logger.info("")
+    logger.info("📝 Text Search Indexes (Atlas Search - for hybrid search):")
+    text_results = create_text_search_indexes(db, verify_only=args.verify)
+
+    for index_name, status in text_results.items():
+        if status == "created":
+            logger.info(f"  🆕 {index_name} (created)")
+        elif status == "exists":
+            logger.info(f"  ✅ {index_name} (exists)")
+        elif status == "verify_mode":
+            logger.info(f"  ℹ️  {index_name} (verify mode - cannot check search indexes)")
+        elif status == "api_unavailable":
+            logger.info(f"  ⚠️  {index_name} (pymongo API unavailable - manual creation required)")
+        elif status == "failed":
+            logger.info(f"  ⚠️  {index_name} (creation failed - may require Atlas UI)")
+        elif status == "error":
+            logger.info(f"  ❌ {index_name} (error during creation)")
 
     # Summary
     logger.info("")

@@ -2,6 +2,8 @@
 
 import json
 import uuid
+import asyncio
+import threading
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from bson import ObjectId
@@ -649,6 +651,11 @@ class CoordinatorAgent:
         self.mcp_agent: Optional[MCPAgent] = None
         self.mcp_mode_enabled = settings.mcp_mode_enabled  # Can be toggled via UI
 
+        # Persistent event loop for async MCP operations
+        self._async_loop = None
+        self._async_thread = None
+        self._loop_ready = threading.Event()
+
     def set_session(self, session_id: str, user_id: str = None):
         """Set session context for memory isolation.
 
@@ -660,9 +667,37 @@ class CoordinatorAgent:
         if user_id:
             self.user_id = user_id
 
+    def _ensure_event_loop(self):
+        """Ensure there's a running event loop for async MCP operations."""
+        if self._async_loop is None or not self._async_loop.is_running():
+            def run_loop():
+                """Run event loop in background thread."""
+                self._async_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self._async_loop)
+                self._loop_ready.set()
+                self._async_loop.run_forever()
+
+            self._async_thread = threading.Thread(target=run_loop, daemon=True)
+            self._async_thread.start()
+            self._loop_ready.wait()  # Wait for loop to be ready
+            logger.debug("Started persistent event loop for async operations")
+
+    def _run_async(self, coro):
+        """Run an async coroutine on the persistent event loop.
+
+        Args:
+            coro: Coroutine to run
+
+        Returns:
+            Result of the coroutine
+        """
+        self._ensure_event_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, self._async_loop)
+        return future.result()
+
     async def enable_mcp_mode(self):
         """Initialize and enable MCP mode"""
-        if self.mcp_agent is None:
+        if self.mcp_agent is None or not self.mcp_agent._initialized:
             if self.db is None:
                 return {
                     "success": False,
@@ -675,7 +710,12 @@ class CoordinatorAgent:
                 memory_manager=self.memory,
                 embedding_fn=embed_query
             )
-            await self.mcp_agent.initialize()
+            try:
+                await self.mcp_agent.initialize()
+            except Exception as e:
+                # Reset agent on failed initialization
+                self.mcp_agent = None
+                raise
 
         self.mcp_mode_enabled = True
         status = self.mcp_agent.get_status()
@@ -1816,17 +1856,25 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         source_messages = {
             "knowledge_cache": "📚 Found this in my knowledge cache:",
             "discovery_reuse": "🔄 I've solved this before:",
-            "new_discovery": "🆕 I figured out how to do this:"
+            "new_discovery": "🆕 Here's what I found:"
         }
 
         prefix = source_messages.get(mcp_result.get("source"), "")
 
         # Format result content
+        # For cache hits, prefer summary if available
         result_content = mcp_result.get("result", "")
-        if isinstance(result_content, list):
-            formatted_result = "\n\n".join(str(item) for item in result_content)
+
+        # Check if this is from cache and has a summary
+        if mcp_result.get("source") == "knowledge_cache" and mcp_result.get("summary"):
+            formatted_result = mcp_result.get("summary")
+            logger.debug(f"Using cached summary ({len(formatted_result)} chars)")
         else:
-            formatted_result = str(result_content)
+            # Use full result content
+            if isinstance(result_content, list):
+                formatted_result = "\n\n".join(str(item) for item in result_content)
+            else:
+                formatted_result = str(result_content)
 
         response_text = f"{prefix}\n\n{formatted_result}" if prefix else formatted_result
 
@@ -2818,6 +2866,20 @@ Execute the rule action: {rule_match['action']}
         intent = self._classify_intent(user_message)
         logger.info(f"📊 Classified intent: {intent}")
 
+        # Initialize current turn for tracking (needed for both MCP and normal paths)
+        self.current_turn = {
+            "turn": turn_number,
+            "user_input": user_message[:100] + "..." if len(user_message) > 100 else user_message,
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "tool_calls": [],
+            "llm_calls": [],
+            "total_duration_ms": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cache_hit": False,
+            "tools_called": []
+        }
+
         # Check if this request needs EXTERNAL MCP tools (Tier 4)
         if not self._can_static_tools_handle(intent, user_message):
             logger.info(f"📊 Intent '{intent}' requires external MCP tools, checking if MCP mode enabled...")
@@ -2848,10 +2910,9 @@ Execute the rule action: {rule_match['action']}
             logger.info(f"🔬 Routing to MCP Agent (intent: {intent})")
 
             try:
-                import asyncio
                 # Ensure MCP agent is initialized
                 if self.mcp_agent is None:
-                    init_result = asyncio.run(self.enable_mcp_mode())
+                    init_result = self._run_async(self.enable_mcp_mode())
                     if not init_result.get("success"):
                         error_response = f"Failed to initialize MCP mode: {init_result.get('error')}"
                         if return_debug:
@@ -2866,8 +2927,8 @@ Execute the rule action: {rule_match['action']}
                     if session_context:
                         context = session_context
 
-                # Call MCP agent
-                mcp_result = asyncio.run(self.mcp_agent.handle_request(
+                # Call MCP agent using persistent event loop
+                mcp_result = self._run_async(self.mcp_agent.handle_request(
                     user_request=user_message,
                     intent=intent,
                     context=context,
@@ -2878,6 +2939,55 @@ Execute the rule action: {rule_match['action']}
                 formatted = self._format_mcp_response(mcp_result)
 
                 logger.info(f"🔬 MCP Agent result: success={mcp_result.get('success')}, source={mcp_result.get('source')}")
+
+                # Track MCP tool call in current_turn for debug panel
+                if self.current_turn:
+                    source = mcp_result.get("source", "unknown")
+
+                    # Track cache check operation if it occurred
+                    cache_check_info = mcp_result.get("cache_check_info")
+                    if cache_check_info and cache_check_info.get("checked"):
+                        cache_hit = cache_check_info.get("hit", False)
+                        cache_score = cache_check_info.get("score", 0)
+                        cache_threshold = cache_check_info.get("threshold", 0.65)
+                        cache_time = cache_check_info.get("time_ms", 0)
+
+                        # Add cache check as a separate tool call
+                        self.current_turn["tool_calls"].append({
+                            "name": "search_knowledge",
+                            "input": {"query": user_message[:80], "threshold": cache_threshold},
+                            "output": f"{'HIT' if cache_hit else 'MISS'} (score: {cache_score:.2f})",
+                            "duration_ms": cache_time,
+                            "success": cache_hit,
+                            "source": "cache_check"
+                        })
+
+                    # Use special display for different sources
+                    if source == "knowledge_cache":
+                        mcp_tool_name = "cache/knowledge"
+                        cache_score = mcp_result.get("cache_score", 0)
+                        input_display = {"query": user_message[:80], "score": f"{cache_score:.2f}"}
+                    elif source == "discovery_reuse":
+                        mcp_server = mcp_result.get('mcp_server', 'unknown')
+                        tool_used = mcp_result.get('tool_used', 'unknown')
+                        mcp_tool_name = f"{mcp_server}/{tool_used}"
+                        input_display = mcp_result.get("arguments", {})
+                    else:
+                        mcp_server = mcp_result.get('mcp_server', 'unknown')
+                        tool_used = mcp_result.get('tool_used', 'unknown')
+                        mcp_tool_name = f"{mcp_server}/{tool_used}"
+                        input_display = mcp_result.get("arguments", {})
+
+                    self.current_turn["tool_calls"].append({
+                        "name": mcp_tool_name,
+                        "input": input_display,
+                        "output": str(mcp_result.get("result", ""))[:200] + "..." if len(str(mcp_result.get("result", ""))) > 200 else str(mcp_result.get("result", "")),
+                        "duration_ms": mcp_result.get("execution_time_ms", 0),
+                        "success": mcp_result.get("success", False),
+                        "source": source
+                    })
+                    self.current_turn["tools_called"].append(mcp_tool_name)
+                    self.current_turn["total_duration_ms"] = mcp_result.get("execution_time_ms", 0)
 
                 if return_debug:
                     return {
@@ -2927,20 +3037,6 @@ Execute the rule action: {rule_match['action']}
         logger.info(f"History length: {len(conversation_history) if conversation_history else 0}")
         logger.info(f"📊 Prompt: {prompt_stats['type']} ({prompt_stats['word_count']} words, ~{int(prompt_stats['estimated_tokens'])} tokens)")
         logger.info(f"📊 Caching: {'enabled' if cache_prompts else 'disabled'}")
-
-        # Create new turn for debug tracking
-        self.current_turn = {
-            "turn": turn_number,
-            "user_input": user_message[:100] + "..." if len(user_message) > 100 else user_message,
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-            "tool_calls": [],
-            "llm_calls": [],  # Track LLM thinking time
-            "total_duration_ms": 0,
-            "tokens_in": 0,
-            "tokens_out": 0,
-            "cache_hit": False,
-            "tools_called": []
-        }
 
         # Reset old debug info (kept for backwards compatibility)
         self.last_debug_info = []

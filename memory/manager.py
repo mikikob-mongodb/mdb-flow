@@ -1370,6 +1370,7 @@ class MemoryManager:
         query: str,
         results: any,
         source: str = "tavily",
+        summary: str = None,
         freshness_days: int = 7
     ) -> str:
         """
@@ -1382,8 +1383,9 @@ class MemoryManager:
         Args:
             user_id: User identifier
             query: Search query text
-            results: Search results to cache
+            results: Search results to cache (full text)
             source: Source of knowledge (e.g., "tavily", "mcp")
+            summary: Optional pre-computed summary (for display)
             freshness_days: Days until cache expires (default 7)
 
         Returns:
@@ -1406,7 +1408,8 @@ class MemoryManager:
             "memory_type": "semantic",
             "semantic_type": "knowledge",
             "query": query,
-            "results": results,
+            "result": results,  # Full results for reference
+            "summary": summary,  # Concise summary for display
             "source": source,
             "embedding": embedding,
             "fetched_at": now,
@@ -1536,13 +1539,15 @@ class MemoryManager:
         except Exception:
             return []
 
+        # Use vector search for semantic similarity matching
+        # Vector search alone provides excellent cache hit rates (0.86+ scores for exact matches)
         pipeline = [
             {
                 "$vectorSearch": {
                     "index": "vector_index",
                     "path": "embedding",
                     "queryVector": query_embedding,
-                    "numCandidates": 50,
+                    "numCandidates": 100,
                     "limit": limit,
                     "filter": {
                         "user_id": user_id,
@@ -1552,8 +1557,15 @@ class MemoryManager:
                 }
             },
             {
-                "$addFields": {
-                    "score": {"$meta": "vectorSearchScore"}
+                "$project": {
+                    "query": 1,
+                    "result": 1,  # Full results
+                    "summary": 1,  # Concise summary (if available)
+                    "context": 1,
+                    "timestamp": 1,
+                    "metadata": 1,
+                    "score": {"$meta": "vectorSearchScore"},
+                    "_id": 0
                 }
             }
         ]
