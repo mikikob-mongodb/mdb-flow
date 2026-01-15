@@ -1583,6 +1583,27 @@ class MemoryManager:
             logger.warning(f"Vector search failed for knowledge: {e}")
             return []
 
+    def get_recent_knowledge(self, user_id: str, limit: int = 5) -> List[dict]:
+        """
+        Get most recent knowledge entries (sorted by fetch/creation date).
+        Useful for "incorporate the research we just did" queries.
+
+        Args:
+            user_id: User identifier
+            limit: Maximum results (default 5)
+
+        Returns:
+            List of recent knowledge documents
+        """
+        return list(self.semantic.find({
+            "user_id": user_id,
+            "memory_type": "semantic",
+            "semantic_type": "knowledge"
+        }).sort([
+            ("fetched_at", -1),
+            ("created_at", -1)
+        ]).limit(limit))
+
     def clear_knowledge_cache(self, user_id: str) -> int:
         """
         Clear all cached knowledge for a user.

@@ -1499,6 +1499,18 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
 
         logger.info(f"Executing {len(steps)} steps for multi-step workflow")
 
+        # Check if request mentions using previous research
+        if "research we just did" in original_request.lower() or "recent research" in original_request.lower():
+            logger.info("Request mentions previous research - checking semantic memory for recent results")
+            # Search for recent Tavily research in semantic memory
+            if self.memory and user_id:
+                recent_research = self.memory.get_recent_knowledge(user_id, limit=1)
+                if recent_research:
+                    context["research_results"] = recent_research[0].get("result") or recent_research[0].get("value", "")
+                    context["research_source"] = recent_research[0].get("source", "semantic_cache")
+                    context["research_query"] = recent_research[0].get("query") or recent_research[0].get("key", "")
+                    logger.info(f"✓ Found recent research: {context.get('research_query', 'unknown')[:50]}...")
+
         for i, step in enumerate(steps):
             step_num = i + 1
             logger.info(f"Step {step_num}/{len(steps)}: {step['intent']} - {step['description']}")
