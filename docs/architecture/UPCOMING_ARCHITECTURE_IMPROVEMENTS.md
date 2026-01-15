@@ -583,6 +583,236 @@ apps/
 
 ---
 
+## Automatic Bug Discovery and Analysis System
+
+### Proposed Feature: LLM-Powered Error Tracking
+
+**Purpose:** Automatically capture, analyze, and suggest fixes for runtime errors encountered during user interactions.
+
+**Motivation:** During demo testing, errors occur that require manual analysis. An automated system could:
+- Capture error context immediately
+- Provide AI-powered fix suggestions
+- Build a knowledge base of known issues
+- Improve debugging velocity
+
+### Implementation Design
+
+#### MongoDB Collection: `bug_discoveries`
+
+```python
+{
+    "bug_id": "bug-20260114-xyz",
+    "timestamp": "2026-01-14T22:33:28Z",
+    "user_id": "demo-user",
+    "session_id": "session-abc",
+
+    # Error context
+    "error": {
+        "type": "OperationFailure",
+        "message": "limit should be less than or equal to numCandidates",
+        "traceback": "...",
+        "location": "agents/retrieval.py:1191"
+    },
+
+    # User context
+    "user_query": "Show Nami's active projects",
+    "tool_called": "hybrid_search_tasks",
+    "tool_params": {
+        "query": "Nami",
+        "limit": 20,
+        "assignee": "Nami"
+    },
+
+    # LLM analysis
+    "analysis": {
+        "root_cause": "limit * 10 (200) exceeds hardcoded numCandidates (100)",
+        "suggested_fix": "Change numCandidates to max(100, search_limit)",
+        "file_location": "agents/retrieval.py:1191",
+        "severity": "high",
+        "affects_demo": true
+    },
+
+    # Tracking
+    "status": "identified",  # identified, fixed, ignored
+    "fixed_in_commit": null,
+    "occurrences": 2,
+    "first_seen": "2026-01-14T22:33:28Z",
+    "last_seen": "2026-01-14T22:33:32Z"
+}
+```
+
+#### Error Capture Flow
+
+```python
+# In coordinator.py process() method
+try:
+    response = self._execute_tool(tool_name, tool_input)
+except Exception as e:
+    # Capture error context
+    error_context = {
+        "user_query": user_message,
+        "tool_called": tool_name,
+        "tool_params": tool_input,
+        "error": {
+            "type": type(e).__name__,
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
+    }
+
+    # Async LLM analysis (non-blocking)
+    asyncio.create_task(
+        analyze_and_log_bug(error_context, session_id, user_id)
+    )
+
+    # Still raise/handle error normally
+    raise
+```
+
+#### LLM Analysis Function
+
+```python
+async def analyze_and_log_bug(error_context: dict, session_id: str, user_id: str):
+    """
+    Analyze error using LLM and save to bug_discoveries collection.
+
+    Non-blocking, fire-and-forget - doesn't affect user experience.
+    """
+    try:
+        # Build analysis prompt
+        prompt = f"""
+        Analyze this error and suggest a fix:
+
+        User Query: {error_context['user_query']}
+        Tool Called: {error_context['tool_called']}
+        Tool Params: {error_context['tool_params']}
+
+        Error:
+        {error_context['error']['traceback']}
+
+        Provide:
+        1. Root cause (1-2 sentences)
+        2. Suggested fix (code change or config)
+        3. Severity (low/medium/high/critical)
+        4. Affects demo? (true/false)
+        """
+
+        # Call LLM (quick, haiku model)
+        analysis = await llm_analyze_error(prompt)
+
+        # Save to bug_discoveries
+        db.bug_discoveries.update_one(
+            {
+                "error.message": error_context['error']['message'],
+                "tool_called": error_context['tool_called']
+            },
+            {
+                "$setOnInsert": {
+                    "bug_id": f"bug-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}",
+                    "first_seen": datetime.utcnow(),
+                    "occurrences": 0
+                },
+                "$set": {
+                    "last_seen": datetime.utcnow(),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "error": error_context['error'],
+                    "user_query": error_context['user_query'],
+                    "tool_called": error_context['tool_called'],
+                    "tool_params": error_context['tool_params'],
+                    "analysis": analysis,
+                    "status": "identified"
+                },
+                "$inc": {"occurrences": 1}
+            },
+            upsert=True
+        )
+
+    except Exception as analysis_error:
+        # Silently fail - don't cascade errors
+        logger.warning(f"Bug analysis failed: {analysis_error}")
+```
+
+### Benefits
+
+**For Development:**
+- ✅ Automatic error documentation
+- ✅ AI-powered fix suggestions
+- ✅ Pattern recognition across similar errors
+- ✅ Faster debugging for recurring issues
+
+**For Demo/Testing:**
+- ✅ Capture all issues encountered during testing
+- ✅ Post-demo review of all errors with suggested fixes
+- ✅ Priority ranking (severity, demo impact)
+- ✅ No manual note-taking required
+
+**For Production:**
+- ✅ Build knowledge base of common errors
+- ✅ Proactive issue detection
+- ✅ User-facing error messages informed by analysis
+- ✅ Trend analysis (which tools fail most often)
+
+### Implementation Considerations
+
+**Error Handling:**
+- Analysis must be non-blocking (async, fire-and-forget)
+- Analysis failures must not cascade to user
+- Rate limiting to prevent LLM API abuse
+- Deduplication by error signature
+
+**Privacy:**
+- Sanitize user data before logging
+- Optional toggle to disable bug tracking
+- Clear data retention policy
+
+**Cost:**
+- Use fast/cheap model (Haiku) for analysis
+- Deduplicate identical errors
+- Optional: Only analyze in dev/staging environments
+
+**Integration Points:**
+- Hook into coordinator error handling
+- Hook into retrieval agent error handling
+- Dashboard UI to view bug_discoveries
+- Export to GitHub issues
+
+### Phased Rollout
+
+**Phase 1: Post-Demo (1-2 hours)**
+- Basic error capture to `bug_discoveries`
+- Manual analysis (no LLM)
+- Simple logging with error signature deduplication
+
+**Phase 2: Enhancement (2-3 hours)**
+- Add LLM analysis for root cause and fixes
+- Create simple dashboard to view bugs
+- Priority and severity scoring
+
+**Phase 3: Integration (future)**
+- Auto-create GitHub issues for high-severity bugs
+- Slack notifications for critical errors
+- Trend analysis and reporting
+
+### Example Use Case
+
+**Scenario:** During demo, "Show Nami's active projects" fails
+
+**Without Bug Discovery:**
+1. User sees error
+2. Demo continues (or crashes)
+3. Post-demo: Manually review logs, find error, debug
+
+**With Bug Discovery:**
+1. User sees error
+2. System captures error context
+3. LLM analyzes: "Atlas Search limit constraint violated in retrieval.py:1191"
+4. Suggested fix: "Change numCandidates to max(100, search_limit)"
+5. Post-demo: Review bug_discoveries collection, see analysis, implement fix
+6. All errors from demo session documented with AI suggestions
+
+---
+
 ## Conclusion
 
 The current architecture is **working well and ready for demo**. These enhancements represent **opportunities for improvement**, not critical issues. The proposed changes will make the system more maintainable, testable, and scalable for future growth.

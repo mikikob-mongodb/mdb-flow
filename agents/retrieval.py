@@ -1188,7 +1188,7 @@ class RetrievalAgent:
                                         "index": "vector_index",
                                         "path": "embedding",
                                         "queryVector": query_embedding,
-                                        "numCandidates": 100,
+                                        "numCandidates": max(100, search_limit),
                                         "limit": search_limit
                                     }
                                 }
@@ -1331,7 +1331,7 @@ class RetrievalAgent:
                                         "index": "vector_index",
                                         "path": "embedding",
                                         "queryVector": query_embedding,
-                                        "numCandidates": 50,
+                                        "numCandidates": max(50, limit * 2),
                                         "limit": limit * 2
                                     }
                                 }
