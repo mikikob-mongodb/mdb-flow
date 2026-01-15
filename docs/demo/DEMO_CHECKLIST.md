@@ -409,13 +409,13 @@ make smoke
   □ [Toggle MCP ON] Research AI agent frameworks  # Tier 4: 6-8s (Tavily)
 
   Demo 2: Memory Types (5-6 min)
-  □ What templates do I have?                 # Procedural
-  □ Show me my GTM Roadmap Template          # Procedural details
-  □ What did I complete on AgentOps?          # Episodic
-  □ What's my default priority?               # Semantic
-  □ I'm focusing on Voice Agent               # Working: Store
-  □ What should I work on next?               # Working: Apply
-  □ [Clear session] What should I work on?    # Working: Lost
+  □ What templates do I have?                 # Procedural: List templates
+  □ Show me my Blog Post Template            # Procedural: 4 phases, 16 tasks (most used)
+  □ What do you know about LangChain?         # Semantic: Knowledge cache
+  □ What do you know about MongoDB vector search?  # Semantic: Knowledge (audience-relevant)
+  □ I'm focusing on Voice Agent Architecture  # Working: Store context
+  □ What should I work on next?               # Working: Apply context
+  □ [Clear session] What should I work on?    # Working: Context cleared (contrast)
 
   Demo 3: Evals Dashboard (3-4 min)
   □ Open http://localhost:8502
@@ -559,27 +559,31 @@ make smoke
 
 | # | Command | Memory Type | Expected Result |
 |---|---------|-------------|----------------|
-| 1 | "What templates do I have?" | Procedural | Lists 7 templates (GTM, Ref Arch, Blog Post, etc.) |
-| 2 | "Show me my GTM Roadmap Template" | Procedural | Shows 3 phases, 12 tasks (Research→Strategy→Execution) |
-| 3 | "What did I complete on AgentOps?" | Episodic | Shows completed tasks from action history |
-| 4 | "What's my default priority?" | Semantic | Returns "high" (confidence: 0.8, used 15×) |
-| 5 | "I'm focusing on Voice Agent" | Working | Stores session context, Memory Stats +1 |
+| 1 | "What templates do I have?" | Procedural | Lists 4 templates (GTM, Ref Arch, Blog Post, Market Research) |
+| 2 | "Show me my Blog Post Template" | Procedural | Shows 4 phases, 16 tasks (Outline→Draft→Review→Publish) - Most used (5×) |
+| 3 | "What do you know about LangChain?" | Semantic: Knowledge | Returns cached knowledge: framework for LLM apps with chains, agents, memory |
+| 4 | "What do you know about MongoDB vector search?" | Semantic: Knowledge | Returns cached knowledge: Atlas Vector Search, hybrid search, HNSW indexing |
+| 5 | "I'm focusing on Voice Agent Architecture" | Working | Stores session context, Memory Stats +1 |
 | 6 | "What should I work on next?" | Working | Suggests Voice Agent tasks (uses context) |
 | 7a | [Click 🗑️ Clear Session Memory] | - | Working Memory cleared |
 | 7b | "What should I work on next?" | - | Context lost - generic response |
 
 **Talking Points:**
-- **Procedural:** Templates, workflows, checklists (persistent)
-- **Episodic:** Action history with semantic search (persistent)
-- **Semantic:** User preferences with confidence scoring (7-day TTL for knowledge)
+- **Procedural:** Templates, workflows, checklists (persistent) - Blog Post template most used
+- **Semantic Knowledge:** 27 AI/MongoDB/CV topics cached with 7-day TTL and embeddings
+- **Semantic Preferences:** User preferences with confidence scoring (persistent)
 - **Working:** Session context (2-hour TTL)
 - **Shared:** Agent handoffs (5-minute TTL)
+- Knowledge cache demonstrates value before Demo 4 research
 - Contrast demo: Clear session to show value of working memory
 
-**Alternative Queries (if time permits):**
-- "What have I been working on this week?" (Episodic: Long-range)
-- "What's my communication style?" (Semantic: Preference)
-- "What checklists do I have?" (Procedural: Market Research)
+**Alternative Knowledge Queries (choose based on audience):**
+- "What do you know about RAG?" (Retrieval-Augmented Generation)
+- "Tell me about CLIP" (Computer Vision + NLP)
+- "What do you know about prompt caching?" (Ties to Demo 3 optimization)
+- "What do you know about AgentOps?" (Relevant to sample project)
+- "Tell me about YOLO object detection" (Computer Vision)
+- "What do you know about multimodal LLMs?" (Cutting edge)
 
 ---
 

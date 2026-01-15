@@ -6,7 +6,7 @@ Seeds a complete demo dataset including:
 - Projects (8 realistic projects: 4 active, 2 completed, 2 planned)
 - Tasks (38 tasks across all projects with varied status/priority)
 - Procedural Memory (GTM, Reference Architecture, Blog Post templates + Checklists)
-- Semantic Memory (User Preferences)
+- Semantic Memory (User Preferences + 27 AI/MongoDB/Computer Vision knowledge topics)
 - Episodic Memory (12+ past actions spanning completed projects and tasks)
 - AI-Generated Episodic Summaries (for demo app sidebar display)
 
@@ -54,7 +54,7 @@ Importable Functions:
     - seed_projects(db, clean) -> int
     - seed_tasks(db, clean) -> int
     - seed_procedural_memory(db, skip_embeddings, clean) -> int
-    - seed_semantic_memory(db, clean) -> int
+    - seed_semantic_memory(db, skip_embeddings, clean) -> int
     - seed_episodic_memory(db, skip_embeddings, clean) -> int
 
 Requires:
@@ -1234,11 +1234,418 @@ def get_procedural_memory_data() -> List[Dict[str, Any]]:
     ]
 
 
-def get_semantic_memory_data() -> List[Dict[str, Any]]:
-    """Get semantic memory (user preferences) for seeding."""
+def get_knowledge_base_data() -> List[Dict[str, Any]]:
+    """Get AI/MongoDB/Computer Vision knowledge for semantic memory."""
     now = datetime.utcnow()
 
     return [
+        # ═══════════════════════════════════════════════════════════════
+        # AI FRAMEWORKS & TOOLS
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "langchain_framework",
+            "value": "LangChain is a popular Python framework for building LLM applications with chains, agents, and memory. It provides abstractions for prompts, callbacks, and tool integration. Key features include LCEL (LangChain Expression Language), LangGraph for stateful agents, and LangSmith for observability.",
+            "tags": ["framework", "python", "llm", "agents"],
+            "confidence": 0.95,
+            "source": "research"
+        },
+        {
+            "key": "langgraph_agents",
+            "value": "LangGraph enables building stateful, multi-actor agents with cycles and persistence. It supports checkpointing for state management, human-in-the-loop workflows, and complex agent orchestration. Built on top of LangChain with graph-based execution.",
+            "tags": ["framework", "agents", "stateful", "langchain"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "anthropic_claude",
+            "value": "Anthropic Claude is a large language model family known for long context windows (200K+), strong instruction following, and safety features. Claude 3.5 Sonnet offers excellent balance of speed, intelligence, and cost. Supports tool use, prompt caching, and vision.",
+            "tags": ["llm", "anthropic", "claude", "ai"],
+            "confidence": 0.95,
+            "source": "research"
+        },
+        {
+            "key": "openai_gpt",
+            "value": "OpenAI GPT-4 is a multimodal LLM supporting text and images. GPT-4 Turbo offers 128K context, function calling, and vision capabilities. GPT-4o optimizes for speed and cost. Widely used for chatbots, coding assistants, and content generation.",
+            "tags": ["llm", "openai", "gpt", "multimodal"],
+            "confidence": 0.94,
+            "source": "research"
+        },
+        {
+            "key": "llamaindex_framework",
+            "value": "LlamaIndex (formerly GPT Index) is a data framework for LLM applications. Specializes in ingestion, indexing, and querying of private data. Supports multiple data sources, vector stores, and retrieval strategies including hybrid search.",
+            "tags": ["framework", "rag", "retrieval", "indexing"],
+            "confidence": 0.90,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # MONGODB & VECTOR SEARCH
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "mongodb_vector_search",
+            "value": "MongoDB Atlas Vector Search enables semantic similarity search using embeddings. Supports hybrid search combining vector similarity with traditional text search, uses HNSW indexing for fast approximate nearest neighbor queries, and integrates with popular embedding providers like OpenAI and Voyage AI.",
+            "tags": ["database", "vector-search", "embeddings", "mongodb"],
+            "confidence": 0.95,
+            "source": "research"
+        },
+        {
+            "key": "mongodb_aggregation",
+            "value": "MongoDB aggregation pipeline provides powerful data processing with stages like $match, $group, $project, and $lookup. Atlas Search stages include $search and $vectorSearch. Optimized for complex queries with indexing support and parallel execution.",
+            "tags": ["database", "mongodb", "query", "aggregation"],
+            "confidence": 0.93,
+            "source": "research"
+        },
+        {
+            "key": "mongodb_atlas_search",
+            "value": "Atlas Search provides full-text search with Lucene-based indexing. Features include fuzzy matching, autocomplete, faceting, and synonyms. Supports compound queries combining text, numeric, and geospatial filters. Integrates seamlessly with aggregation pipelines.",
+            "tags": ["database", "mongodb", "search", "atlas"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "hnsw_indexing",
+            "value": "Hierarchical Navigable Small World (HNSW) is an approximate nearest neighbor algorithm used for vector search. Provides fast similarity search with configurable accuracy-speed tradeoffs. Used by MongoDB Atlas Vector Search, Pinecone, and other vector databases.",
+            "tags": ["algorithm", "vector-search", "indexing", "performance"],
+            "confidence": 0.88,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # AI AGENT ARCHITECTURES
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "ai_agent_memory",
+            "value": "AI agent memory systems typically include short-term (working memory), long-term (episodic/semantic), and procedural memory. Modern approaches use vector databases for semantic recall, confidence scoring for preference learning, and temporal decay for relevance. Key challenges include memory consolidation and conflict resolution.",
+            "tags": ["ai-agents", "memory", "architecture", "vector-db"],
+            "confidence": 0.90,
+            "source": "research"
+        },
+        {
+            "key": "react_agents",
+            "value": "ReAct (Reasoning + Acting) is an agent architecture where LLMs alternate between reasoning about the next action and executing tools. Enables iterative problem-solving with thought traces. Widely used in frameworks like LangChain and AutoGPT.",
+            "tags": ["agents", "architecture", "reasoning", "tools"],
+            "confidence": 0.91,
+            "source": "research"
+        },
+        {
+            "key": "tool_calling",
+            "value": "LLM tool calling (function calling) allows models to invoke external functions with structured parameters. Modern LLMs like Claude and GPT-4 natively support tool use. Enables agents to interact with APIs, databases, and services while maintaining conversation flow.",
+            "tags": ["llm", "tools", "agents", "api"],
+            "confidence": 0.93,
+            "source": "research"
+        },
+        {
+            "key": "rag_architecture",
+            "value": "Retrieval-Augmented Generation (RAG) combines LLMs with information retrieval. Query is embedded, similar documents retrieved from vector database, then provided as context to LLM. Reduces hallucinations and enables querying of private data without fine-tuning.",
+            "tags": ["architecture", "retrieval", "embeddings", "llm"],
+            "confidence": 0.94,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # EMBEDDINGS & NLP
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "voyage_embeddings",
+            "value": "Voyage AI provides state-of-the-art embedding models optimized for retrieval. Voyage-3 offers 1024-dimensional embeddings with superior performance on semantic search tasks. Supports domain-specific fine-tuning and batch processing.",
+            "tags": ["embeddings", "voyage", "retrieval", "semantic"],
+            "confidence": 0.91,
+            "source": "research"
+        },
+        {
+            "key": "openai_embeddings",
+            "value": "OpenAI text-embedding-3-large and text-embedding-3-small provide high-quality embeddings for semantic search. Support up to 8191 tokens input, customizable dimensions, and batch processing. Widely used for RAG and similarity search applications.",
+            "tags": ["embeddings", "openai", "semantic", "retrieval"],
+            "confidence": 0.93,
+            "source": "research"
+        },
+        {
+            "key": "semantic_search",
+            "value": "Semantic search finds results based on meaning rather than keyword matching. Uses embeddings to encode queries and documents in vector space, then computes similarity (cosine, dot product). Outperforms keyword search for conceptual queries.",
+            "tags": ["search", "embeddings", "nlp", "retrieval"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "hybrid_search",
+            "value": "Hybrid search combines vector similarity search with traditional keyword search using algorithms like Reciprocal Rank Fusion (RRF). Balances semantic understanding with exact keyword matches. MongoDB Atlas supports native hybrid search via $rankFusion.",
+            "tags": ["search", "hybrid", "mongodb", "retrieval"],
+            "confidence": 0.91,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # PROMPT ENGINEERING & OPTIMIZATION
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "prompt_engineering",
+            "value": "Prompt engineering involves optimizing LLM inputs for better outputs. Techniques include few-shot examples, chain-of-thought reasoning, prompt compression, and caching. Context window management is critical - reducing token counts improves latency and reduces costs.",
+            "tags": ["llm", "optimization", "prompts", "caching"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "prompt_caching",
+            "value": "Anthropic Claude supports prompt caching to reuse frequently repeated context. System prompts and tool definitions can be cached for 5 minutes, reducing latency by 80-90% and costs by 90% on cached portions. Requires minimum 1024 tokens to cache.",
+            "tags": ["optimization", "caching", "anthropic", "performance"],
+            "confidence": 0.93,
+            "source": "research"
+        },
+        {
+            "key": "context_compression",
+            "value": "Context compression reduces LLM input tokens while preserving key information. Techniques include summarization, entity extraction, and selective context inclusion. Can achieve 50-80% token reduction with minimal quality loss, improving speed and cost.",
+            "tags": ["optimization", "compression", "tokens", "performance"],
+            "confidence": 0.89,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # COMPUTER VISION
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "clip_model",
+            "value": "CLIP (Contrastive Language-Image Pre-training) from OpenAI learns visual concepts from natural language descriptions. Enables zero-shot image classification, image-text matching, and multimodal embeddings. Foundation for image search and generation models.",
+            "tags": ["computer-vision", "multimodal", "openai", "embeddings"],
+            "confidence": 0.90,
+            "source": "research"
+        },
+        {
+            "key": "yolo_object_detection",
+            "value": "YOLO (You Only Look Once) is a real-time object detection system. YOLOv8 offers state-of-the-art accuracy with fast inference speeds. Single-stage detector processes images in one forward pass, suitable for video processing and robotics applications.",
+            "tags": ["computer-vision", "object-detection", "real-time", "yolo"],
+            "confidence": 0.91,
+            "source": "research"
+        },
+        {
+            "key": "stable_diffusion",
+            "value": "Stable Diffusion is an open-source text-to-image generation model using latent diffusion. Supports image generation, inpainting, and style transfer. Runs efficiently on consumer GPUs. Popular for creative applications and customizable with LoRA fine-tuning.",
+            "tags": ["computer-vision", "generation", "diffusion", "image"],
+            "confidence": 0.89,
+            "source": "research"
+        },
+        {
+            "key": "vision_transformers",
+            "value": "Vision Transformers (ViT) apply transformer architecture to images by treating image patches as tokens. Achieved state-of-the-art results on image classification. Foundation for models like CLIP, DINO, and multimodal LLMs like GPT-4V and Claude 3.",
+            "tags": ["computer-vision", "transformers", "architecture", "image"],
+            "confidence": 0.88,
+            "source": "research"
+        },
+        {
+            "key": "sam_segmentation",
+            "value": "Segment Anything Model (SAM) from Meta AI enables zero-shot image segmentation with prompts (points, boxes, text). Trained on 1 billion masks, supports automatic mask generation and interactive segmentation. Useful for image editing, annotation, and robotics.",
+            "tags": ["computer-vision", "segmentation", "meta", "zero-shot"],
+            "confidence": 0.87,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # MLOps & MONITORING
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "langsmith_observability",
+            "value": "LangSmith provides observability for LLM applications with tracing, debugging, and evaluation. Tracks token usage, latency, and errors across chains. Supports dataset creation, prompt versioning, and A/B testing for LLM applications.",
+            "tags": ["mlops", "observability", "langchain", "monitoring"],
+            "confidence": 0.90,
+            "source": "research"
+        },
+        {
+            "key": "agentops_monitoring",
+            "value": "AgentOps provides specialized monitoring for AI agents including agent traces, tool call tracking, and multi-step workflow visualization. Supports cost tracking, latency analysis, and error debugging. Integrates with LangChain, CrewAI, and custom agents.",
+            "tags": ["mlops", "monitoring", "agents", "observability"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "opentelemetry_tracing",
+            "value": "OpenTelemetry provides standardized observability with traces, metrics, and logs. For LLM apps, tracks request flows, tool calls, and performance. Vendor-agnostic with exporters for Datadog, New Relic, and custom backends.",
+            "tags": ["mlops", "tracing", "observability", "telemetry"],
+            "confidence": 0.89,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # VECTOR DATABASES
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "pinecone_vectordb",
+            "value": "Pinecone is a managed vector database optimized for similarity search at scale. Supports metadata filtering, hybrid search, and real-time updates. Popular for RAG applications, recommendation systems, and semantic search.",
+            "tags": ["vector-db", "database", "search", "managed"],
+            "confidence": 0.91,
+            "source": "research"
+        },
+        {
+            "key": "weaviate_vectordb",
+            "value": "Weaviate is an open-source vector database with built-in vectorization modules. Supports GraphQL and REST APIs, hybrid search, and multi-tenancy. Integrates with Cohere, OpenAI, and Hugging Face for automatic embedding generation.",
+            "tags": ["vector-db", "database", "open-source", "graphql"],
+            "confidence": 0.88,
+            "source": "research"
+        },
+        {
+            "key": "qdrant_vectordb",
+            "value": "Qdrant is a high-performance vector database written in Rust. Features advanced filtering, payload indexing, and distributed deployment. Offers quantization for memory efficiency and supports SIMD optimization for fast similarity search.",
+            "tags": ["vector-db", "database", "rust", "performance"],
+            "confidence": 0.87,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # AI TECHNIQUES & CONCEPTS
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "few_shot_learning",
+            "value": "Few-shot learning enables models to learn from limited examples. In LLMs, providing 1-5 examples in the prompt guides output format and style. More effective than zero-shot for structured outputs, classification, and domain-specific tasks.",
+            "tags": ["technique", "llm", "learning", "prompts"],
+            "confidence": 0.90,
+            "source": "research"
+        },
+        {
+            "key": "chain_of_thought",
+            "value": "Chain-of-Thought (CoT) prompting encourages LLMs to show reasoning steps before answering. Significantly improves performance on complex reasoning tasks. Variants include zero-shot CoT ('Let's think step by step') and few-shot CoT with examples.",
+            "tags": ["technique", "reasoning", "prompts", "llm"],
+            "confidence": 0.91,
+            "source": "research"
+        },
+        {
+            "key": "fine_tuning_llms",
+            "value": "LLM fine-tuning adapts pre-trained models to specific tasks or domains. Techniques include full fine-tuning, LoRA (Low-Rank Adaptation), and PEFT (Parameter-Efficient Fine-Tuning). Trade-offs between cost, quality, and inference speed compared to few-shot prompting.",
+            "tags": ["technique", "training", "llm", "adaptation"],
+            "confidence": 0.89,
+            "source": "research"
+        },
+        {
+            "key": "retrieval_augmented_generation",
+            "value": "RAG enhances LLM responses by retrieving relevant documents from a knowledge base. Typical flow: embed query → vector search → inject results as context → generate response. Reduces hallucinations and enables querying of private/recent data.",
+            "tags": ["architecture", "rag", "retrieval", "llm"],
+            "confidence": 0.94,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # AGENT PATTERNS
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "multi_agent_systems",
+            "value": "Multi-agent systems coordinate multiple specialized agents for complex tasks. Patterns include hierarchical (manager-worker), peer-to-peer (collaborative), and marketplace (competitive bidding). Requires communication protocols, task distribution, and conflict resolution.",
+            "tags": ["agents", "architecture", "coordination", "systems"],
+            "confidence": 0.88,
+            "source": "research"
+        },
+        {
+            "key": "agent_handoffs",
+            "value": "Agent handoffs transfer conversation context between specialized agents. Shared memory enables context preservation across handoffs. Common in customer service (sales → support) and technical workflows (retrieval → processing → synthesis).",
+            "tags": ["agents", "coordination", "memory", "handoff"],
+            "confidence": 0.87,
+            "source": "research"
+        },
+        {
+            "key": "autonomous_agents",
+            "value": "Autonomous agents operate independently with goals, planning, and self-correction. Examples include AutoGPT, BabyAGI, and AgentGPT. Challenges include task decomposition, long-horizon planning, and preventing infinite loops. Requires robust error handling.",
+            "tags": ["agents", "autonomous", "planning", "ai"],
+            "confidence": 0.86,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # COMPUTER VISION APPLICATIONS
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "visual_question_answering",
+            "value": "Visual Question Answering (VQA) systems answer questions about images using multimodal models. Modern approaches use vision-language models like GPT-4V, Claude 3, or BLIP-2. Applications include accessibility, content moderation, and visual search.",
+            "tags": ["computer-vision", "multimodal", "qa", "vqa"],
+            "confidence": 0.88,
+            "source": "research"
+        },
+        {
+            "key": "image_embeddings",
+            "value": "Image embeddings encode visual content as fixed-size vectors for similarity search. CLIP produces multimodal embeddings aligned with text. DINOv2 excels at general visual features. Used for reverse image search, content-based recommendation, and duplicate detection.",
+            "tags": ["computer-vision", "embeddings", "search", "multimodal"],
+            "confidence": 0.90,
+            "source": "research"
+        },
+        {
+            "key": "ocr_document_ai",
+            "value": "Optical Character Recognition (OCR) extracts text from images and PDFs. Modern approaches combine traditional OCR (Tesseract) with deep learning (PaddleOCR, EasyOCR). Document AI adds layout analysis, table extraction, and form understanding.",
+            "tags": ["computer-vision", "ocr", "document", "extraction"],
+            "confidence": 0.89,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # DEVELOPER TOOLS
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "streamlit_framework",
+            "value": "Streamlit is a Python framework for building data apps and ML dashboards with minimal code. Supports reactive updates, caching, and session state. Popular for prototyping LLM interfaces, data visualization, and internal tools.",
+            "tags": ["framework", "python", "ui", "dashboard"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "gradio_interfaces",
+            "value": "Gradio creates web interfaces for ML models with Python functions. Supports chat interfaces, file uploads, and real-time updates. Integrates with Hugging Face Spaces for easy deployment. Popular for model demos and prototyping.",
+            "tags": ["framework", "ui", "ml", "python"],
+            "confidence": 0.88,
+            "source": "research"
+        },
+        {
+            "key": "fastapi_framework",
+            "value": "FastAPI is a modern Python web framework for building APIs with automatic OpenAPI documentation. Supports async/await, type validation with Pydantic, and dependency injection. Popular for LLM application backends and microservices.",
+            "tags": ["framework", "api", "python", "backend"],
+            "confidence": 0.91,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # AI SAFETY & ETHICS
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "llm_hallucinations",
+            "value": "LLM hallucinations occur when models generate plausible but factually incorrect information. Mitigation strategies include RAG for grounding, citation requirements, confidence scoring, and fact-checking layers. More common in low-probability scenarios.",
+            "tags": ["safety", "llm", "accuracy", "mitigation"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "ai_alignment",
+            "value": "AI alignment ensures systems behave according to human values and intentions. Techniques include RLHF (Reinforcement Learning from Human Feedback), Constitutional AI, and red-teaming. Critical for safe deployment of autonomous agents and powerful models.",
+            "tags": ["safety", "alignment", "ethics", "rlhf"],
+            "confidence": 0.87,
+            "source": "research"
+        },
+
+        # ═══════════════════════════════════════════════════════════════
+        # EMERGING TECH
+        # ═══════════════════════════════════════════════════════════════
+        {
+            "key": "multimodal_llms",
+            "value": "Multimodal LLMs process multiple input types: text, images, audio, video. GPT-4V, Claude 3, and Gemini 1.5 support vision. Use cases include visual QA, document understanding, and image generation. Challenges include alignment and efficient encoding.",
+            "tags": ["llm", "multimodal", "vision", "audio"],
+            "confidence": 0.92,
+            "source": "research"
+        },
+        {
+            "key": "agentic_workflows",
+            "value": "Agentic workflows decompose complex tasks into agent-executable steps with feedback loops. Patterns include planning-execution cycles, tool-based problem solving, and self-correction. Requires orchestration, state management, and error recovery.",
+            "tags": ["agents", "workflows", "orchestration", "automation"],
+            "confidence": 0.90,
+            "source": "research"
+        },
+        {
+            "key": "mcp_protocol",
+            "value": "Model Context Protocol (MCP) enables LLM applications to discover and use external tools dynamically. Supports server-based tool registries, capability negotiation, and standardized tool schemas. Anthropic's approach to extensible agent systems.",
+            "tags": ["protocol", "tools", "agents", "anthropic"],
+            "confidence": 0.89,
+            "source": "research"
+        },
+    ]
+
+
+def get_semantic_memory_data() -> List[Dict[str, Any]]:
+    """Get semantic memory (user preferences + knowledge) for seeding."""
+    now = datetime.utcnow()
+
+    # User preferences
+    preferences = [
         {
             "user_id": DEMO_USER_ID,
             "memory_type": "semantic",
@@ -1288,6 +1695,29 @@ def get_semantic_memory_data() -> List[Dict[str, Any]]:
             "updated_at": now - timedelta(days=15)
         }
     ]
+
+    # Knowledge base - combine with preferences
+    knowledge_base = get_knowledge_base_data()
+
+    # Convert knowledge items to semantic memory format
+    knowledge_memories = []
+    for i, knowledge in enumerate(knowledge_base):
+        knowledge_memories.append({
+            "user_id": DEMO_USER_ID,
+            "memory_type": "semantic",
+            "semantic_type": "knowledge",
+            "key": knowledge["key"],
+            "value": knowledge["value"],
+            "tags": knowledge.get("tags", []),
+            "source": knowledge.get("source", "research"),
+            "confidence": knowledge.get("confidence", 0.90),
+            "times_accessed": 0,
+            "created_at": now - timedelta(days=3),  # Cached 3 days ago
+            "updated_at": now - timedelta(days=3),
+            "expires_at": now + timedelta(days=7)  # 7-day TTL for knowledge
+        })
+
+    return preferences + knowledge_memories
 
 
 def get_episodic_memory_data(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1751,8 +2181,8 @@ def seed_procedural_memory(db, skip_embeddings: bool = False, clean: bool = Fals
     return inserted_count
 
 
-def seed_semantic_memory(db, clean: bool = False) -> int:
-    """Seed semantic memory (user preferences)."""
+def seed_semantic_memory(db, skip_embeddings: bool = False, clean: bool = False) -> int:
+    """Seed semantic memory (user preferences + knowledge base)."""
     print("\n" + "=" * 60)
     print("SEEDING SEMANTIC MEMORY")
     print("=" * 60)
@@ -1763,27 +2193,51 @@ def seed_semantic_memory(db, clean: bool = False) -> int:
         })
         print(f"\n🗑️  Cleared {deleted.deleted_count} existing semantic memories")
 
-    preferences = get_semantic_memory_data()
+    all_memories = get_semantic_memory_data()
 
-    # Check for existing preferences
+    # Check for existing keys
     existing_keys = set()
-    for pref in db.memory_semantic.find({
-        "user_id": DEMO_USER_ID,
-        "semantic_type": "preference"
+    for mem in db.memory_semantic.find({
+        "user_id": DEMO_USER_ID
     }, {"key": 1}):
-        existing_keys.add(pref["key"])
+        existing_keys.add(mem["key"])
 
     inserted_count = 0
-    for pref in preferences:
-        if pref["key"] in existing_keys:
-            print(f"  ⏭️  Skipping existing: {pref['key']} = {pref['value']}")
+    embedding_count = 0
+
+    for mem in all_memories:
+        if mem["key"] in existing_keys:
+            print(f"  ⏭️  Skipping existing: {mem['key']}")
             continue
 
-        db.memory_semantic.insert_one(pref)
-        print(f"  ✓ Inserted: {pref['key']} = {pref['value']} (confidence: {pref['confidence']}, used {pref['times_used']}x)")
+        # Generate embeddings for knowledge items (searchable)
+        if mem.get("semantic_type") == "knowledge" and not skip_embeddings:
+            try:
+                # Embed the knowledge value for semantic search
+                mem["embedding"] = embed_document(mem["value"])
+
+                if len(mem["embedding"]) != 1024:
+                    print(f"  ⚠️  Warning: Expected 1024 dims, got {len(mem['embedding'])}")
+
+                print(f"  📊 Generated embedding for: {mem['key']} (1024-dim)")
+                embedding_count += 1
+            except Exception as e:
+                print(f"  ⚠️  Failed to generate embedding for {mem['key']}: {e}")
+                print(f"      Continuing without embedding")
+
+        db.memory_semantic.insert_one(mem)
+
+        # Display differently based on type
+        if mem.get("semantic_type") == "preference":
+            times_used = mem.get("times_used", 0)
+            print(f"  ✓ Inserted preference: {mem['key']} = {mem['value']} (confidence: {mem['confidence']}, used {times_used}x)")
+        else:  # knowledge
+            tags = ', '.join(mem.get('tags', [])[:3])
+            print(f"  ✓ Inserted knowledge: {mem['key']} ({tags})")
+
         inserted_count += 1
 
-    print(f"\n📊 Summary: {inserted_count} new preferences, {len(existing_keys)} existing")
+    print(f"\n📊 Summary: {inserted_count} new semantic memories ({embedding_count} with embeddings), {len(existing_keys)} existing")
 
     return inserted_count
 
@@ -2241,7 +2695,7 @@ def seed_all(db, clean: bool = False, skip_embeddings: bool = False) -> Dict[str
     results["projects"] = seed_projects(db, clean=False, skip_embeddings=skip_embeddings)  # Already cleared if clean=True
     results["tasks"] = seed_tasks(db, clean=False, skip_embeddings=skip_embeddings)
     results["procedural"] = seed_procedural_memory(db, skip_embeddings=skip_embeddings, clean=False)
-    results["semantic"] = seed_semantic_memory(db, clean=False)
+    results["semantic"] = seed_semantic_memory(db, skip_embeddings=skip_embeddings, clean=False)
     results["episodic"] = seed_episodic_memory(db, skip_embeddings=skip_embeddings, clean=False)
 
     # Generate AI episodic summaries (for demo app sidebar)
