@@ -1658,7 +1658,37 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         phase_name = phase.get("name", "")
                         logger.info(f"  Phase: {phase_name}")
 
-                        for task_title in phase.get("tasks", []):
+                        for task_item in phase.get("tasks", []):
+                            # Handle both formats: string (old) or dict with guiding_questions (new)
+                            if isinstance(task_item, str):
+                                task_title = task_item
+                                task_context = task_context_base
+                            else:
+                                task_title = task_item.get("title", "Unknown task")
+                                guiding_questions = task_item.get("guiding_questions", [])
+
+                                # If we have research and guiding questions, tailor the context
+                                if research_results and guiding_questions:
+                                    questions_text = "\n".join(f"- {q}" for q in guiding_questions)
+
+                                    # Use LLM to extract relevant research for this specific task
+                                    try:
+                                        tailored_research = self.llm.generate(
+                                            messages=[{
+                                                "role": "user",
+                                                "content": f"Based on this research, provide concise answers (2-3 sentences total) to these questions for the task '{task_title}':\n\n{questions_text}\n\nResearch:\n{str(research_results)[:1500]}"
+                                            }],
+                                            max_tokens=200,
+                                            temperature=0.3
+                                        )
+                                        task_context = f"Generated from {template.get('name')} - {phase_name} phase\n\nTask-specific research insights:\n{tailored_research}"
+                                        logger.debug(f"    Generated tailored research for: {task_title}")
+                                    except Exception as e:
+                                        logger.warning(f"    Failed to tailor research for {task_title}: {e}")
+                                        task_context = task_context_base
+                                else:
+                                    task_context = task_context_base
+
                             # Add phase prefix to task title for context
                             full_title = f"[{phase_name}] {task_title}"
 
@@ -1666,7 +1696,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                 title=full_title,
                                 project_id=project_id,
                                 priority="medium",
-                                context=task_context_base
+                                context=task_context
                             )
 
                             if task_result.get("success"):
