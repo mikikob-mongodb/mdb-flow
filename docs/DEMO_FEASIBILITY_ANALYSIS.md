@@ -180,36 +180,105 @@ Create a new project called "Q1 Developer Outreach" using my GTM Roadmap Templat
 
 ## 🎬 Demo 3: Where Time Goes (~1 min)
 
-### Feasibility: ❌ NOT IMPLEMENTED
+### Feasibility: ✅ WORKS
 
-**Status:** No Streamlit evals dashboard exists
+**Status:** Evals dashboard exists at `evals_app.py`
 
-**What Exists:**
-- `evals/` directory with competency suite
-- `memory_metrics.py` for measuring memory system
-- `runner.py` for executing evals
-- But NO visualization dashboard
+### How to Run
 
-**Options:**
+```bash
+# In separate terminal (or pre-run before demo)
+streamlit run evals_app.py --server.port 8502
+```
 
-### Option A: Build Quick Dashboard (1-2 hours)
-Create `evals/dashboard.py` with:
-- Read from debug panel tracking data
-- Show breakdown: LLM time, DB time, tool time
-- Display as pie chart or bar chart
+### What It Shows
 
-### Option B: Show MongoDB Metrics (5 minutes)
-- Run queries with debug panel enabled
-- Open MongoDB Compass → Performance tab
-- Show operation timing in Atlas UI
+**Dashboard has 2 tabs:**
+1. **🔬 Context Engineering** - Performance comparison (use this for Demo 3!)
+2. **🧠 Memory Competencies** - Memory system evaluation
 
-### Option C: Skip This Demo
-- Focus on Demos 1, 2, and 4
-- Mention in passing: "Database is fast, LLM is the bottleneck"
+**Key Charts for Demo 3:**
 
-**Recommendation:** Option C (skip) or Option B (MongoDB Compass)
+1. **🔧 LLM vs Tool Time** ← **THE MONEY SHOT**
+   - Stacked horizontal bars showing:
+     - LLM Time: ~96% of total (blue)
+     - Tool Time: ~4% of total (green)
+   - Annotation: "💡 MongoDB averages <200ms. LLM is the bottleneck."
+   - **Proves:** Database is NOT the problem!
 
-**Why:** Building a dashboard takes time, and the other demos are more impactful. MongoDB Compass can show database performance metrics if needed.
+2. **⏱️ Tool Time Breakdown**
+   - Shows where tool time goes:
+     - Embedding (Voyage API): ~120ms (purple)
+     - MongoDB Queries: ~50-80ms (green)
+     - Processing (Python): ~30-50ms (blue)
+   - Annotation: "💡 Tool time is consistent across configs (~500ms) — optimizations reduce LLM time, not DB time"
+
+3. **⚡ Optimization Waterfall**
+   - Horizontal bars showing latency reduction
+   - Baseline → Compress → Streamlined → Caching → All Context
+   - Shows % reduction at each step
+
+4. **📊 Impact by Query Type**
+   - Grouped bars for: Slash Commands, Text Queries, Actions, Multi-Turn
+   - Shows slash commands stay fast (~50-150ms) regardless of optimization
+
+### Setup Notes
+
+**MongoDB Storage (Optional):**
+- Results can be saved to `eval_comparison_runs` collection
+- BUT storage is optional - results work in-memory during session
+- If collection doesn't exist, app shows warning but continues working
+- For demo purposes, in-memory results are sufficient
+
+### Demo Flow
+
+**Option A: Pre-run Evals (Recommended)**
+
+Before demo:
+```bash
+# Terminal 1: Main app
+streamlit run ui/demo_app.py
+
+# Terminal 2: Evals app
+streamlit run evals_app.py --server.port 8502
+```
+
+In evals app:
+1. Select configs: ✅ Baseline + ✅ All Context
+2. Click "🚀 Run Comparison"
+3. Wait ~2-3 minutes (runs ~40 tests)
+4. Charts appear with results
+
+During demo:
+1. Switch to browser tab: `localhost:8502`
+2. Scroll to **"🔧 LLM vs Tool Time"** chart
+3. Point out: 96% LLM, 4% Tools
+4. Scroll to **"⏱️ Tool Time Breakdown"**
+5. Point out: MongoDB ~50-80ms, consistent across configs
+
+**Option B: Show Without Running**
+- Open evals app (will show "No results yet")
+- Explain what the charts would show
+- Reference: "MongoDB averages <200ms, LLM takes 2-8 seconds"
+
+**Option C: Skip and Reference**
+- Don't open evals app
+- Just mention: "Database is fast, LLM is the bottleneck"
+- Move to Demo 4
+
+**Recommendation:** Option A (pre-run) for maximum visual impact
+
+### What to Say
+
+"Let me show you where time is actually being spent. [Switch to localhost:8502]
+
+Here's the breakdown: The LLM thinking takes 96% of the time. MongoDB queries? Less than 100ms on average. The database is almost never the bottleneck.
+
+[Point to Tool Time Breakdown]
+
+When we break down the tool time - which is only 4% of total time - MongoDB queries are 50-80 milliseconds. The rest is embedding generation from Voyage AI and Python processing.
+
+This is why our optimizations focus on reducing LLM context, not on optimizing database queries. The database is already fast."
 
 ---
 
@@ -442,19 +511,19 @@ elif mcp_result.get("source") == "mcp_tavily":
 | Demo Section | Status | Recommendation |
 |--------------|--------|----------------|
 | **Demo 1: Speed Comparison** | ✅ Ready | Use suggested queries, show debug panel |
-| **Demo 2: Memory Types - Episodic** | ⚠️ Test needed | Verify queries retrieve episodic data |
+| **Demo 2: Memory Types - Episodic** | ✅ Ready | Queries work (memory_long_term enabled) |
 | **Demo 2: Memory Types - Procedural** | ✅ Ready | Use GTM template, show phases |
 | **Demo 2: Memory Types - Semantic** | ✅ Ready | Will demo in Demo 4 |
-| **Demo 3: Where Time Goes** | ❌ Not ready | **SKIP or show MongoDB Compass** |
+| **Demo 3: Where Time Goes** | ✅ Ready | **Pre-run evals app, show LLM vs Tool chart** |
 | **Demo 4.1: Web Search + Cache** | ✅ Ready | Use NPC memory query |
 | **Demo 4.2: Cache Hit** | ✅ Ready | Re-query same topic |
-| **Demo 4.3: Project from Template** | ⚠️ Partial | Template works, research incorporation uncertain |
-| **Demo 4.4: Link Similar** | ❌ Not ready | Change to "Find similar" |
-| **Demo 4.5: Discovery Analysis** | ⚠️ Data only | **Show MongoDB data or SKIP** |
+| **Demo 4.3: Project from Template** | ✅ Ready | Research incorporation enhanced |
+| **Demo 4.4: Find Similar** | ✅ Ready | search_projects tool works |
+| **Demo 4.5: Discovery Analysis** | ⚠️ Manual | **Show MongoDB data (optional)** |
 
 ---
 
-## Recommended Demo Flow (Adjusted)
+## Recommended Demo Flow (Updated)
 
 ### 🎬 Demo 1: Speed Tiers (2 min) ✅
 1. Run `/tasks` - point to ~50ms
@@ -465,12 +534,16 @@ elif mcp_result.get("source") == "mcp_tavily":
 
 ### 🎬 Demo 2: Memory Types (2 min) ✅
 1. **Procedural:** "What templates do I have?" - show GTM template
-2. **Procedural:** "Show me my GTM template" - point to phases
-3. **Episodic:** "What have I been working on?" - show activity (if works)
+2. **Procedural:** "Show me my GTM template" - point to phases (3 phases, 12 tasks)
+3. **Episodic:** "What have I been working on this week?" - show activity
 
-### 🎬 Demo 3: SKIP ❌
-- Mention in passing: "Database is fast, LLM is the bottleneck"
-- Or show MongoDB Compass performance tab if needed
+### 🎬 Demo 3: Where Time Goes (1 min) ✅
+1. Switch to evals app tab (localhost:8502) - pre-run with Baseline + All Context
+2. Scroll to **"🔧 LLM vs Tool Time"** chart
+3. Point out: "96% LLM thinking, 4% tool execution"
+4. Scroll to **"⏱️ Tool Time Breakdown"**
+5. Point out: "MongoDB queries ~50-80ms, consistent across configs"
+6. **Key message:** "Database isn't the bottleneck - LLM thinking is"
 
 ### 🎬 Demo 4: The Finale (5 min) ✅
 1. **Enable MCP** - Show toggle in UI or .env setting
@@ -516,13 +589,28 @@ elif mcp_result.get("source") == "mcp_tavily":
 
 ## Pre-Demo Checklist
 
+### Terminal Setup
+- [ ] Terminal 1: Run main app `streamlit run ui/demo_app.py`
+- [ ] Terminal 2: Run evals app `streamlit run evals_app.py --server.port 8502`
+
+### Configuration
 - [ ] Enable MCP mode: `MCP_MODE_ENABLED=true` in .env
-- [ ] Verify Tavily API key is set
+- [ ] Verify Tavily API key is set in .env
+
+### Data Setup
 - [ ] Seed demo data: `python scripts/demo/seed_demo_data.py`
 - [ ] Clear any existing web search cache (optional, for fresh demo)
+
+### Evals App Setup (for Demo 3)
+- [ ] In evals app: Select ✅ Baseline + ✅ All Context
+- [ ] Click "🚀 Run Comparison" (~2-3 min)
+- [ ] Wait for charts to appear
+- [ ] Leave browser tab open at localhost:8502
+
+### UI Setup
 - [ ] Open MongoDB Compass to show collections
-- [ ] Test all suggested queries once
-- [ ] Have debug panel visible in UI
+- [ ] Have debug panel visible in main app
+- [ ] Test one query from each demo to verify everything works
 
 ---
 
