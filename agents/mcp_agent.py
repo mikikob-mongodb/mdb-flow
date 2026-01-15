@@ -22,7 +22,7 @@ from typing import Optional, Dict, List, Any
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import stdio_client, StdioServerParameters
 
 from memory.tool_discoveries import ToolDiscoveryStore
 from memory.manager import MemoryManager
@@ -112,17 +112,16 @@ class MCPAgent:
         """Connect to Tavily MCP server via stdio (local NPX)."""
         logger.debug("Creating stdio client connection...")
 
-        # Spawn NPX process with Tavily API key in environment
-        env = {"TAVILY_API_KEY": settings.tavily_api_key}
-        command = "npx"
-        args = ["-y", "tavily-mcp@latest"]
+        # Create server parameters for NPX process
+        server_params = StdioServerParameters(
+            command="npx",
+            args=["-y", "tavily-mcp@latest"],
+            env={"TAVILY_API_KEY": settings.tavily_api_key}
+        )
 
         try:
-            streams_context = stdio_client(
-                command=command,
-                args=args,
-                env=env
-            )
+            # Connect via stdio transport
+            streams_context = stdio_client(server=server_params)
             streams = await self.exit_stack.enter_async_context(streams_context)
 
             # Create and initialize session
