@@ -850,6 +850,29 @@ def render_chat():
                 "Add a project update to Alpha: completed architecture review",
                 "Add a project note to Voice Agent Architecture: WebSocket latency now 165ms",
             ],
+            "🧠 Procedural Memory - Templates": [
+                "What templates do I have?",
+                "Show me my Blog Post Template",
+                "Show me my GTM Roadmap Template",
+                "What's my Reference Architecture Template?",
+                "What checklists do I have?",
+                "Show me my Market Research Questions",
+            ],
+            "🧠 Semantic Memory - Knowledge Cache": [
+                "What do you know about MongoDB vector search?",
+                "Tell me about CLIP",
+                "What do you know about RAG?",
+                "What do you know about prompt caching?",
+                "Tell me about YOLO object detection",
+                "What do you know about AI agent memory?",
+            ],
+            "🧠 Working Memory - Session Context": [
+                "I'm focusing on Voice Agent Architecture",
+                "What should I work on next?",
+                "I'm working on Project Alpha",
+                "What's my current focus?",
+                "Clear my focus",
+            ],
         }
 
         # Dropdown for category selection
