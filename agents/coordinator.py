@@ -2896,26 +2896,53 @@ Execute the rule action: {rule_match['action']}
 
             # MCP mode check - only required for EXTERNAL tool discovery (Tier 4)
             if not self.mcp_mode_enabled:
-                logger.warning(f"📊 MCP mode disabled, cannot use external tools for intent: {intent}")
+                logger.warning(f"📊 MCP mode disabled, falling back to local search for intent: {intent}")
 
-                # Customize message based on intent
-                if intent == "advanced_mongodb_query":
+                # Fallback: Search local data instead of failing
+                if intent in ["web_search", "research", "find_information"]:
+                    logger.info("🔍 Searching local tasks, projects, and knowledge as fallback")
+
+                    # Use LLM with built-in tools to search local data
+                    # This will search tasks, projects, and cached knowledge
+                    # Intent changes to "unknown" so it uses Tier 3 (LLM + built-in tools)
+                    intent = "search_tasks"  # Fallback to local search
+                    logger.info(f"📊 Fallback: Changed intent from web_search to search_tasks")
+
+                    # Let it proceed to LLM with built-in tools below
+                    # The LLM will call search_tasks, search_projects, and search_knowledge
+                    # Skip MCP routing and go to normal LLM flow
+                    pass
+                elif intent == "advanced_mongodb_query":
                     response_text = "I don't have access to the MongoDB MCP server for advanced query generation. Enable Experimental MCP Mode to use MongoDB's query generation capabilities for complex aggregations and analytics."
-                else:
-                    response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
 
-                if return_debug:
-                    return {
-                        "response": response_text,
-                        "debug": {
-                            "could_use_mcp": True,
-                            "intent": intent,
-                            "mcp_available": settings.mcp_available
+                    if return_debug:
+                        return {
+                            "response": response_text,
+                            "debug": {
+                                "could_use_mcp": True,
+                                "intent": intent,
+                                "mcp_available": settings.mcp_available
+                            }
                         }
-                    }
+                    else:
+                        return response_text
                 else:
-                    return response_text
+                    # Other MCP intents without fallback - return error
+                    response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
+                    if return_debug:
+                        return {
+                            "response": response_text,
+                            "debug": {
+                                "could_use_mcp": True,
+                                "intent": intent,
+                                "mcp_available": settings.mcp_available
+                            }
+                        }
+                    else:
+                        return response_text
 
+        # Only route to MCP if mode is enabled AND intent requires it
+        if not self._can_static_tools_handle(intent, user_message) and self.mcp_mode_enabled:
             # Route to MCP Agent
             logger.info(f"🔬 Routing to MCP Agent (intent: {intent})")
 
