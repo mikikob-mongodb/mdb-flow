@@ -1673,8 +1673,8 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
 
                                     # Use fast Haiku model for quick task-specific summaries
                                     try:
-                                        from shared.llm import LLMInterface
-                                        fast_llm = LLMInterface(model="claude-3-5-haiku-20241022")  # Fast, cheap model
+                                        from shared.llm import LLMService
+                                        fast_llm = LLMService(model="claude-3-5-haiku-20241022")  # Fast, cheap model
 
                                         tailored_research = fast_llm.generate(
                                             messages=[{
