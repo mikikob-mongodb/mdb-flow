@@ -1216,6 +1216,12 @@ class RetrievalAgent:
                     }
                 }
             },
+            # Capture score immediately after rankFusion (before it gets lost)
+            {
+                "$addFields": {
+                    "search_score": {"$meta": "score"}
+                }
+            },
             # Filter out test data and apply optional filters AFTER ranking
             {
                 "$match": {
@@ -1246,7 +1252,7 @@ class RetrievalAgent:
                     "assignee": 1,
                     "project_id": 1,
                     "project_name": 1,
-                    "score": {"$meta": "score"}
+                    "score": "$search_score"
                 }
             },
             {"$limit": limit}
@@ -1266,8 +1272,8 @@ class RetrievalAgent:
             # "Mike" matches "Mike Chen", "mike" matches "Mike Chen", etc.
             filter_conditions["assignee"] = {"$regex": assignee, "$options": "i"}
 
-        # Update the match stage with all filters
-        pipeline[1]["$match"] = filter_conditions
+        # Update the match stage with all filters (now at index 2 after adding score capture)
+        pipeline[2]["$match"] = filter_conditions
 
         # Execute search
         try:
