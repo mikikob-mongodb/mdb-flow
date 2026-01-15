@@ -562,12 +562,16 @@ Examples:
 - "What have we learned about NPC memory systems?"
 - "Show me our research on voice agents"
 
-IMPORTANT: Present ALL results returned, even if not exact matches. Semantically related topics (score >0.60) can provide useful context. For example:
-- Query about "warehouse robotics" → Present autonomous agents, computer vision, multi-agent systems as relevant building blocks
-- Query about "database optimization" → Present MongoDB, indexing, aggregation topics
-- Help the user by showing what related knowledge we DO have, then suggest enabling MCP for web research if they need more specific information.
+CRITICAL: When presenting knowledge results, you MUST clearly cite the source for each piece of information:
+- Format: "📚 From [topic/query] (source: [tavily/research/knowledge_base], score: [0.XX], cached: [date]):"
+- Example 1: "📚 From warehouse_robotics_research (source: tavily, score: 1.00, cached: 2026-01-15): [content]"
+- Example 2: "📚 From autonomous_agents knowledge (source: knowledge_base, score: 0.64, confidence: 0.86): [content]"
+- NEVER present cached information without source attribution
+- This proves the information came from memory, not from my training data
 
-Returns cached knowledge with source attribution and timestamps. Only available when long-term memory is enabled.""",
+Present ALL results with their metadata. Even tangentially related topics (score >0.60) can provide useful context.
+
+Returns cached knowledge with source, confidence, similarity scores, and timestamps.""",
         "input_schema": {
             "type": "object",
             "properties": {
