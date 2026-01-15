@@ -1741,6 +1741,15 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         Returns:
             Project name
         """
+        import re
+
+        # First, check for quoted project names (most reliable)
+        # Handles: Create 'OpenFleet AI Framework Launch' project using...
+        # Or: Create "Gaming Market" project with...
+        quoted_match = re.search(r"['\"]([^'\"]+)['\"]", description)
+        if quoted_match:
+            return quoted_match.group(1).strip()
+
         # Common patterns to extract from description
         patterns = [
             "create project for ",
@@ -1753,13 +1762,20 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         desc_lower = description.lower()
         for pattern in patterns:
             if pattern in desc_lower:
-                # Extract text after pattern
+                # Extract text after pattern, up to common stop words
                 idx = desc_lower.index(pattern) + len(pattern)
-                name = description[idx:].strip()
+                remaining = description[idx:].strip()
+
+                # Stop at these words to avoid including template/method info
+                stop_words = [" using ", " with ", " from ", " based on "]
+                for stop in stop_words:
+                    if stop in remaining.lower():
+                        remaining = remaining[:remaining.lower().index(stop)]
+                        break
+
+                name = remaining.strip()
                 # Clean up
                 name = name.replace(" project", "").replace(" vertical", "")
-                # Capitalize words
-                name = " ".join(word.capitalize() for word in name.split())
                 if name:
                     return name
 
