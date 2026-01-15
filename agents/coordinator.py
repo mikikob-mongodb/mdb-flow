@@ -1671,15 +1671,18 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                 if research_results and guiding_questions:
                                     questions_text = "\n".join(f"- {q}" for q in guiding_questions)
 
-                                    # Use LLM to extract relevant research for this specific task
+                                    # Use fast Haiku model for quick task-specific summaries
                                     try:
-                                        tailored_research = self.llm.generate(
+                                        from shared.llm import LLMInterface
+                                        fast_llm = LLMInterface(model="claude-3-5-haiku-20241022")  # Fast, cheap model
+
+                                        tailored_research = fast_llm.generate(
                                             messages=[{
                                                 "role": "user",
-                                                "content": f"Based on this research, provide concise answers (2-3 sentences total) to these questions for the task '{task_title}':\n\n{questions_text}\n\nResearch:\n{str(research_results)[:1500]}"
+                                                "content": f"Answer these questions in 2-3 sentences total for '{task_title}':\n\n{questions_text}\n\nResearch:\n{str(research_results)[:1200]}"
                                             }],
-                                            max_tokens=200,
-                                            temperature=0.3
+                                            max_tokens=150,  # Reduced for faster generation
+                                            temperature=0.2  # Lower temperature for concise, factual answers
                                         )
                                         task_context = f"Generated from {template.get('name')} - {phase_name} phase\n\nTask-specific research insights:\n{tailored_research}"
                                         logger.debug(f"    Generated tailored research for: {task_title}")
