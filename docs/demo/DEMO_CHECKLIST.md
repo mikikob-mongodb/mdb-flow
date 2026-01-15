@@ -370,38 +370,68 @@ make smoke
 ### Database Reset & Seeding
 
 ```
-□ Run demo reset script (clears + seeds + verifies):
-  python scripts/demo/reset_demo.py --force
+□ Run demo data seeding script:
+  PYTHONPATH=/Users/mikiko.b/Github/mdb-flow venv/bin/python scripts/demo/seed_demo_data.py --clean
 
 □ Verify output shows:
-  ✓ Cleared 6-7 collections
-  ✓ Seeded data (3 projects, 15 tasks, memories)
-  ✓ GTM Roadmap Template: EXISTS
-  ✓ Project Alpha: EXISTS (4 tasks)
-  🎬 Ready for demo!
+  ✓ Cleared collections (projects, tasks, memory_*)
+  ✓ 8 projects inserted (4 active, 2 completed, 2 planned)
+  ✓ 38 tasks inserted across all projects
+  ✓ 7 procedural memories (including GTM Roadmap Template)
+  ✓ 4 semantic memories (user preferences)
+  ✓ 11 episodic memories (past actions)
+  ✓ 46 episodic summaries generated
+  ✓ 57 embeddings generated (1024-dim Voyage AI)
+  ✨ Demo data ready for presentation!
 
-□ Alternative: Just verify current state:
-  python scripts/demo/reset_demo.py --verify-only
+□ Verify GTM Template structure:
+  python -c "from shared.db import MongoDB; db = MongoDB().get_database(); \
+  gtm = db.memory_procedural.find_one({'name': 'GTM Roadmap Template'}); \
+  print(f'GTM Template: {gtm[\"name\"]} - {len(gtm[\"template\"][\"phases\"])} phases, \
+  {sum(len(p[\"tasks\"]) for p in gtm[\"template\"][\"phases\"])} tasks')"
+  Expected: GTM Template: GTM Roadmap Template - 3 phases, 12 tasks
 
-□ If verification fails:
-  □ Re-run reset script
-  □ Check .env configuration
-  □ Verify MongoDB connection
+□ If seeding fails:
+  □ Check .env has VOYAGE_API_KEY for embeddings
+  □ Check MONGODB_URI connection
+  □ Re-run with --skip-embeddings if embedding service is down
 ```
 
 ### Demo Practice
 
 ```
-□ Run through full demo 3 times (see 09-demo-dry-run.md)
-□ Verify all 7 commands work consistently:
-  1. /tasks
-  2. "What was completed on Project Alpha?"
-  3. "I'm focusing on Project Alpha"
-  4. "What should I work on next?"
-  5. [Toggle Working Memory OFF] → "What should I work on next?"
-  6. [Toggle MCP Mode ON] → "Research gaming market and create GTM project with tasks"
-  7. "What do you know about gaming?"
-□ Time the demo: should complete in 20-25 minutes
+□ Run through full 4-demo sequence 3 times:
+
+  Demo 1: Speed Comparison (4-5 min)
+  □ /tasks                                    # Tier 1: 50ms
+  □ What's urgent?                            # Tier 2: 50ms (regex)
+  □ Find tasks related to memory              # Tier 3: 2-5s (LLM)
+  □ [Toggle MCP ON] Research AI agent frameworks  # Tier 4: 6-8s (Tavily)
+
+  Demo 2: Memory Types (5-6 min)
+  □ What templates do I have?                 # Procedural
+  □ Show me my GTM Roadmap Template          # Procedural details
+  □ What did I complete on AgentOps?          # Episodic
+  □ What's my default priority?               # Semantic
+  □ I'm focusing on Voice Agent               # Working: Store
+  □ What should I work on next?               # Working: Apply
+  □ [Clear session] What should I work on?    # Working: Lost
+
+  Demo 3: Evals Dashboard (3-4 min)
+  □ Open http://localhost:8502
+  □ Select: Baseline + All Ctx
+  □ Click: Run Comparison
+  □ Show all charts highlighting improvements
+
+  Demo 4: The Finale (8-10 min)
+  □ Research warehouse robotics frameworks    # Tavily + cache
+  □ What do you know about warehouse robotics?  # Cache hit
+  □ Create "OpenFleet AI Framework Launch" project using my GTM Roadmap Template,
+    incorporate the research we just did, and create tasks for each phase
+  □ /tasks project:"OpenFleet AI Framework Launch"  # Show 12 tasks
+  □ Find projects similar to OpenFleet         # Semantic similarity
+
+□ Total demo time: 20-25 minutes
 □ Record backup video (in case of live issues)
 ```
 
@@ -444,8 +474,11 @@ make smoke
 
 ```
 □ Start MongoDB Atlas (verify connection)
-□ Start app: streamlit run ui/streamlit_app.py --server.port 8501
-□ Verify app loads without errors
+□ Start demo app: PYTHONPATH=/Users/mikiko.b/Github/mdb-flow venv/bin/streamlit run ui/demo_app.py --server.port 8501
+□ Start evals app: PYTHONPATH=/Users/mikiko.b/Github/mdb-flow venv/bin/streamlit run evals_app.py --server.port 8502
+□ Verify both apps load without errors:
+  □ Demo app: http://localhost:8501
+  □ Evals app: http://localhost:8502
 □ Browser in presentation mode:
   □ Hide bookmarks bar
   □ Close developer tools
@@ -494,72 +527,158 @@ make smoke
 
 ## During Demo - Command Sequence
 
-### Part 1: Baseline (2 min)
+### 🎬 Demo 1: Speed Comparison - 4-Tier Routing (4-5 min)
 
-| # | Command | Expected Result | Duration |
-|---|---------|----------------|----------|
-| 1 | `/tasks` | Shows all 15 tasks | <200ms |
+**Narrative:** "Let me show you how we route queries through 4 performance tiers"
 
-**Talking Point:** "Direct MongoDB query - our baseline speed"
-
-### Part 2: Memory Engineering (10 min)
-
-| # | Command | Memory Type | Expected |
-|---|---------|-------------|----------|
-| 2 | "What was completed on Project Alpha?" | Episodic | Shows completed tasks from action history |
-| 3 | "I'm focusing on Project Alpha" | Semantic | Stores preference, Memory Stats +1 |
-| 4 | "What should I work on next?" | Working | Suggests Project Alpha tasks (uses context) |
-| 5a | [Toggle Working Memory OFF] | - | Toggle shows unchecked |
-| 5b | "What should I work on next?" | - | Context lost - shows ALL tasks or asks "which project?" |
-| 5c | [Toggle Working Memory ON] | - | Toggle shows checked |
+| # | Command | Tier | Expected Result | Duration |
+|---|---------|------|----------------|----------|
+| 1 | `/tasks` | Tier 1: Slash Command | Shows all 38 tasks | ~50ms |
+| 2 | "What's urgent?" | Tier 2: Regex-Matched | Converts to `/tasks priority:high status:todo,in_progress` | ~50ms |
+| 3 | "Find tasks related to memory" | Tier 3: LLM Agent | Semantic search via LLM + built-in tools | 2-5s |
+| 4a | [Toggle MCP Mode ON] | - | MCP status shows "1 connected (Tavily)" | - |
+| 4b | "Research AI agent frameworks" | Tier 4: MCP External | Tavily web search | 6-8s |
 
 **Talking Points:**
-- Episodic: Persistent action history
-- Semantic: Learned preferences
-- Working: Session context
-- Toggle contrast: Clear before/after value demonstration
+- **Tier 1:** Direct MongoDB (instant, free)
+- **Tier 2:** Pattern matching (instant, free) - no LLM needed
+- **Tier 3:** LLM with built-in tools (6-12s with optimizations)
+- **Tier 4:** External MCP tools (dynamic discovery, web search)
+- Progressive enhancement: Faster tiers handle simple queries, LLM only when needed
 
-### Part 3: MCP Agent & Multi-Step (10 min) ⭐ NEW
+**Alternative Queries (if time permits):**
+- Tier 1: `/tasks project:"Voice Agent Architecture"`, `/tasks blocked`
+- Tier 2: "What's in progress?", "Show me Mike's tasks"
+- Tier 3: "What tasks are blocked and overdue?"
 
-| # | Command | Feature | Expected |
-|---|---------|---------|----------|
-| 6a | [Toggle MCP Mode ON] | MCP Agent | "MCP Servers: 1 connected (Tavily)" |
-| 6b | "Research gaming market and create GTM project with tasks" | Multi-step workflow | 3-step execution (~10s) |
-| 7 | "What do you know about gaming?" | Knowledge Cache | Cache hit (~0.5s), "📚 Source: Knowledge Cache" |
+---
 
-**Expected 6b Output:**
+### 🎬 Demo 2: Memory Types - 5-Tier Architecture (5-6 min)
+
+**Narrative:** "Our memory system has 5 specialized tiers working together"
+
+| # | Command | Memory Type | Expected Result |
+|---|---------|-------------|----------------|
+| 1 | "What templates do I have?" | Procedural | Lists 7 templates (GTM, Ref Arch, Blog Post, etc.) |
+| 2 | "Show me my GTM Roadmap Template" | Procedural | Shows 3 phases, 12 tasks (Research→Strategy→Execution) |
+| 3 | "What did I complete on AgentOps?" | Episodic | Shows completed tasks from action history |
+| 4 | "What's my default priority?" | Semantic | Returns "high" (confidence: 0.8, used 15×) |
+| 5 | "I'm focusing on Voice Agent" | Working | Stores session context, Memory Stats +1 |
+| 6 | "What should I work on next?" | Working | Suggests Voice Agent tasks (uses context) |
+| 7a | [Click 🗑️ Clear Session Memory] | - | Working Memory cleared |
+| 7b | "What should I work on next?" | - | Context lost - generic response |
+
+**Talking Points:**
+- **Procedural:** Templates, workflows, checklists (persistent)
+- **Episodic:** Action history with semantic search (persistent)
+- **Semantic:** User preferences with confidence scoring (7-day TTL for knowledge)
+- **Working:** Session context (2-hour TTL)
+- **Shared:** Agent handoffs (5-minute TTL)
+- Contrast demo: Clear session to show value of working memory
+
+**Alternative Queries (if time permits):**
+- "What have I been working on this week?" (Episodic: Long-range)
+- "What's my communication style?" (Semantic: Preference)
+- "What checklists do I have?" (Procedural: Market Research)
+
+---
+
+### 🎬 Demo 3: Evals Dashboard - Context Optimization (3-4 min)
+
+**Narrative:** "Context engineering achieved 50-70% latency reduction"
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Open http://localhost:8502 | Evals dashboard loads |
+| 2 | Select configs: ✅ Baseline, ✅ All Ctx | 2 configs selected |
+| 3 | Click "🚀 Run Comparison" | Progress bar starts, ~2-3 min run time |
+| 4 | [While running] Explain charts | Overview of what we'll see |
+| 5 | Show "📈 Summary" section | 50-70% latency reduction, 70-90% token reduction |
+| 6 | Show "⚡ Optimization Waterfall" | Visual cascade: gray→purple→blue→amber→green |
+| 7 | Show "🔧 LLM vs Tool Time" | LLM is 96% of time, tools only 4% |
+| 8 | Show "🪙 Token Savings" | 70-90% token reduction per query type |
+
+**Talking Points:**
+- Three optimizations: Compress results, Streamlined prompts, Prompt caching
+- LLM is the bottleneck (96%), not MongoDB (4%)
+- Token reduction = cost reduction (70%+ API savings)
+- All optimizations are combinable
+- MongoDB performance stays fast regardless (~500ms avg)
+
+**Key Metrics to Highlight:**
+- Baseline: 15-25s latency, ~3000 tokens
+- All Optimizations: 6-12s latency, ~500-800 tokens
+- Cost savings: ~70% reduction in API costs
+- Quality maintained: Pass rate stays 100%
+
+---
+
+### 🎬 Demo 4: The Finale - Multi-Step Orchestration (8-10 min)
+
+**Narrative:** "Let's build a GTM launch plan using research, memory, and templates"
+
+| # | Command | Feature | Expected Result |
+|---|---------|---------|----------------|
+| 1 | "Research warehouse robotics frameworks" | MCP + Semantic Cache | Tavily search (~6-8s), results cached |
+| 2 | "What do you know about warehouse robotics?" | Semantic Cache Hit | <1s response, "📚 Source: Knowledge Cache" |
+| 3 | "Create 'OpenFleet AI Framework Launch' project using my GTM Roadmap Template, incorporate the research we just did, and create tasks for each phase" | Multi-Step Workflow | Step 1: Load template<br>Step 2: Create project (research-enriched)<br>Step 3: Generate 12 tasks across 3 phases |
+| 4 | `/tasks project:"OpenFleet AI Framework Launch"` | Verification | Shows 12 tasks organized by phase |
+| 5 | "Find projects similar to OpenFleet" | Semantic Search | Returns similar projects with similarity scores |
+
+**Expected Output for Step 3:**
 ```
-Step 1/3: Research gaming market trends
-  → Routing to MCP Agent (Tavily)...
-  → ✓ Research completed
+Step 1/3: Load GTM Roadmap Template
+  → Found template: 3 phases, 12 tasks
+  → ✓ Template loaded from Procedural Memory
 
-Step 2/3: Create GTM project for gaming
-  → Detected GTM project
-  → Loading template: GTM Roadmap Template
-  → ✓ Project created: Gaming Market
+Step 2/3: Create project with research context
+  → Incorporating warehouse robotics research
+  → ✓ Project created: OpenFleet AI Framework Launch
 
-Step 3/3: Generate tasks from template
-  → Phase: Research (4 tasks)
-  → Phase: Strategy (4 tasks)
-  → Phase: Execution (4 tasks)
-  → ✓ Generated 12 tasks across 3 phases
+Step 3/3: Generate tasks from template phases
+  → Phase 1: Research (4 tasks)
+    - Market size and growth analysis
+    - Competitor landscape mapping
+    - Target customer persona development
+    - Pricing model research
+  → Phase 2: Strategy (4 tasks)
+    - Value proposition refinement
+    - Channel strategy definition
+    - Partnership opportunity identification
+    - Go-to-market timeline
+  → Phase 3: Execution (4 tasks)
+    - Marketing collateral development
+    - Sales enablement materials
+    - Launch event planning
+    - Success metrics definition
+  → ✓ 12 tasks created across 3 phases
 ```
 
 **Talking Points:**
-- Procedural Memory: GTM template auto-loaded
-- MCP Agent: Dynamic Tavily integration
-- Multi-step: Automatic orchestration
-- Knowledge Cache: 7-day TTL, 90% faster on reuse
+- **MCP Agent:** Dynamic Tavily integration for web research
+- **Knowledge Cache:** 7-day TTL, 90% faster on reuse
+- **Procedural Memory:** GTM template with structured phases
+- **Multi-Step Orchestration:** Automatic workflow coordination
+- **Semantic Enrichment:** Research context incorporated into project/tasks
+- **Vector Search:** Find similar projects using embeddings
 
-### Part 4: Wrap-up (3 min)
+**Fallback Research Topics (if warehouse robotics fails):**
+- "Research AI gaming NPCs and memory systems"
+- "Research personalized learning AI tutors"
+- "Research latest MongoDB vector search features"
 
-**Key Takeaways:**
-1. 5-tier memory architecture (Working, Episodic, Semantic, Procedural, Shared)
-2. Context engineering: 40-60% latency reduction
-3. MCP Agent: Dynamic tool discovery (Milestone 6)
-4. Multi-step workflows: Automatic orchestration
-5. MongoDB Atlas: Unified memory layer with vector search
-6. Production-ready: 47 tests, 90% coverage
+---
+
+### Wrap-Up & Key Takeaways (2-3 min)
+
+**Key Achievements:**
+1. **4-Tier Routing:** Progressive enhancement from instant to AI-powered
+2. **5-Tier Memory:** Working, Episodic, Semantic, Procedural, Shared
+3. **Context Engineering:** 50-70% latency reduction, 70% cost savings
+4. **MCP Agent:** Dynamic tool discovery and orchestration
+5. **Multi-Step Workflows:** Automatic complex task execution
+6. **MongoDB Atlas:** Unified memory layer with vector search
+7. **Production-Ready:** 47 tests, 90% coverage, evals framework
 
 **Q&A Ready**
 
@@ -571,7 +690,13 @@ Step 3/3: Generate tasks from template
 |-------|-----------|----------|
 | Query stuck/slow | "First query warming up" - wait | Refresh page, retry |
 | Memory not updating | Check toggle is ON | Show backup screenshots |
-| MCP Mode fails | Check Tavily API key | Skip to next section |
+| MCP Mode fails | Check Tavily API key in .env | Skip Demo 4, go to wrap-up |
+| Evals dashboard won't load | Check port 8502 running | Skip Demo 3, explain conceptually |
+| Evals run fails | Stop run, retry with fewer configs | Show pre-recorded results |
+| GTM template not found | Reseed: `python scripts/demo/seed_demo_data.py --clean` | Use simpler project creation |
+| Research returns no results | Try alternative topic (gaming NPCs, tutors) | Skip research, use template only |
+| Cache hit doesn't show | Check debug panel for cache indicator | Explain based on latency difference |
+| Project creation fails | Break into 2 steps: create project, then add tasks | Show existing project with tasks |
 | Voice not working | "Voice works similarly to text" | Use text queries instead |
 | Tool error | "Let me try that differently" | Use slash command alternative |
 | Complete failure | Apologize, switch to backup video | Have video ready |
