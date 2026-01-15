@@ -1555,16 +1555,16 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     if is_gtm:
                         logger.info("Detected GTM project - loading template from procedural memory")
 
-                        # Query for GTM template using specific method
-                        template = self.memory.get_procedural_rule(
-                            user_id=user_id,
-                            rule_type="template",
-                            trigger="create_gtm_project"
-                        )
+                        # Query for GTM template by name (more reliable than trigger matching)
+                        template_doc = self.db.memory_procedural.find_one({
+                            "user_id": user_id,
+                            "rule_type": "template",
+                            "name": "GTM Roadmap Template"
+                        })
 
-                        if template:
-                            context["template"] = template
-                            logger.info(f"✓ Found template: {template.get('name')}")
+                        if template_doc:
+                            context["template"] = template_doc
+                            logger.info(f"✓ Found template: {template_doc.get('name')}")
                         else:
                             logger.warning("⚠️  GTM template not found in procedural memory")
 
