@@ -1067,28 +1067,64 @@ def get_procedural_memory_data() -> List[Dict[str, Any]]:
                     {
                         "name": "Research",
                         "tasks": [
-                            "Market size and growth analysis",
-                            "Competitor landscape mapping",
-                            "Target customer persona development",
-                            "Pricing strategy research"
+                            {
+                                "title": "Market size and growth analysis",
+                                "guiding_questions": ["What is the current market size?", "What are growth projections?", "What market trends drive adoption?"]
+                            },
+                            {
+                                "title": "Competitor landscape mapping",
+                                "guiding_questions": ["Who are the main competitors?", "What are their strengths/weaknesses?", "What market gaps exist?"]
+                            },
+                            {
+                                "title": "Target customer persona development",
+                                "guiding_questions": ["Who are the ideal customers?", "What are their pain points?", "What use cases resonate most?"]
+                            },
+                            {
+                                "title": "Pricing strategy research",
+                                "guiding_questions": ["What pricing models are common?", "What is typical willingness to pay?", "What value metrics drive pricing?"]
+                            }
                         ]
                     },
                     {
                         "name": "Strategy",
                         "tasks": [
-                            "Value proposition refinement",
-                            "Channel strategy definition",
-                            "Partnership opportunity identification",
-                            "Go-to-market timeline creation"
+                            {
+                                "title": "Value proposition refinement",
+                                "guiding_questions": ["What unique value do we provide?", "What differentiators matter most?", "How do we address market gaps?"]
+                            },
+                            {
+                                "title": "Channel strategy definition",
+                                "guiding_questions": ["What are effective distribution channels?", "Direct sales or partners?", "What do competitors use?"]
+                            },
+                            {
+                                "title": "Partnership opportunity identification",
+                                "guiding_questions": ["What partnerships accelerate growth?", "Which ecosystem players to integrate with?", "What partnership models work?"]
+                            },
+                            {
+                                "title": "Go-to-market timeline creation",
+                                "guiding_questions": ["What is realistic launch timeline?", "What are critical milestones?", "What timing factors matter?"]
+                            }
                         ]
                     },
                     {
                         "name": "Execution",
                         "tasks": [
-                            "Marketing collateral development",
-                            "Sales enablement materials",
-                            "Launch event planning",
-                            "Success metrics definition"
+                            {
+                                "title": "Marketing collateral development",
+                                "guiding_questions": ["What marketing materials needed?", "What messaging resonates?", "What content types work best?"]
+                            },
+                            {
+                                "title": "Sales enablement materials",
+                                "guiding_questions": ["What tools do sales need?", "What objections arise?", "What proof points are compelling?"]
+                            },
+                            {
+                                "title": "Launch event planning",
+                                "guiding_questions": ["What launch format is effective?", "What venues/platforms to use?", "What stakeholders should attend?"]
+                            },
+                            {
+                                "title": "Success metrics definition",
+                                "guiding_questions": ["What KPIs indicate success?", "What benchmarks to target?", "How to measure ROI?"]
+                            }
                         ]
                     }
                 ]

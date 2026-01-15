@@ -562,7 +562,24 @@ Examples:
 - "What have we learned about NPC memory systems?"
 - "Show me our research on voice agents"
 
-Returns cached knowledge with source attribution and timestamps. Only available when long-term memory is enabled.""",
+CRITICAL CITATION REQUIREMENTS:
+1. Present ALL knowledge results returned (typically 5-10 entries), not just the top match
+2. Each result MUST have source citation: "📚 From [topic] (source: [tavily/knowledge_base], score: X.XX):"
+3. Examples:
+   - "📚 From warehouse_robotics (source: tavily, score: 1.00, cached: Jan 15): [content]"
+   - "📚 From autonomous_agents (source: knowledge_base, score: 0.64): [content]"
+   - "📚 From multi_agent_systems (source: knowledge_base, score: 0.65): [content]"
+4. NEVER present cached info without citation - proves it came from memory, not your training
+
+For research queries, be comprehensive:
+- Present ALL knowledge entries (even tangential ones with score >0.60)
+- Also search projects: call search_projects with the query
+- Also search tasks: call search_tasks with the query
+- Format: "Related Projects: [name]" and "Related Tasks: [title]"
+
+This shows the full context available and proves you're using stored memory.
+
+Returns cached knowledge with source, confidence, similarity scores, and timestamps.""",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1482,6 +1499,18 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
 
         logger.info(f"Executing {len(steps)} steps for multi-step workflow")
 
+        # Check if request mentions using previous research
+        if "research we just did" in original_request.lower() or "recent research" in original_request.lower():
+            logger.info("Request mentions previous research - checking semantic memory for recent results")
+            # Search for recent Tavily research in semantic memory
+            if self.memory and user_id:
+                recent_research = self.memory.get_recent_knowledge(user_id, limit=1)
+                if recent_research:
+                    context["research_results"] = recent_research[0].get("result") or recent_research[0].get("value", "")
+                    context["research_source"] = recent_research[0].get("source", "semantic_cache")
+                    context["research_query"] = recent_research[0].get("query") or recent_research[0].get("key", "")
+                    logger.info(f"✓ Found recent research: {context.get('research_query', 'unknown')[:50]}...")
+
         for i, step in enumerate(steps):
             step_num = i + 1
             logger.info(f"Step {step_num}/{len(steps)}: {step['intent']} - {step['description']}")
@@ -1529,25 +1558,28 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         logger.warning(f"⚠️  {error_msg}")
 
                 elif step["intent"] == "create_project":
-                    # Check if this is a GTM project
+                    # Check if this is a GTM project or if next step will generate tasks
                     is_gtm = any(word in step["description"].lower()
                                 for word in ["gtm", "go-to-market", "go to market"])
 
-                    # Load GTM template from procedural memory if GTM project
+                    # Also check if any subsequent step will generate tasks (needs template)
+                    will_generate_tasks = any(s.get("intent") == "generate_tasks" for s in steps[i+1:])
+
+                    # Load template from procedural memory
                     template = None
-                    if is_gtm:
-                        logger.info("Detected GTM project - loading template from procedural memory")
+                    if is_gtm or will_generate_tasks:
+                        logger.info("Loading template from procedural memory (GTM project or task generation requested)")
 
-                        # Query for GTM template using specific method
-                        template = self.memory.get_procedural_rule(
-                            user_id=user_id,
-                            rule_type="template",
-                            trigger="create_gtm_project"
-                        )
+                        # Query for GTM template by name (more reliable than trigger matching)
+                        template_doc = self.db.memory_procedural.find_one({
+                            "user_id": user_id,
+                            "rule_type": "template",
+                            "name": "GTM Roadmap Template"
+                        })
 
-                        if template:
-                            context["template"] = template
-                            logger.info(f"✓ Found template: {template.get('name')}")
+                        if template_doc:
+                            context["template"] = template_doc
+                            logger.info(f"✓ Found template: {template_doc.get('name')}")
                         else:
                             logger.warning("⚠️  GTM template not found in procedural memory")
 
@@ -1629,7 +1661,47 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                         phase_name = phase.get("name", "")
                         logger.info(f"  Phase: {phase_name}")
 
-                        for task_title in phase.get("tasks", []):
+                        for task_item in phase.get("tasks", []):
+                            # Handle both formats: string (old) or dict with guiding_questions (new)
+                            if isinstance(task_item, str):
+                                task_title = task_item
+                                task_context = task_context_base
+                            else:
+                                task_title = task_item.get("title", "Unknown task")
+                                guiding_questions = task_item.get("guiding_questions", [])
+
+                                # If we have research and guiding questions, tailor the context
+                                if research_results and guiding_questions:
+                                    questions_text = "\n".join(f"- {q}" for q in guiding_questions)
+
+                                    # Use fast Haiku model for quick task-specific summaries
+                                    try:
+                                        from shared.llm import LLMService
+                                        fast_llm = LLMService(model="claude-3-5-haiku-20241022")  # Fast, cheap model
+
+                                        tailored_research = fast_llm.generate(
+                                            messages=[{
+                                                "role": "user",
+                                                "content": f"Extract relevant insights from this research for the task '{task_title}'. Answer these questions in 2-3 clear sentences. Be direct - no preamble, no meta-commentary, just the facts:\n\n{questions_text}\n\nResearch:\n{str(research_results)[:1200]}"
+                                            }],
+                                            max_tokens=150,  # Reduced for faster generation
+                                            temperature=0.2  # Lower temperature for concise, factual answers
+                                        )
+                                        # Clean up any remaining meta-commentary from Haiku
+                                        clean_research = tailored_research.strip()
+                                        # Remove common preambles if they snuck through
+                                        for preamble in ["Based on the research, ", "Here are the insights: ", "Here's a concise response: "]:
+                                            if clean_research.startswith(preamble):
+                                                clean_research = clean_research[len(preamble):]
+
+                                        task_context = f"{clean_research}"
+                                        logger.debug(f"    Generated tailored research for: {task_title}")
+                                    except Exception as e:
+                                        logger.warning(f"    Failed to tailor research for {task_title}: {e}")
+                                        task_context = task_context_base
+                                else:
+                                    task_context = task_context_base
+
                             # Add phase prefix to task title for context
                             full_title = f"[{phase_name}] {task_title}"
 
@@ -1637,7 +1709,7 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                                 title=full_title,
                                 project_id=project_id,
                                 priority="medium",
-                                context=task_context_base
+                                context=task_context
                             )
 
                             if task_result.get("success"):
@@ -1724,6 +1796,15 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         Returns:
             Project name
         """
+        import re
+
+        # First, check for quoted project names (most reliable)
+        # Handles: Create 'OpenFleet AI Framework Launch' project using...
+        # Or: Create "Gaming Market" project with...
+        quoted_match = re.search(r"['\"]([^'\"]+)['\"]", description)
+        if quoted_match:
+            return quoted_match.group(1).strip()
+
         # Common patterns to extract from description
         patterns = [
             "create project for ",
@@ -1736,13 +1817,20 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
         desc_lower = description.lower()
         for pattern in patterns:
             if pattern in desc_lower:
-                # Extract text after pattern
+                # Extract text after pattern, up to common stop words
                 idx = desc_lower.index(pattern) + len(pattern)
-                name = description[idx:].strip()
+                remaining = description[idx:].strip()
+
+                # Stop at these words to avoid including template/method info
+                stop_words = [" using ", " with ", " from ", " based on "]
+                for stop in stop_words:
+                    if stop in remaining.lower():
+                        remaining = remaining[:remaining.lower().index(stop)]
+                        break
+
+                name = remaining.strip()
                 # Clean up
                 name = name.replace(" project", "").replace(" vertical", "")
-                # Capitalize words
-                name = " ".join(word.capitalize() for word in name.split())
                 if name:
                     return name
 
@@ -2448,12 +2536,17 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     # Format results for display
                     formatted_results = []
                     for item in knowledge_results:
+                        # Handle both formats: knowledge base (key/value) and Tavily cache (query/result)
+                        topic = item.get("key") or item.get("query", "")
+                        content = item.get("value") or item.get("result") or item.get("summary", "")
+                        cached_at = item.get("created_at") or item.get("fetched_at", "")
+
                         formatted_results.append({
-                            "topic": item.get("key", ""),
-                            "content": item.get("value", ""),
+                            "topic": topic,
+                            "content": content,
                             "tags": item.get("tags", []),
                             "source": item.get("source", "unknown"),
-                            "cached_at": item.get("created_at", "").isoformat() if item.get("created_at") else "",
+                            "cached_at": cached_at.isoformat() if hasattr(cached_at, 'isoformat') else str(cached_at),
                             "confidence": item.get("confidence", 0),
                             "score": item.get("score", 0),
                             "times_accessed": item.get("times_accessed", 0)
@@ -2846,17 +2939,43 @@ Execute the rule action: {rule_match['action']}
 
             # Execute multi-step workflow
             import asyncio
+            workflow_start = time.time()
             result = asyncio.run(self._execute_multi_step(
                 steps=multi_step["steps"],
                 original_request=user_message,
                 user_id=self.user_id
             ))
+            workflow_time = int((time.time() - workflow_start) * 1000)
+
+            # Add workflow steps to debug panel
+            if self.current_turn:
+                for step_result in result.get("results", []):
+                    self.current_turn["tool_calls"].append({
+                        "name": f"workflow_step_{step_result.get('step', '?')}_{step_result.get('type', 'unknown')}",
+                        "input": {"description": step_result.get("description", ""), "step": step_result.get("step")},
+                        "output": f"Success: {step_result.get('success')}" + (f" - {step_result.get('error')}" if not step_result.get('success') else ""),
+                        "duration_ms": workflow_time // len(result.get("results", [1])),  # Approximate per-step time
+                        "success": step_result.get("success", False)
+                    })
+
+                # Add workflow summary
+                self.current_turn["total_duration_ms"] = workflow_time
+                self.current_turn["tools_called"].extend([f"step_{r.get('type')}" for r in result.get("results", [])])
 
             # Format response for user
             formatted = self._format_multi_step_response(result)
 
             if return_debug:
-                return formatted
+                return {
+                    "response": formatted.get("response"),
+                    "debug": {
+                        **formatted.get("debug", {}),
+                        "workflow": True,
+                        "steps": len(multi_step["steps"]),
+                        "workflow_time_ms": workflow_time,
+                        "tool_calls": self.current_turn.get("tool_calls", []) if self.current_turn else []
+                    }
+                }
             else:
                 return formatted["response"]
 
@@ -2896,26 +3015,53 @@ Execute the rule action: {rule_match['action']}
 
             # MCP mode check - only required for EXTERNAL tool discovery (Tier 4)
             if not self.mcp_mode_enabled:
-                logger.warning(f"📊 MCP mode disabled, cannot use external tools for intent: {intent}")
+                logger.warning(f"📊 MCP mode disabled, falling back to local search for intent: {intent}")
 
-                # Customize message based on intent
-                if intent == "advanced_mongodb_query":
+                # Fallback: Search local data instead of failing
+                if intent in ["web_search", "research", "find_information"]:
+                    logger.info("🔍 Searching local tasks, projects, and knowledge as fallback")
+
+                    # Use LLM with built-in tools to search local data
+                    # This will search tasks, projects, and cached knowledge
+                    # Intent changes to "unknown" so it uses Tier 3 (LLM + built-in tools)
+                    intent = "search_tasks"  # Fallback to local search
+                    logger.info(f"📊 Fallback: Changed intent from web_search to search_tasks")
+
+                    # Let it proceed to LLM with built-in tools below
+                    # The LLM will call search_tasks, search_projects, and search_knowledge
+                    # Skip MCP routing and go to normal LLM flow
+                    pass
+                elif intent == "advanced_mongodb_query":
                     response_text = "I don't have access to the MongoDB MCP server for advanced query generation. Enable Experimental MCP Mode to use MongoDB's query generation capabilities for complex aggregations and analytics."
-                else:
-                    response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
 
-                if return_debug:
-                    return {
-                        "response": response_text,
-                        "debug": {
-                            "could_use_mcp": True,
-                            "intent": intent,
-                            "mcp_available": settings.mcp_available
+                    if return_debug:
+                        return {
+                            "response": response_text,
+                            "debug": {
+                                "could_use_mcp": True,
+                                "intent": intent,
+                                "mcp_available": settings.mcp_available
+                            }
                         }
-                    }
+                    else:
+                        return response_text
                 else:
-                    return response_text
+                    # Other MCP intents without fallback - return error
+                    response_text = "I don't have access to external research tools for this request. Enable Experimental MCP Mode to let me search the web and discover new tools."
+                    if return_debug:
+                        return {
+                            "response": response_text,
+                            "debug": {
+                                "could_use_mcp": True,
+                                "intent": intent,
+                                "mcp_available": settings.mcp_available
+                            }
+                        }
+                    else:
+                        return response_text
 
+        # Only route to MCP if mode is enabled AND intent requires it
+        if not self._can_static_tools_handle(intent, user_message) and self.mcp_mode_enabled:
             # Route to MCP Agent
             logger.info(f"🔬 Routing to MCP Agent (intent: {intent})")
 

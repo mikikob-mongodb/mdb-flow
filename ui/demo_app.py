@@ -892,6 +892,13 @@ def render_chat():
                 "What templates have I used?",
                 "What projects have I completed?",
             ],
+            "🎬 The Finale - Demo 4 Sequence": [
+                "Research warehouse robotics frameworks",
+                "What do you know about warehouse robotics?",
+                "Create 'OpenFleet AI Framework Launch' project using my GTM Roadmap Template, incorporate the research we just did, and create tasks for each phase",
+                "/tasks project:\"OpenFleet AI Framework Launch\"",
+                "Find projects similar to OpenFleet",
+            ],
         }
 
         # Dropdown for category selection
