@@ -2453,12 +2453,17 @@ Now parse the actual user request above. Respond with ONLY the JSON, no other te
                     # Format results for display
                     formatted_results = []
                     for item in knowledge_results:
+                        # Handle both formats: knowledge base (key/value) and Tavily cache (query/result)
+                        topic = item.get("key") or item.get("query", "")
+                        content = item.get("value") or item.get("result") or item.get("summary", "")
+                        cached_at = item.get("created_at") or item.get("fetched_at", "")
+
                         formatted_results.append({
-                            "topic": item.get("key", ""),
-                            "content": item.get("value", ""),
+                            "topic": topic,
+                            "content": content,
                             "tags": item.get("tags", []),
                             "source": item.get("source", "unknown"),
-                            "cached_at": item.get("created_at", "").isoformat() if item.get("created_at") else "",
+                            "cached_at": cached_at.isoformat() if hasattr(cached_at, 'isoformat') else str(cached_at),
                             "confidence": item.get("confidence", 0),
                             "score": item.get("score", 0),
                             "times_accessed": item.get("times_accessed", 0)

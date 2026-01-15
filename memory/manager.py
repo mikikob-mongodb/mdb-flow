@@ -1562,9 +1562,13 @@ class MemoryManager:
                     "value": 1,
                     "tags": 1,
                     "confidence": 1,
+                    "query": 1,
+                    "result": 1,
+                    "summary": 1,
                     "source": 1,
                     "times_accessed": 1,
                     "created_at": 1,
+                    "fetched_at": 1,
                     "score": {"$meta": "vectorSearchScore"},
                     "_id": 0
                 }
