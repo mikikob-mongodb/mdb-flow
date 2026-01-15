@@ -2926,17 +2926,43 @@ Execute the rule action: {rule_match['action']}
 
             # Execute multi-step workflow
             import asyncio
+            workflow_start = time.time()
             result = asyncio.run(self._execute_multi_step(
                 steps=multi_step["steps"],
                 original_request=user_message,
                 user_id=self.user_id
             ))
+            workflow_time = int((time.time() - workflow_start) * 1000)
+
+            # Add workflow steps to debug panel
+            if self.current_turn:
+                for step_result in result.get("results", []):
+                    self.current_turn["tool_calls"].append({
+                        "name": f"workflow_step_{step_result.get('step', '?')}_{step_result.get('type', 'unknown')}",
+                        "input": {"description": step_result.get("description", ""), "step": step_result.get("step")},
+                        "output": f"Success: {step_result.get('success')}" + (f" - {step_result.get('error')}" if not step_result.get('success') else ""),
+                        "duration_ms": workflow_time // len(result.get("results", [1])),  # Approximate per-step time
+                        "success": step_result.get("success", False)
+                    })
+
+                # Add workflow summary
+                self.current_turn["total_duration_ms"] = workflow_time
+                self.current_turn["tools_called"].extend([f"step_{r.get('type')}" for r in result.get("results", [])])
 
             # Format response for user
             formatted = self._format_multi_step_response(result)
 
             if return_debug:
-                return formatted
+                return {
+                    "response": formatted.get("response"),
+                    "debug": {
+                        **formatted.get("debug", {}),
+                        "workflow": True,
+                        "steps": len(multi_step["steps"]),
+                        "workflow_time_ms": workflow_time,
+                        "tool_calls": self.current_turn.get("tool_calls", []) if self.current_turn else []
+                    }
+                }
             else:
                 return formatted["response"]
 
