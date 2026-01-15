@@ -411,8 +411,8 @@ make smoke
   Demo 2: Memory Types (5-6 min)
   □ What templates do I have?                 # Procedural: List templates
   □ Show me my Blog Post Template            # Procedural: 4 phases, 16 tasks (most used)
-  □ What do you know about LangChain?         # Semantic: Knowledge cache
-  □ What do you know about MongoDB vector search?  # Semantic: Knowledge (audience-relevant)
+  □ What do you know about MongoDB vector search?  # Semantic: Knowledge (audience gold!)
+  □ Tell me about CLIP                        # Semantic: Knowledge (vision-language, unique)
   □ I'm focusing on Voice Agent Architecture  # Working: Store context
   □ What should I work on next?               # Working: Apply context
   □ [Clear session] What should I work on?    # Working: Context cleared (contrast)
@@ -561,8 +561,8 @@ make smoke
 |---|---------|-------------|----------------|
 | 1 | "What templates do I have?" | Procedural | Lists 4 templates (GTM, Ref Arch, Blog Post, Market Research) |
 | 2 | "Show me my Blog Post Template" | Procedural | Shows 4 phases, 16 tasks (Outline→Draft→Review→Publish) - Most used (5×) |
-| 3 | "What do you know about LangChain?" | Semantic: Knowledge | Returns cached knowledge: framework for LLM apps with chains, agents, memory |
-| 4 | "What do you know about MongoDB vector search?" | Semantic: Knowledge | Returns cached knowledge: Atlas Vector Search, hybrid search, HNSW indexing |
+| 3 | "What do you know about MongoDB vector search?" | Semantic: Knowledge | Returns cached knowledge: Atlas Vector Search, hybrid search, HNSW indexing |
+| 4 | "Tell me about CLIP" | Semantic: Knowledge | Returns cached knowledge: Vision-language model, multimodal embeddings, zero-shot classification |
 | 5 | "I'm focusing on Voice Agent Architecture" | Working | Stores session context, Memory Stats +1 |
 | 6 | "What should I work on next?" | Working | Suggests Voice Agent tasks (uses context) |
 | 7a | [Click 🗑️ Clear Session Memory] | - | Working Memory cleared |
@@ -578,12 +578,12 @@ make smoke
 - Contrast demo: Clear session to show value of working memory
 
 **Alternative Knowledge Queries (choose based on audience):**
-- "What do you know about RAG?" (Retrieval-Augmented Generation)
-- "Tell me about CLIP" (Computer Vision + NLP)
+- "What do you know about RAG?" (Retrieval-Augmented Generation - architecture)
 - "What do you know about prompt caching?" (Ties to Demo 3 optimization)
-- "What do you know about AgentOps?" (Relevant to sample project)
-- "Tell me about YOLO object detection" (Computer Vision)
-- "What do you know about multimodal LLMs?" (Cutting edge)
+- "Tell me about YOLO object detection" (Real-time computer vision)
+- "What do you know about AI agent memory?" (Meta - talks about memory itself!)
+- "Tell me about Stable Diffusion" (Image generation)
+- "What do you know about multimodal LLMs?" (Cutting edge GPT-4V, Claude 3)
 
 ---
 
